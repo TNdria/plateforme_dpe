@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block style %}
+        <style>
+            body {
+                background:#36b9cc;
+            }
+            .btn-color{
+            background-color: #0e1c36;
+            color: #fff;
+            
+            }
+            .profile-image-pic{
+            height: 150px;
+            width: 150px;
+            object-fit: cover;
+            }
+
+            .cardbody-color{
+            background-color: #ebf2fa;
+            }
+            a{
+            text-decoration: none;
+            }
+        </style>
+{% endblock %}
+{% block title %} AJOUT UTILISATEUR {% endblock %}
+{% block container_fluid %} 
+        <div class="container">
+            <div class="row">
+            <div class="col-md-6 offset-md-3">
+                <h2 class="text-center text-dark mt-2">Création de compte</h2>
+                <div class="text-center mb-1 text-dark"></div>
+                <div class="card my-1">
+                <form class="card-body cardbody-color p-lg-5"  method="post">
+                    {% csrf_token %}
+                    {% if message %}
+                    <div class="{{ message.class }} text-center mb-3">
+                        {{ message.text }}
+                    </div>
+                    {% endif %}
+                    <div class="text-center">
+                        <!-- <i class="fas fa-user-lock fa-3x"></i> 
+                    <img src="{% static 'user_login.png' %}" class="img-fluid profile-image-pic img-thumbnail rounded-circle my-3"
+                        width="150px" alt="profile">
+                        -->
+                    </div>
+
+                    <div class="mb-3">
+                        <input type="hidden" value="{{ user.username }}" class="form-control" name="username_f" >
+                        <input type="text" pattern="[a-zA-Z0-9_ ]+" class="form-control" name="username" placeholder="Identifiant (exemple : toky_fan ou dpl_213)" required>
+                    </div>
+                    <div class="mb-3">
+                        <input type="text" pattern="[a-zA-Z0-9_ ]+" value="{% if infos %}{{ info.first_name }}{% endif %}" class="form-control" id="first_name" name="first_name" placeholder="Nom" required>
+                    </div>
+                    <div class="mb-3">
+                        <input type="text" class="form-control" value="{% if infos %}{{ info.last_name }}{% endif %}" id="last_name" name="last_name" placeholder="Prénom(s)">
+                    </div>
+                    <div class="mb-3">
+                        <input type="password" pattern=".{4,}" value="{% if infos %}{{ info.password }}{% endif %}" name="password" placeholder="Mot de passe" required class="form-control" id="password">
+                    </div>
+                    <div class="mb-3">
+                        <input type="password" pattern=".{4,}" value="{% if infos %}{{ info.password2 }}{% endif %}" name="password2" placeholder="Confirmer le mot de passe" required class="form-control" id="password2">
+                    </div>
+                    <input type="hidden" name="dren" value="{{ user.dren }}" id="dren">
+                    <input type="hidden" name="cisco" value="{{ user.cisco }}"id="cisco">
+                    <div class="text-center"><button type="submit" class="btn btn-color px-5 mb-5 w-100">Enregistrer</button></div>
+                </form>
+                </div>
+            </div>
+            </div>
+        </div>
+ {% endblock %}
+  {% block scripts %}
+    <script>
+        $("#accordionSidebar").removeClass("toggled").addClass("toggled")
+    </script>
+ {% endblock %}

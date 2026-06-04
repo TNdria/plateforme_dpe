@@ -1,0 +1,259 @@
+{% extends 'base.html' %} {% load static %} 
+{% block title %} Accueil {%endblock%} {% block style %}
+<style>
+  canvas {
+    -moz-user-select: none;
+    -webkit-user-select: none;
+    -ms-user-select: none;
+  }
+</style>
+{% endblock %} {% block filtre %}
+<div class="mr-3">
+  <div class="input-group input-group-sm">
+    <select name="dren" id="dren" class="form-control" style="width: 250px">
+      <option value="0">Toutes DREN</option>
+      {% for d in dren %}
+      <option value="{{ d.CODE_DREN }}">{{ d.DREN }}</option>
+      {% endfor %}
+    </select>
+  </div>
+</div>
+<div class="mr-3">
+  <div class="input-group input-group-sm">
+    <select
+      name="cisco"
+      id="cisco"
+      class="form-control bg-light border-0 small"
+      style="width: 250px"
+    >
+      <option value="0">Toutes CISCO</option>
+    </select>
+  </div>
+</div>
+<div class="mr-3">
+  <div class="input-group input-group-sm">
+    <select name="secteur" id="secteur" class="form-control bg-light border-0 small" style="width: 100px">
+      <option value="2">Tous</option>
+      <option value="0" selected>Public</option>
+      <option value="1">Privé</option>
+    </select>
+  </div>
+</div>
+<!--
+    <div class="">
+        <button  class="btn btn-sm btn-primary" id="btn-filter" ><i class="fa fa-filter"></i>Filtrer</button>
+    </div>
+    -->
+
+{% endblock %} {% block container_fluid %}
+
+<div class="row">
+  <div class="col-lg-12">
+    <nav class="navbar navbar-expand bg-gradient-primary mb-4">
+      <a class="navbar-brand text-white" href="#"
+        >DONNEES SUR LES ECOLES - ANNEE SCOLAIRE : 2024-2025</a
+      >
+    </nav>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-xl-3 col-md-6 mb-4">
+    <div class="card border-left-primary shadow h-100 py-2">
+      <div class="card-body">
+        <div class="row no-gutters align-items-center">
+          <div class="col mr-2">
+            <div
+              class="text-xs font-weight-bold text-primary text-uppercase mb-1"
+            >
+              Nombre d’établissement
+            </div>
+            <div class="text-xs">
+              <span class="mr-3">Préscolaire:</span><span id="etab_n0">255</span>
+            </div>
+            <div class="text-xs">
+              <span class="mr-3">Primaire:</span><span id="etab_n1">255</span>
+            </div>
+            <div class="text-xs">
+              <span class="mr-3">Collège:</span><span id="etab_n2">255</span>
+            </div>
+            <div class="text-xs">
+              <span class="mr-3">Lycée:</span><span id="etab_n3">255</span>
+            </div>
+          </div>
+          <div class="col-auto">
+            <i class="fas fa-school fa-3x text-gray-300"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-xl-3 col-md-6 mb-4">
+    <div class="card border-left-success shadow h-100 py-2">
+      <div class="card-body">
+        <div class="row no-gutters align-items-center">
+          <div class="col mr-2">
+            <div
+              class="text-xs font-weight-bold text-success text-uppercase mb-1"
+            >
+              Nombre d’élèves
+            </div>
+            <div class="text-xs">
+              <span class="mr-3">Préscolaire:</span
+              ><span id="eleves_n0">255</span>
+            </div>
+            <div class="text-xs">
+              <span class="mr-3">Primaire:</span><span id="eleves_n1">255</span>
+            </div>
+            <div class="text-xs">
+              <span class="mr-3">Collège:</span><span id="eleves_n2">255</span>
+            </div>
+            <div class="text-xs">
+              <span class="mr-3">Lycée:</span><span id="eleves_n3">255</span>
+            </div>
+          </div>
+          <div class="col-auto">
+            <i class="fas fa-book-reader fa-3x text-gray-300"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Earnings (Monthly) Card Example -->
+  <div class="col-xl-3 col-md-6 mb-4">
+    <div class="card border-left-info shadow h-100 py-2">
+      <div class="card-body">
+        <div class="row no-gutters align-items-center">
+          <div class="col mr-2">
+            <div class="text-xs font-weight-bold text-info text-uppercase mb-1">
+              Nombre d’énseigants en salle
+            </div>
+            <div class="text-xs">
+              <span class="mr-3">Préscolaire:</span
+              ><span id="ens_en_classe_n0">255</span>
+            </div>
+            <div class="text-xs">
+              <span class="mr-3">Primaire:</span
+              ><span id="ens_en_classe_n1">255</span>
+            </div>
+            <div class="text-xs">
+              <span class="mr-3">Collège:</span
+              ><span id="ens_en_classe_n2">255</span>
+            </div>
+            <div class="text-xs">
+              <span class="mr-3">Lycée:</span
+              ><span id="ens_en_classe_n3">255</span>
+            </div>
+          </div>
+          <div class="col-auto">
+            <i class="fas fa-chalkboard-teacher fa-3x text-gray-300"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pending Requests Card Example -->
+  <div class="col-xl-3 col-md-6 mb-4">
+    <div class="card border-left-warning shadow h-100 py-2">
+      <div class="card-body">
+        <div class="row no-gutters align-items-center">
+          <div class="col mr-2">
+            <div
+              class="text-xs font-weight-bold text-warning text-uppercase mb-1"
+            >
+             Nombre de salles de classe
+            </div>
+            <div class="text-xs">
+              <span class="mr-3">Préscolaire:</span
+              ><span id="places_n0">255</span>
+            </div>
+            <div class="text-xs">
+              <span class="mr-3">Primaire:</span><span id="places_n1">255</span>
+            </div>
+            <div class="text-xs">
+              <span class="mr-3">Collège:</span><span id="places_n2">255</span>
+            </div>
+            <div class="text-xs">
+              <span class="mr-3">Lycée:</span><span id="places_n3">255</span>
+            </div>
+          </div>
+          <div class="col-auto">
+            <i class="fas fa-square fa-3x text-gray-300"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-lg-12">
+    <div class="card shadow mb-4">
+      <!-- Card Header - Dropdown -->
+      <div
+        class="card-header py-3 d-flex flex-row align-items-center justify-content-between"
+      >
+        <h6 class="m-0 font-weight-bold text-primary">
+          Évolution du nombre d’écoles
+        </h6>
+      </div>
+      <!-- Card Body -->
+      <div class="card-body">
+        <div class="row">
+          <div class="col-xl-3 col-md-6 mb-4" id="dom-ctx-etabs-n0">
+            <canvas id="ctx-etabs-n0" height="200"></canvas>
+          </div>
+          <div class="col-xl-3 col-md-6 mb-4" id="dom-ctx-etabs-n1">
+            <canvas id="ctx-etabs-n1" height="200"></canvas>
+          </div>
+          <div class="col-xl-3 col-md-6 mb-4" id="dom-ctx-etabs-n2">
+            <canvas id="ctx-etabs-n2" height="200"></canvas>
+          </div>
+          <div class="col-xl-3 col-md-6 mb-4" id="dom-ctx-etabs-n3">
+            <canvas id="ctx-etabs-n3" height="200"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-lg-12">
+    <div class="card shadow mb-4">
+      <!-- Card Header - Dropdown -->
+      <div
+        class="card-header py-3 d-flex flex-row align-items-center justify-content-between"
+      >
+        <h6 class="m-0 font-weight-bold text-primary">
+          Évolution du nombre d’élèves
+        </h6>
+      </div>
+      <!-- Card Body -->
+      <div class="card-body">
+        <div class="row">
+          <div class="col-xl-3 col-md-6 mb-4" id="dom-ctx-eleve-n0">
+            <canvas id="ctx-eleve-n0" height="200"></canvas>
+          </div>
+          <div class="col-xl-3 col-md-6 mb-4" id="dom-ctx-eleve-n1">
+            <canvas id="ctx-eleve-n1" height="200"></canvas>
+          </div>
+          <div class="col-xl-3 col-md-6 mb-4" id="dom-ctx-eleve-n2">
+            <canvas id="ctx-eleve-n2" height="200"></canvas>
+          </div>
+          <div class="col-xl-3 col-md-6 mb-4" id="dom-ctx-eleve-n3">
+            <canvas id="ctx-eleve-n3" height="200"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %} {% block scripts %}
+<script src="{% static 'vendor/chart.js/Chart.min.js' %}"></script>
+<script src="{% static 'js/dashboard.js' %}"></script>
+{% endblock %}

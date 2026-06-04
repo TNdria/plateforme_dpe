@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block style %}
+<link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
+<link rel="stylesheet" href="{% static 'vendor/leaflet/easy-button.css' %}" />
+<link rel="stylesheet" href="{% static 'vendor/leaflet/fullscreen/Control.FullScreen.css' %}" />
+<link rel="stylesheet" href="{% static 'vendor/leaflet/Contextual/contextual.css' %}" />
+<link rel="stylesheet" href="{% static 'vendor/leaflet/Contextual/contextual.theme.css' %}" />
+
+<style>
+    .slider-container {
+        padding: 20px;
+    }
+    #slider {
+        margin: 20px 0;
+    }
+</style>
+{% endblock %}
+
+{% block title %}VISUALISATION - DIAGNOSTIC{% endblock %}
+
+{% block filtre %}
+<span class="ml-5 text-gray-700" style="font-weight: bold">
+  DIAGNOSTIC
+</span>
+{% endblock %}
+
+{% block container_fluid %}
+<div class="row">
+  
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'vendor/leaflet/leaflet.js' %}"></script>
+<script src="{% static 'vendor/leaflet/leaflet-heat.js' %}"></script>
+<script src="{% static 'vendor/leaflet/leaflet-bing-layer.min.js' %}"></script>
+<script src="{% static 'vendor/leaflet/easy-button.js' %}"></script>
+<script src="{% static 'vendor/leaflet/leaflet-easy-print.js' %}"></script>
+<script src="{% static 'vendor/leaflet/fullscreen/Control.FullScreen.js' %}"></script>
+<script src="{% static 'vendor/leaflet/Contextual/contextual.js' %}"></script>
+<script src="{% static 'diagnostic/js/referentiel.js' %}"></script>
+<script src="{% static 'diagnostic/js/cartethematique.js' %}"></script>
+{% endblock %}

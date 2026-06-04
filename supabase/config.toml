@@ -1,0 +1,10 @@
+project_id = "nwmofahnrfhprcwnmatv"
+
+[functions.db-query]
+verify_jwt = false
+
+[functions.ai-diagnostic]
+verify_jwt = false
+
+[functions.django-proxy]
+verify_jwt = false

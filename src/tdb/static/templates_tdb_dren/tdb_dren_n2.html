@@ -1,0 +1,1310 @@
+<div class="col-lg-12">
+    <!-- Tabs Navigation -->
+    <ul class="nav nav-tabs mb-2" id="pills-tab-tdb" role="tablist">
+        <li class="nav-item">
+            <a class="nav-link active" id="tab-n0-tab" data-toggle="tab" href="#tab-n0" role="tab"
+                aria-controls="tab-n0" aria-selected="true">Info Générales</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" id="tab-n1-tab" data-toggle="tab" href="#tab-n1" role="tab" aria-controls="tab-n1"
+                aria-selected="false">Resultats</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" id="tab-n2-tab" data-toggle="tab" href="#tab-n2" role="tab" aria-controls="tab-n2"
+                aria-selected="false">Ressources</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" id="tab-n3-tab" data-toggle="tab" href="#tab-n3" role="tab" aria-controls="tab-n3"
+                aria-selected="false">Goulot et Efficience</a>
+        </li>
+    </ul>
+
+    <!-- Tab Content -->
+    <div class="tab-content" id="myTabContent">
+        <div class="tab-pane fade show active" id="tab-n0" role="tabpanel" aria-labelledby="tab-n0-tab">
+            <div class="row">
+                <div class="col-2 align-content-center d-flex justify-content-center"><img
+                        src="/static/img/men_logo.png" width="100" height="100"></div>
+                <div class="col-8 d-flex justify-content-center">
+                    <div class="text-center mb-3 ">
+                        <h5>Ministère de l'Éducation Nationale</h5>
+                        <h6>TABLEAU DE BORD COLLÈGE 2024-2025</h6>
+                        <p>DREN :<strong><span id="dren_name"></span></strong> &nbsp;&nbsp; &nbsp;&nbsp;
+                        <div class="legend">
+                            <span><span class="legend-box blue"></span>Données non disponibles</span>
+                            <span><span class="legend-box yellow"></span>Données à vérifier</span>
+                            <span><span class="legend-box red"></span>Attention</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-2 d-flex justify-content-center"><img src="/static/img/tdb.png" width="100" height="100"></div>
+            </div>
+            <div class="row">
+                <div class="col-4">
+                    <table class="table table-bordered">
+                        <thead>
+                            <tr>
+                                <th></th>
+                                <th>Ensemble</th>
+                                <th>Dont Public</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <th class="text-left">Nombre de écoles fonctionnels</th>
+                                <td>560</td>
+                                <td>306</td>
+                            </tr>
+                            <tr>
+                                <th class="text-left">Nombre de salles</th>
+                                <td>2 924</td>
+                                <td>1 692</td>
+                            </tr>
+                            <tr>
+                                <th class="text-left">Nombre de écoles fermés (ou fiche non disponible)</th>
+                                <td>82</td>
+                                <td>32</td>
+                            </tr>
+                            <tr>
+                                <th class="text-left">Nombre de sections</th>
+                                <td>3 128</td>
+                                <td>1 930</td>
+                            </tr>
+                            <tr>
+                                <th class="text-left">Nombre de places assises</th>
+                                <td>113 490</td>
+                                <td>65 458</td>
+                            </tr>
+                            <tr>
+                                <th class="text-left">Effectif des élèves</th>
+                                <td>125 128</td>
+                                <td>87 486</td>
+                            </tr>
+                            <tr>
+                                <th class="text-left">Dont filles</th>
+                                <td>65 864</td>
+                                <td>46 064</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                </div>
+                <div class="col-4">
+                    <div class="row">
+                        <table class="table table-bordered">
+                            <tbody>
+                                <tr>
+                                    <th class="text-left">Nombre des CISCOs</th>
+                                    <td id="nombre_cisco">10</td>
+                                </tr>
+                                <tr>
+                                    <th class="text-left">Nombre des ZAPs</th>
+                                    <td id="nombre_zap">5</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="row">
+                        <table class="table table-bordered">
+                            <thead>
+                                <tr>
+                                    <th></th>
+                                    <th>Ensemble</th>
+                                    <th>Dont Public</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <th class="text-left">Nombre enseignants littéraires</th>
+                                    <td id="enseignants_litteraires_ensemble">3074</td>
+                                    <td id="enseignants_litteraires_public">2130</td>
+                                </tr>
+                                <tr>
+                                    <th class="text-left">Nombre enseignants scientifiques</th>
+                                    <td id="enseignants_scientifiques_ensemble">1842</td>
+                                    <td id="enseignants_scientifiques_public">1140</td>
+                                </tr>
+                                <tr>
+                                    <th class="text-left">Nombre enseignants EPS</th>
+                                    <td id="enseignants_eps_ensemble">280</td>
+                                    <td id="enseignants_eps_public">134</td>
+                                </tr>
+                                <tr>
+                                    <th class="text-left">Nombre enseignants non en classe</th>
+                                    <td class="gray-bg"></td>
+                                    <td id="enseignants_non_classe">936</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="col-4">
+                    <table class="table table-bordered">
+                        <thead>
+                            <tr>
+                                <th></th>
+                                <th>Ensemble</th>
+                                <th>Dont Public</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <th class="text-left">Nombre enseignants littéraires</th>
+                                <td>3 074</td>
+                                <td>2 130</td>
+                            </tr>
+                            <tr>
+                                <th class="text-left">Nombre enseignants scientifiques</th>
+                                <td>1 842</td>
+                                <td>1 140</td>
+                            </tr>
+                            <tr>
+                                <th class="text-left">Nombre enseignants EPS</th>
+                                <td>280</td>
+                                <td>134</td>
+                            </tr>
+                            <tr>
+                                <th class="text-left">Nombre enseignants non en classe</th>
+                                <td class="gray-bg"></td>
+                                <td>936</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div><!-- // n0-tab-->
+
+        <div class="tab-pane fade" id="tab-n1" role="tabpanel" aria-labelledby="tab-n1-tab">
+            <div class="row">
+                <div class="col-12 section-title text-center">RÉSULTATS SCOLAIRES</div>
+            </div>
+            <div class="row">
+                <div class="col-6" style="max-height: 277px;">
+                    <table class="table table-bordered">
+                        <thead>
+                            <tr>
+                                <th>Couverture</th>
+                                <th>Votre DREN</th>
+                                <th>MADA</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <th class="text-left">Taux de transition primaire vers collège</th>
+                                <td>85.1%</td>
+                                <td>102.7%</td>
+                            </tr>
+                            <tr>
+                                <th class="text-left">TBA en 6ème année</th>
+                                <td>82.5%</td>
+                                <td>85.4%</td>
+                            </tr>
+                            <tr>
+                                <th class="text-left">TBS</td>
+                                <td>42.5%</th>
+                                <td>50.5%</td>
+                            </tr>
+                            <tr>
+                                <th class="text-left">TNS</td>
+                                <td>15.2%</th>
+                                <td>20.2%</td>
+                            </tr>
+                            <tr>
+                                <th class="text-left">Taux d'achèvement</th>
+                                <td>13.1%</td>
+                                <td>15.3%</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="col-6 bg-gray-200 pr-3" style="max-height: 277px;">
+                    <h6>Profil de Rétention (Profil pseudo-longitudinal)</h6>
+                    <canvas id="profil_retention_chart" width="350" height="85"></canvas>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-6">
+                    <table class="table table-bordered">
+                        <tr class="bg-gray-300">
+                            <th colspan="9">RESULTAT AU BEPC</th>
+                        </tr>
+                        <tr class="bg-gray-200">
+                            <td rowspan="3">Matieres</td>
+                            <td colspan="6">Votre DREN</td>
+                            <td colspan="2">MADA</td>
+                        </tr>
+                        <tr class="bg-gray-100 text-bold">
+                            <td colspan="2">Public</td>
+                            <td colspan="2">Privée</td>
+                            <td colspan="2">Ensemble</td>
+                            <td colspan="2">Ensemble</td>
+                        </tr>
+                        <tr>
+                            <th>SM</th>
+                            <th>%>10</th>
+                            <th>SM</th>
+                            <th>%>10</th>
+                            <th>SM</th>
+                            <th>%>10</th>
+                            <th>SM</th>
+                            <th>%>10</th>
+                        </tr>
+                        <tr>
+                            <td class="text-left">Malagasy</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                        <tr>
+                            <td class="text-left">Français</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                        <tr>
+                            <td class="text-left">Mathématiques</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                        <tr>
+                            <td class="text-left">SVT</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                        <tr>
+                            <td class="text-left">PC</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                        <tr>
+                            <td class="text-left">Pourcentage des admis</td>
+                            <td colspan="2"></td>
+                            <td colspan="2"></td>
+                            <td colspan="2"></td>
+                            <td colspan="2"></td>
+                        </tr>
+                        <tr>
+                            <td class="text-left pl-5">-dont Fille</td>
+                            <td colspan="2"></td>
+                            <td colspan="2"></td>
+                            <td colspan="2"></td>
+                            <td colspan="2"></td>
+                        </tr>
+                        <tr>
+                            <td class="text-left pl-5">-dont Garçons</td>
+                            <td colspan="2"></td>
+                            <td colspan="2"></td>
+                            <td colspan="2"></td>
+                            <td colspan="2"></td>
+                        </tr>
+                    </table>
+                </div><!-- col-6  BEPC -->
+                <div class="col-6">
+                    <table class="table table-bordered">
+                        <tr class="bg-gray-300">
+                            <th colspan="9">Evaluation des acquis scolaires 4ème annèe du collège</th>
+                        </tr>
+                        <tr class="bg-gray-200">
+                            <td rowspan="3">Matieres</td>
+                            <td colspan="6">Votre DREN</td>
+                            <td colspan="2">MADA</td>
+                        </tr>
+                        <tr class="bg-gray-100 text-bold">
+                            <td colspan="2">Public</td>
+                            <td colspan="2">Privée</td>
+                            <td colspan="2">Ensemble</td>
+                            <td colspan="2">Ensemble</td>
+                        </tr>
+                        <tr>
+                            <th>SM (std)</th>
+                            <th>%* >=50%</th>
+                            <th>SM (std)</th>
+                            <th>%* >=50%</th>
+                            <th>SM (std)</th>
+                            <th>%* >=50%</th>
+                            <th>SM (std)</th>
+                            <th>%* >=50%</th>
+                        </tr>
+                        <tr>
+                            <td class="text-left">Malagasy</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                        <tr>
+                            <td class="text-left">Français</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                        <tr>
+                            <td class="text-left">Mathématiques</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                    </table>
+                    <p>%* élèves ayant atteint le seuil de compétence pour chaque discipline (50%)</p>
+                    <p>std : ecart-type</p>
+                </div><!-- col-6 UEAS-->
+            </div><!-- //row-->
+
+            <div class="row">
+                <div class="col-4"><!-- Ptge redoublant -->
+                    <table class="table table-bordered">
+                        <tr class="bg-gray-300">
+                            <th colspan="5">Pourcentage de redoublants (en %)</th>
+                        </tr>
+                        <tr class="bg-gray-200">
+                            <td rowspan="2">Niveau</td>
+                            <td colspan="3">Votre DREN</td>
+                            <td>MADA</td>
+                        </tr>
+                        <tr class="bg-gray-100 text-dark">
+                            <td class="">Public</td>
+                            <td>Privée</td>
+                            <td>Ensemble</td>
+                            <td>Ensemble</td>
+                        </tr>
+                        <tr>
+                            <td class="text-left">6ème</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                        <tr>
+                            <td class="text-left">5ème</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                        <tr>
+                            <td class="text-left">4ème</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                        <tr>
+                            <td class="text-left">3ème</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                        <tr>
+                            <td class="text-left">Dans le cycle</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                        <tr>
+                            <td class="text-left pl-5">-Dont Filles</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                        <tr>
+                            <td class="text-left pl-5">-Dont Garçons</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                        <tr>
+                            <td class="text-left pl-5">-Disparité au depens des</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                    </table>
+                </div><!-- col-4 Ptge Redoublant -->
+
+                <div class="col-4"><!-- Tx promotion -->
+                    <table class="table table-bordered">
+                        <tr class="bg-gray-300">
+                            <th colspan="5">Taux de Promotion (en %)</th>
+                        </tr>
+                        <tr class="bg-gray-200">
+                            <td rowspan="2">Niveau</td>
+                            <td colspan="3">Votre DREN</td>
+                            <td>MADA</td>
+                        </tr>
+                        <tr class="bg-gray-100 text-dark">
+                            <td class="">Public</td>
+                            <td>Privée</td>
+                            <td>Ensemble</td>
+                            <td>Ensemble</td>
+                        </tr>
+                        <tr>
+                            <td class="text-left">6ème</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                        <tr>
+                            <td class="text-left">5ème</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                        <tr>
+                            <td class="text-left">4ème</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                        <tr class="gray-bg">
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td class="text-left">Dans le cycle</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                        <tr>
+                            <td class="text-left pl-3">-Dont Filles</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                        <tr>
+                            <td class="text-left pl-3">-Dont Garçons</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                        <tr>
+                            <td class="text-left pl-3">-Disparité au depens des</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                    </table>
+                </div><!-- col-4 tx de promotion -->
+
+                <div class="col-4"><!-- Tx abandon -->
+                    <table class="table table-bordered">
+                        <tr class="bg-gray-300">
+                            <th colspan="5">Taux d'abandon (en %)</th>
+                        </tr>
+                        <tr class="bg-gray-200">
+                            <td rowspan="2">Niveau</td>
+                            <td colspan="3">Votre DREN</td>
+                            <td>MADA</td>
+                        </tr>
+                        <tr class="bg-gray-100 text-dark">
+                            <td class="">Public</td>
+                            <td>Privée</td>
+                            <td>Ensemble</td>
+                            <td>Ensemble</td>
+                        </tr>
+                        <tr>
+                            <td class="text-left">6ème</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                        <tr>
+                            <td class="text-left">5ème</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                        <tr>
+                            <td class="text-left">4ème</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                        <tr class="gray-bg">
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td class="text-left">Dans le cycle</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                        <tr>
+                            <td class="text-left pl-3">-Dont Filles</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                        <tr>
+                            <td class="text-left pl-3">-Dont Garçons</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                        <tr>
+                            <td class="text-left pl-3">-Disparité au depens des</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                            <td>0</td>
+                        </tr>
+                    </table>
+                </div><!-- col-4 tx d'abandon -->
+
+            </div><!--//row taux de flux-->
+
+        </div><!-- // n1-tab -->
+
+        <!-- tab ressources -->
+        <div class="tab-pane fade" id="tab-n2" role="tabpanel" aria-labelledby="tab-n2-tab">
+
+            <div class="row">
+                <div class="col-12 section-title text-center">RESSOURCES SCOLAIRES</div>
+            </div>
+
+            <div class="row">
+                <div class="col-6">
+                    <table class="table table-bordered">
+                        <thead>
+                            <tr>
+                                <th colspan="3">Ressources humaines</th>
+                            </tr>
+                            <tr>
+                                <th></th>
+                                <th>Votre DREN</th>
+                                <th>MADA</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Taux d'utilisation enseignant des enseignants publics</td>
+                                <td>0%</td>
+                                <td>0%</td>
+                            </tr>
+                            <tr>
+                                <td>dont littéraire</td>
+                                <td>0%</td>
+                                <td>0%</td>
+                            </tr>
+                            <tr>
+                                <td>dont scientifique</td>
+                                <td>0%</td>
+                                <td>0%</td>
+                            </tr>
+                            <tr>
+                                <td>Pourcentage d'enseignants ayant au moins le diplôme bac+ 2</td>
+                                <td>27.5%</td>
+                                <td>21.5%</td>
+                            </tr>
+                            <tr>
+                                <td>dont public</td>
+                                <td>15.3%</td>
+                                <td>10.3%</td>
+                            </tr>
+                            <tr>
+                                <td>dont privé</td>
+                                <td>45.3%</td>
+                                <td>37.3%</td>
+                            </tr>
+                            <tr>
+                                <td>pourcentage d'enseignants ayant de diplôme pédagogique (min Bac+education)</td>
+                                <td>28.1%</td>
+                                <td>19.2%</td>
+                            </tr>
+                            <tr>
+                                <td>dont public</td>
+                                <td>38.2%</td>
+                                <td>28.4%</td>
+                            </tr>
+                            <tr>
+                                <td>dont privé</td>
+                                <td>13.2%</td>
+                                <td>6.1%</td>
+                            </tr>
+                            <tr>
+                                <td>pourcentage de volume horaire hebdomadaire réellement requis par les élèves pour la
+                                    privé</td>
+                                <td>0%</td>
+                                <td>0%</td>
+                            </tr>
+                            <tr>
+                                <td>dont littéraire</td>
+                                <td>0%</td>
+                                <td>0%</td>
+                            </tr>
+                            <tr>
+                                <td>dont scientifique</td>
+                                <td>0%</td>
+                                <td>0%</td>
+                            </tr>
+                            <tr>
+                                <td>nombre d’élèves par personnel administratif</td>
+                                <td>8 500</td>
+                                <td>9 645</td>
+                            </tr>
+                            <tr>
+                                <td>dont public</td>
+                                <td>9 346</td>
+                                <td>9 666</td>
+                            </tr>
+                            <tr>
+                                <td>dont privé</td>
+                                <td>7 022</td>
+                                <td>9 610</td>
+                            </tr>
+                            <tr>
+                                <td>pourcentage d’enseignants qui ne sont pas répartis en fonction de Nombre de élèves
+                                    public</td>
+                                <td>8.7%</td>
+                                <td>39.5%</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div><!-- //col-6 ressources humaines -->
+
+                <!-- // autres ressources -->
+                <div class="col-6">
+                    <table class="table table-bordered">
+                        <thead>
+                            <tr>
+                                <th colspan="3">Ressources humaines</th>
+                            </tr>
+                            <tr>
+                                <th></th>
+                                <th>Votre DREN</th>
+                                <th>MADA</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Taux d'utilisation enseignant des enseignants publics</td>
+                                <td>0%</td>
+                                <td>0%</td>
+                            </tr>
+                            <tr>
+                                <td>dont littéraire</td>
+                                <td>0%</td>
+                                <td>0%</td>
+                            </tr>
+                            <tr>
+                                <td>dont scientifique</td>
+                                <td>0%</td>
+                                <td>0%</td>
+                            </tr>
+                            <tr>
+                                <td>Pourcentage d'enseignants ayant au moins le diplôme bac+ 2</td>
+                                <td>27.5%</td>
+                                <td>21.5%</td>
+                            </tr>
+                            <tr>
+                                <td>dont public</td>
+                                <td>15.3%</td>
+                                <td>10.3%</td>
+                            </tr>
+                            <tr>
+                                <td>dont privé</td>
+                                <td>45.3%</td>
+                                <td>37.3%</td>
+                            </tr>
+                            <tr>
+                                <td>pourcentage d'enseignants ayant de diplôme pédagogique (min Bac+education)</td>
+                                <td>28.1%</td>
+                                <td>19.2%</td>
+                            </tr>
+                            <tr>
+                                <td>dont public</td>
+                                <td>38.2%</td>
+                                <td>28.4%</td>
+                            </tr>
+                            <tr>
+                                <td>dont privé</td>
+                                <td>13.2%</td>
+                                <td>6.1%</td>
+                            </tr>
+                            <tr>
+                                <td>pourcentage de volume horaire hebdomadaire réellement requis par les élèves pour la
+                                    privé</td>
+                                <td>0%</td>
+                                <td>0%</td>
+                            </tr>
+                            <tr>
+                                <td>dont littéraire</td>
+                                <td>0%</td>
+                                <td>0%</td>
+                            </tr>
+                            <tr>
+                                <td>dont scientifique</td>
+                                <td>0%</td>
+                                <td>0%</td>
+                            </tr>
+                            <tr>
+                                <td>nombre d’élèves par personnel administratif</td>
+                                <td>8 500</td>
+                                <td>9 645</td>
+                            </tr>
+                            <tr>
+                                <td>dont public</td>
+                                <td>9 346</td>
+                                <td>9 666</td>
+                            </tr>
+                            <tr>
+                                <td>dont privé</td>
+                                <td>7 022</td>
+                                <td>9 610</td>
+                            </tr>
+                            <tr>
+                                <td>pourcentage d’enseignants qui ne sont pas répartis en fonction de Nombre de élèves
+                                    public</td>
+                                <td>8.7%</td>
+                                <td>39.5%</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div><!-- //col-6 autres ressources -->
+            </div><!--//row-->
+
+            <!-- Manuel -->
+            <div class="row">
+                <div class="col-6">
+                    <table class="table table-bordered">
+                        <thead class="bg-gray-200">
+                            <tr>
+                                <th colspan="3">Nombre de d'élèves par manuel (Pour les collèges publiques)</th>
+                            </tr>
+                            <tr>
+                                <th></th>
+                                <th>Votre DREN</th>
+                                <th>MADA</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Malagasy</td>
+                                <td>0%</td>
+                                <td>0%</td>
+                            </tr>
+                            <tr>
+                                <td>Français</td>
+                                <td>0%</td>
+                                <td>0%</td>
+                            </tr>
+                            <tr>
+                                <td>Mathématiques</td>
+                                <td>0%</td>
+                                <td>0%</td>
+                            </tr>
+                            <tr>
+                                <td>SVT</td>
+                                <td>27.5%</td>
+                                <td>21.5%</td>
+                            </tr>
+                            <tr>
+                                <td>Physique-chimie</td>
+                                <td>15.3%</td>
+                                <td>10.3%</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div><!-- //col-6 ressources humaines -->
+
+                <!-- // autres ressources -->
+                <div class="col-6">
+                    <table class="table table-bordered">
+                        <thead  class="bg-gray-200">
+                            <tr>
+                                <th colspan="3">Pourcentage de manuels qui ne sont pas repartis enfonction de Nombre de d'élèves (Taux d'aléa)</th>
+                            </tr>
+                            <tr>
+                                <th></th>
+                                <th>Votre DREN</th>
+                                <th>MADA</th>
+                            </tr>
+                        </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Malagasy</td>
+                                    <td>0%</td>
+                                    <td>0%</td>
+                                </tr>
+                                <tr>
+                                    <td>Français</td>
+                                    <td>0%</td>
+                                    <td>0%</td>
+                                </tr>
+                                <tr>
+                                    <td>Mathématiques</td>
+                                    <td>0%</td>
+                                    <td>0%</td>
+                                </tr>
+                                <tr>
+                                    <td>SVT</td>
+                                    <td>27.5%</td>
+                                    <td>21.5%</td>
+                                </tr>
+                                <tr>
+                                    <td>Physique-chimie</td>
+                                    <td>15.3%</td>
+                                    <td>10.3%</td>
+                                </tr>
+                            </tbody>
+                    </table>
+                </div><!-- //col-6 autres ressources -->
+            </div><!--//row-->
+
+
+        </div><!-- // n2-tab-->
+
+        <!-- goulot et diagnostics-->
+        <div class="tab-pane fade" id="tab-n3" role="tabpanel" aria-labelledby="tab-n3-tab">
+            <div class="row">
+                <div class="col-12 section-title text-center">GOULOT D'ETRANGLEMENT DU SYSTEME</div>
+            </div>
+            <div class="row">
+                <div class="col-12">
+                    <canvas id="ctxGoulot" width="600" height="250"></canvas>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-12 section-title text-center">EFFICIENCE ET DIAGNOSTIQUE DU SYSTEME</div>
+            </div>
+            <div class="row">
+                <div class="col-6">
+                    <canvas id="ctxEff" width="300" height="300"></canvas>
+                </div>
+                <div class="col-6">
+                    <div class="card" >
+                        <div class="card-header">
+                            Remarque(s) et Diagnostique(s)
+                        </div>
+                        <ul class="list-group list-group-flush">
+                            <li class="list-group-item">La performance de votre DREN se situe dans la moyenne, compte tenu du niveau de ressources
+                            conforme à la moyenne. Ce qui est acceptable</li>
+                            <li class="list-group-item">Une attention particulière doit être portée è la réduction du redoublement et è l'amélioration du
+                            taux de réussite aux examens</li>
+                            <li class="list-group-item">Une attention particulière doit être portée è la réduction du redoublement et è l'amélioration du
+                            taux de réussite aux examens</li>
+                            <li class="list-group-item">La performance de votre DREN se situe dans la moyenne, compte tenu du niveau de ressources
+                                conforme à la moyenne. Ce qui est acceptable</li>
+                            <li class="list-group-item">Une attention particulière doit être portée è la réduction du redoublement et è
+                                l'amélioration du
+                                taux de réussite aux examens</li>
+                            <li class="list-group-item">Une attention particulière doit être portée è la réduction du redoublement et è
+                                l'amélioration du
+                                taux de réussite aux examens</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+        </div><!-- // n3-tab-->
+
+    </div><!-- //Tab Content -->
+
+</div>
+
+<script>
+    let ctxRet = document.getElementById('profil_retention_chart');
+    chartRet = new Chart(ctxRet, {
+        type: 'line',
+        data: {
+            labels: ['6em', '5em', '4em', '3em'],
+            datasets: [
+                {
+                    label: 'Profil Régional',
+                    data: [100, 98.5, 95.2, 85.2],
+                    borderColor: 'blue',
+                    fill: true
+                },
+                {
+                    label: 'Profil National',
+                    data: [100, 90.5, 89.2, 69.2],
+                    borderColor: 'black',
+                    fill: false
+                }
+            ]
+        }
+    });
+    chartRet.resize()
+
+    let ctxGoulot = document.getElementById('ctxGoulot').getContext('2d');
+    chartGoulot = new Chart(ctxGoulot, {
+        type: 'bar',
+        data: {
+            labels: [
+                'Taux de transition primaire vers collège',
+                'Pourcentage de commune ayant au moins un collège',
+                'Pourcentage des élèves vivant à moins de 5 km',
+                'Nombre de salle pour 1000 enfants scolarisables',
+                'Taux de rétention',
+                'Ratio élèves-section',
+                'Ratio élèves-Malagasy',
+                'Ratio élèves-Mathématiques',
+                'Ratio élèves-Français',
+                'Ratio élèves-SVT',
+                'Ratio élèves-PC',
+                'Enseignants qualifiés'
+            ],
+            datasets: [{
+                label: 'Metrics (%)',
+                data: [85.1, 100, 88, 44.6, 99.2, 41.7, 48.8, 58.8, 8.5, 6.2, 38.3],
+                backgroundColor: function (context) {
+                    const value = context.dataset.data[context.dataIndex];
+                    if (value < 30) return 'red';
+                    if (value >= 30 && value <= 60) return 'orange';
+                    return 'green';
+                },
+                borderColor: '#FFFFFF',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    max: 100,
+                    title: {
+                        display: true,
+                        text: '%'
+                    }
+                }
+            },
+            indexAxis: 'y', // Horizontal bar chart
+            plugins: {
+                legend: {
+                    display: true
+                }
+            }
+        }
+    })
+
+    chartGoulot.resize()
+
+    let ctxEff = document.getElementById('ctxEff').getContext('2d');
+    chartEff = new Chart(ctxEff, {
+        type: 'scatter',
+        data: {
+            datasets: [{
+                label: 'Points',
+                data: [
+                    { x: 0, y: 1 }, // Low, Medium
+                    { x: 0, y: 2 }, // Low, High
+                    { x: 1, y: 0 }, // Medium, Low
+                    { x: 1, y: 2 }, // Medium, High
+                    { x: 2, y: 0 }, // High, Low
+                    { x: 2, y: 1 }  // High, Medium
+                ],
+                pointBackgroundColor: 'rgba(0, 0, 0, 0)', // Transparent points
+                pointBorderColor: 'rgba(0, 0, 0, 0)', // No border
+                pointRadius: 0 // Hide default points
+            }]
+        },
+        options: {
+            scales: {
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Resources'
+                    },
+                    ticks: {
+                        callback: function (value) {
+                            const labels = ['Low', 'Medium', 'High'];
+                            return labels[value];
+                        },
+                        stepSize: 1,
+                        min: 0,
+                        max: 2
+                    }
+                },
+                y: {
+                    title: {
+                        display: true,
+                        text: 'Results'
+                    },
+                    ticks: {
+                        callback: function (value) {
+                            const labels = ['Low', 'Medium', 'High'];
+                            return labels[value];
+                        },
+                        stepSize: 1,
+                        min: 0,
+                        max: 2
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: false
+                },
+                annotation: {
+                    annotations: [
+                        {
+                            type: 'label',
+                            xValue: 0,
+                            yValue: 1,
+                            content: ['*😊'],
+                            font: { size: 20 },
+                            color: 'black'
+                        },
+                        {
+                            type: 'label',
+                            xValue: 0,
+                            yValue: 2,
+                            content: ['*♥'],
+                            font: { size: 20 },
+                            color: 'red'
+                        },
+                        {
+                            type: 'label',
+                            xValue: 1,
+                            yValue: 0,
+                            content: ['*😞'],
+                            font: { size: 20 },
+                            color: 'black'
+                        },
+                        {
+                            type: 'label',
+                            xValue: 1,
+                            yValue: 2,
+                            content: ['*😊'],
+                            font: { size: 20 },
+                            color: 'black'
+                        },
+                        {
+                            type: 'label',
+                            xValue: 2,
+                            yValue: 0,
+                            content: ['*😢'],
+                            font: { size: 20 },
+                            color: 'black'
+                        },
+                        {
+                            type: 'label',
+                            xValue: 2,
+                            yValue: 1,
+                            content: ['*😞'],
+                            font: { size: 20 },
+                            color: 'black'
+                        }
+                    ]
+                }
+            }
+        }
+    })
+
+    chartEff.resize()
+
+
+    //remplace toutes image charts et highcharts en dataUrl
+    function replaceCanvasesWithImages() {
+        document.querySelectorAll("canvas").forEach(canvas => {
+            const img = document.createElement("img");
+            img.src = canvas.toDataURL("image/png");
+            img.style.maxWidth = "100%";
+            canvas.parentNode.replaceChild(img, canvas);
+        });
+    }
+
+    //precharger les dom avec images
+    async function preloadImages(element) {
+            const images = element.querySelectorAll("img");
+            const promises = Array.from(images).map(img => {
+                if (img.complete) return Promise.resolve();
+                return new Promise(resolve => {
+                    img.onload = resolve
+                    img.onerror = resolve 
+                })
+            });
+            await Promise.all(promises)
+        }
+
+    async function generatePDF() {
+
+        replaceCanvasesWithImages() 
+
+        const dren_name = $("#dren option:selected").text();
+
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF({
+            orientation: "portrait",
+            unit: "mm",
+            format: "a3"
+        });
+
+        const pageWidth = 297;
+        const pageHeight = 420;
+        const margin = 10; // marge de 10mm
+        const usableWidth = pageWidth - margin * 2;
+        const usableHeight = pageHeight - margin * 2;
+
+    
+        const panes = document.querySelectorAll(".tab-pane")
+        $(`#pills-tab-tdb .nav-item a.nav-link`).removeClass("active")
+        $(".tab-pane").removeClass("show active");
+        for (let i = 0; i < panes.length; i++) {
+            // Supprimer la classe active de tous les tab-panes
+            document.querySelectorAll(".tab-pane").forEach(pane => {
+                pane.classList.remove("show")
+                pane.classList.remove("active")
+            })
+            // show active
+            //$(`#tab-n${i}-tab`).addClass("active")
+            $(`#pills-tab-tdb .nav-item a.nav-link`).removeClass("active")
+            $(`#pills-tab-tdb .nav-item a.nav-link`).eq(i).addClass("active")
+            $(`#tab-n${i}-tab`).click()
+            $(".tab-pane").eq(i).addClass("show active")
+            //console.log("tab-pane",i, $(".tab-pane").attr("class"))
+            const clone = panes[i].cloneNode(true)
+            // Créer un conteneur temporaire
+            const tempDiv = document.createElement("div")
+            tempDiv.style.position = "absolute"
+            tempDiv.style.left = "-9999px"
+            tempDiv.style.top = "0"
+            tempDiv.style.width = "1200px"
+            tempDiv.style.height = "auto"
+            tempDiv.style.display = "block"
+
+
+            // Copier les styles de la page
+            const styles = document.querySelectorAll("style, link[rel='stylesheet']");
+            styles.forEach(style => tempDiv.appendChild(style.cloneNode(true)));
+            tempDiv.appendChild(clone);
+            document.body.appendChild(tempDiv);
+
+            // Attendre que les images soient chargées
+            await preloadImages(clone);
+
+            // Attendre que le DOM soit complètement rendu
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            // Capture avec html2canvas
+            const canvas = await html2canvas(clone, {
+                scale: 3,
+                useCORS: true,
+                logging: false,//true, // Activer les logs pour déboguer
+                windowWidth: 1200, // Forcer la largeur de la fenêtre
+                windowHeight: clone.scrollHeight // Ajuster à la hauteur du contenu
+            });
+            const imgData = canvas.toDataURL("image/jpeg", 1.0);
+
+            // Calcul des dimensions avec marge
+            let imgWidth = usableWidth;
+            let imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+            // Ajuster si l'image est trop haute
+            if (imgHeight > usableHeight) {
+                imgHeight = usableHeight;
+                imgWidth = (canvas.width * imgHeight) / canvas.height;
+            }
+
+            // Centrage horizontal
+            const x = margin + (usableWidth - imgWidth) / 2;
+            const y = margin;
+
+            // Ajouter une nouvelle page sauf pour la première
+            if (i > 0) pdf.addPage();
+            pdf.addImage(imgData, "JPEG", x, y, imgWidth, imgHeight);
+
+            // Nettoyer
+            document.body.removeChild(tempDiv);
+        }
+
+        // desatvtive l'état initial
+        $(`#pills-tab-tdb .nav-item a.nav-link`).removeClass("active")
+        $(".tab-pane").removeClass("show active");
+        // reactive en etat initial
+        $(".tab-pane").eq(0).addClass("show active")
+        $(`#pills-tab-tdb .nav-item a.nav-link`).eq(0).addClass("active")
+
+        // Sauvegarder le PDF
+        pdf.save(`TABLEAU_DE_BORD_DREN_${dren_name}.pdf`);
+        $("#btn-pdf").removeAttr("disabled");
+
+    }
+    $(document).on("click","#btn-pdf",async function(){
+        $("#btn-pdf").attr("disabled", true);
+        generatePDF()
+    })
+
+    /*  ********* TRAITEMENST ***************** */
+    nbrStds = async function(){
+        let code_dren = parseInt($("#dren").val())
+        $.get(`nombreSTD/${code_dren}/`, function (data) {
+            $("#nombre_cisco").html(data.cisco?.length || 0)
+            $("#nombre_zap").html(data.zap?.length || 0)
+            //console.log(data)
+        }).fail(function () {
+            console.error(`Error geting nombreSTD/${code_dren}`)
+            utils.waitmeClose('div-data')
+        })
+    }
+    nbrStds()
+
+
+</script>

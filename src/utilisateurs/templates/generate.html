@@ -1,0 +1,67 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <title></title>
+        <meta name="description" content="Login DPE">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link href="{% static 'css/sb-admin-2.min.css' %}" rel="stylesheet">
+        <style>
+            body {
+                background:#36b9cc;
+            }
+            .btn-color{
+            background-color: #0e1c36;
+            color: #fff;
+            
+            }
+            .profile-image-pic{
+            height: 200px;
+            width: 200px;
+            object-fit: cover;
+            }
+
+            .cardbody-color{
+            background-color: #ebf2fa;
+            }
+            a{
+            text-decoration: none;
+            }
+        </style>
+    </head>
+    <body class="bg-gradient-primary">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-8 offset-md-2">
+                    <h2 class="text-center text-dark mt-2">Création de compte</h2>
+                    <div class="text-center mb-1"></div>
+                    <div class="card my-1"></div>
+                </div>
+            </div>
+            
+            <div class="row" style="color:white">
+                <div class="col-lg-6">
+                    {% for d in drens %}
+                    <div class="row">
+                        <span>Utilisateur = dren{{ d.CODE_DREN }}</span>
+                        <span> Mot de passe = @dren{{ d.CODE_DREN }}</span>
+                        <span> Prénom = {{ d.DREN }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="col-lg-6">
+                    {% for c in ciscos %}
+                    <div class="row">
+                        <span>Utilisateur = cisco{{ c.CODE_CISCO }}</span>
+                        <span> Mot de passe = @cisco{{ c.CODE_CISCO }}</span>
+                        <span> Prénom = {{ c.CISCO }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+        </div>
+    </body>
+</html>

@@ -1,0 +1,34 @@
+from django.db import connection
+from django.http import JsonResponse
+
+
+#obtenir les donnees du tableau 1ere page, ligne 1, colone 1
+def get_tb_111(code_dren):
+    q = f"""
+        SELECT 
+        SUM(CASE WHEN a1."SECTEUR" >= 0 THEN 1 ELSE 0 END) AS nbr_ceg_ens,
+        SUM(CASE WHEN a1."SECTEUR" = 0 THEN 1 ELSE 0 END) AS nbr_ceg_pub,
+        /* sdc */
+        SUM(CASE WHEN j1."SECTEUR" >= 0 THEN (j1."SDC_COLLEGE_BON_ETAT"::INTEGER + j1."SDC_COLLEGE_MAUVAIS_ETAT"::INTEGER) ELSE 0 END) AS sdc_ens,
+        SUM(CASE WHEN j1."SECTEUR" = 0 THEN (j1."SDC_COLLEGE_BON_ETAT"::INTEGER + j1."SDC_COLLEGE_MAUVAIS_ETAT"::INTEGER) ELSE 0 END) AS sdc_pub,
+        /* section */
+        SUM(CASE WHEN g1."SECTEUR" >= 0 THEN (g1."T6_SECTION"::INTEGER + g1."T7_SECTION"::INTEGER+g1."T8_SECTION"::INTEGER+g1."T9_SECTION"::INTEGER) ELSE 0 END) AS section_ens,
+        SUM(CASE WHEN g1."SECTEUR" = 0 THEN (g1."T6_SECTION"::INTEGER + g1."T7_SECTION"::INTEGER+g1."T8_SECTION"::INTEGER+g1."T9_SECTION"::INTEGER) ELSE 0 END) AS section_pub,
+        /* places assises */
+        SUM (CASE WHEN (k1."SECTEUR" >= 0 ) THEN (k1."COLLEGE_TABLES_BANCS_1PL_BON_ETAT"::integer + k1."COLLEGE_TABLES_BANCS_1PL_MAUVAIS_ETAT"::integer + k1."COLLEGE_TABLES_BANCS_2PL_BON_ETAT"::integer+ (k1."COLLEGE_TABLES_BANCS_2PL_MAUVAIS_ETAT"::integer) * 2 + (k1."COLLEGE_TABLES_BANCS_3PL_BON_ETAT"::integer + k1."COLLEGE_TABLES_BANCS_3PL_MAUVAIS_ETAT"::integer) * 3 + (k1."COLLEGE_TABLES_BANCS_4PL_BON_ETAT"::integer + k1."COLLEGE_TABLES_BANCS_4PL_MAUVAIS_ETAT"::integer) * 4 + (k1."COLLEGE_TABLES_BANCS_5PL_PLUS_BON_ETAT"::integer + k1."COLLEGE_TABLES_BANCS_5PL_PLUS_MAUVAIS_ETAT"::integer) * 5) ELSE 0 END) AS pa_ens,
+        SUM (CASE WHEN (k1."SECTEUR" = 0) THEN (k1."COLLEGE_TABLES_BANCS_1PL_BON_ETAT"::integer + k1."COLLEGE_TABLES_BANCS_1PL_MAUVAIS_ETAT"::integer + k1."COLLEGE_TABLES_BANCS_2PL_BON_ETAT"::integer+ (k1."COLLEGE_TABLES_BANCS_2PL_MAUVAIS_ETAT"::integer) * 2 + (k1."COLLEGE_TABLES_BANCS_3PL_BON_ETAT"::integer + k1."COLLEGE_TABLES_BANCS_3PL_MAUVAIS_ETAT"::integer) * 3 + (k1."COLLEGE_TABLES_BANCS_4PL_BON_ETAT"::integer + k1."COLLEGE_TABLES_BANCS_4PL_MAUVAIS_ETAT"::integer) * 4 + (k1."COLLEGE_TABLES_BANCS_5PL_PLUS_BON_ETAT"::integer + k1."COLLEGE_TABLES_BANCS_5PL_PLUS_MAUVAIS_ETAT"::integer) * 5) ELSE 0 END) AS pa_pub,
+        /* Effectif */
+        SUM (CASE WHEN (e4."SECTEUR" = 0) THEN (e4."T6_F"::INTEGER + e4."T6_G"::INTEGER + e4."T7_F"::INTEGER + e4."T7_G"::INTEGER + e4."T8_F"::INTEGER + e4."T8_G"::INTEGER  + e4."T9_F"::INTEGER + e4."T9_G"::INTEGER )  ELSE 0 END ) AS eff_ens
+        FROM fpe_a1 a1  
+        LEFT JOIN fpe_j1 j1  ON j1."CODE_ETAB" = a1."CODE_ETAB"
+        LEFT JOIN fpe_g1 g1  ON g1."CODE_ETAB" = a1."CODE_ETAB"
+        LEFT JOIN fpe_k1 k1  ON k1."CODE_ETAB" = a1."CODE_ETAB"
+        LEFT JOIN fpe_e4 e4  ON e4."CODE_ETAB" = a1."CODE_ETAB"
+        WHERE a1."CODE_DREN" = {code_dren}
+            AND (a1."ANNEE_SCOLAIRE"=2025 AND j1."ANNEE_SCOLAIRE"=2025 AND g1."ANNEE_SCOLAIRE"=2025 AND k1."ANNEE_SCOLAIRE"=2025 AND e4."ANNEE_SCOLAIRE"=2025) 
+            AND (a1."EXISTE_COLLEGE"=1  AND j1."EXISTE_COLLEGE"=1)
+            AND (g1."EXISTE_COLLEGE"=1  AND g1."EXISTE_COLLEGE"=1)
+            AND (e4."EXISTE_COLLEGE"=1  AND e4."EXISTE_COLLEGE"=1)
+        """
+    
+    return to_dicts_json(q)

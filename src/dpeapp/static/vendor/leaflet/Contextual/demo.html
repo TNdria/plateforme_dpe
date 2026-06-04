@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>Contentual Demo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" type="text/css" href="contextual.theme.css">
+    <link rel="stylesheet" type="text/css" href="contextual.css">
+    <script src="contextual.js"></script>
+    <style>
+        * {
+            font-family: Verdana, Geneva, Tahoma, sans-serif;
+        }
+
+        body {
+            background: rgb(30, 30, 30);
+        }
+    </style>
+</head>
+
+<body>
+    <input type='button' id='textBtn' value='Left click context' />
+
+    <input type='button' id='contextBtn' value='Right click context' />
+
+    <script>
+        let parentControl = document.getElementById('textBtn');
+        parentControl.addEventListener('click', () => {
+            new Contextual({
+                isSticky: true,
+                width: '250px',
+                items: [
+                    {type: 'custom', markup: `<span>Custom item - add what you like</span>`},
+                    {type: 'multi', items: [
+                        {label: 'Copy', onClick: () => {console.log('Copy!')}},
+                        {label: 'Cut', onClick: () => {console.log('Cut!')}},
+                        {label: 'Paste', onClick: () => {console.log('Paste!')}},
+                    ]},
+                    {label: 'Button', onClick: () => {console.log('Item 1 clicked')}, shortcut: 'Ctrl+A'},
+                    {type: 'seperator'},
+                    {type: 'submenu', label: 'Sub menu', items: [
+                        {label: 'Subitem 1', onClick: () => {}},
+                        {label: 'Subitem 2', onClick: () => {}},
+                        {label: 'Subitem 3', onClick: () => {}},
+                    ]},
+                    {type: 'hovermenu', label: 'Hover menu', items: [
+                        {label: 'Subitem 1', onClick: () => {}},
+                        {label: 'Subitem 2', onClick: () => {}},
+                        {label: 'Subitem 3', onClick: () => {}},
+                    ]},
+                    {label: 'Disabled button', onClick: () => {}, shortcut: 'Ctrl+B', enabled: false},
+                ]
+            });
+        }, false);
+
+        let rightClickControl = document.getElementById('contextBtn');
+        rightClickControl.addEventListener('contextmenu', event => {
+            event.preventDefault();
+            //Add contextual menu here
+            new Contextual({
+                isSticky: false,
+                items: [
+                    {label: 'Item 1', onClick: () => {console.log('Item 1 clicked')}, shortcut: 'Ctrl+A'},
+                    {label: 'Item 2', onClick: () => {}, shortcut: 'Ctrl+B'},
+                    {type: 'seperator'},
+                    {label: 'Item 3', onClick: () => {}, shortcut: 'Ctrl+A'},
+                    {type: 'hovermenu', label: 'Hover menu', items: [
+                        {label: 'Subitem 1', onClick: () => {}},
+                        {label: 'Subitem 2', onClick: () => {}},
+                        {label: 'Subitem 3', onClick: () => {}},
+                    ]},
+                ]
+            });
+        });
+    </script>
+</body>
+
+</html>

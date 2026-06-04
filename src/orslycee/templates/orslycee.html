@@ -1,0 +1,164 @@
+{% extends 'base.html' %} {% load static %} {% block style %}
+<link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}" />
+<link rel="stylesheet" href="{% static 'vendor/leaflet/easy-button.css' %}" />
+<link
+  rel="stylesheet"
+  href="{% static 'vendor/leaflet/fullscreen/Control.FullScreen.css' %}"
+/>
+<link
+  rel="stylesheet"
+  href="{% static 'vendor/leaflet/Contextual/contextual.css' %}"
+/>
+<link
+  rel="stylesheet"
+  href="{% static 'vendor/leaflet/Contextual/contextual.theme.css' %}"
+/>
+
+{% endblock %} {% block title %} ORS-LYCEE {% endblock %} {% block filtre %}
+<span class="ml-5 text-gray-700" style="font-weight: bold"
+  >CARTE SCOLAIRE / ORS / ORS LYCÉE
+</span>
+{% endblock %} {% block container_fluid %}
+
+<div class="row" style="">
+  <div class="col-lg-3">
+    <div class="filter-form">
+      <h3 class="text-center mb-4" style="color: #2c3e50">Filtres</h3>
+      <div class="form-group">
+        <select
+          id="dren"
+          name="dren"
+          class="form-control"
+          {%
+          if
+          user.dren
+          !="0"
+          %}readonly{%
+          endif
+          %}
+        >
+          <option value="0">Toutes les DREN</option>
+          {% for d in dren %}
+          <option value="{{ d.CODE_DREN }}">{{ d.DREN }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-group">
+        <select class="form-control" id="cisco" name="cisco">
+          <option value="0">Toutes les CISCO</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <div class="range_radius">
+          <label>Aire&nbsp;:&nbsp;</label>
+          <input
+            type="range"
+            min="20000"
+            max="50000"
+            value="30000"
+            name="radius"
+            id="radius"
+            step="100"
+          />
+          <span id="radius_value">30 km</span>
+        </div>
+      </div>
+      <div class="form-group">
+        <div class="row">
+          <div class="col-lg-6 text-left">
+            <button class="btn btn-sm btn-primary" id="btn-filter" disabled>
+              <i class="fa fa-filter"></i>&nbsp;Appliquer les filtres
+            </button>
+          </div>
+          <div class="col-lg-6 text-right">
+            <div class="dropdown d-none mr-2 ml-2 btn-download">
+              <button
+                class="btn btn-info btn-sm dropdown-toggle"
+                type="button"
+                id="dropdownMenuButton"
+                data-toggle="dropdown"
+                aria-haspopup="true"
+                aria-expanded="false"
+              >
+                <i class="fa fa-download mr-2"></i>Télécharger
+              </button>
+              <div
+                class="dropdown-menu"
+                aria-labelledby="dropdownMenuButton"
+                style="width: 250px"
+              >
+                <a class="dropdown-item" id="btn-download" href="#!"
+                  >Données ORS locales</a
+                >
+                <a class="dropdown-item" id="btn-download-aire" href="#!"
+                  >Réseaux éducatifs coordonnés</a>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- //row misy ny boutons appliquer sy download -->
+      </div>
+      <!-- //formgroup -->
+      <div class="mt-5">
+  <h3 class="text-center mb-4">Recherche</h3>
+        <div class="input-group">
+          <select name="search" id="search" class="form-control"></select>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-9" id="div-map">
+    <div id="loading-spinner">
+      <div class="spinner"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Le contenu du modal -->
+<div
+  class="modal fade"
+  id="dom-analyse-Modal"
+  data-backdrop="static"
+  data-keyboard="false"
+  tabindex="-1"
+  aria-labelledby="dom-analyse-ModalLabel"
+  aria-hidden="true"
+>
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="dom-analyse-ModalLabel"></h5>
+        <button
+          type="button"
+          class="close"
+          data-dismiss="modal"
+          aria-label="Close"
+        >
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body" id="dom-analyse">
+        <!-- Contenu du corps du modal -->
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-default" data-dismiss="modal">
+          Fermer
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %} {% block scripts %}
+<script src="{% static 'vendor/leaflet/leaflet.js' %}"></script>
+<script src="{% static 'vendor/leaflet/leaflet-bing-layer.min.js' %}"></script>
+<script src="{% static 'vendor/leaflet/easy-button.js' %}"></script>
+<script src="{% static 'vendor/leaflet/leaflet-easy-print.js' %}"></script>
+<script src="{% static 'vendor/leaflet/fullscreen/Control.FullScreen.js' %}"></script>
+<script src="{% static 'vendor/leaflet/Contextual/contextual.js' %}"></script>
+<script src="{% static 'vendor/turf/turf.min.js' %}"></script>
+
+<script src="{% static 'js/referentiel.js' %}"></script>
+<script src="{% static 'js/orslycee.js' %}"></script>
+{% endblock %}

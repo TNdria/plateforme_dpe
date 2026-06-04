@@ -1,0 +1,211 @@
+{% load static %}
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>GENERATE ID</title>
+
+    <!-- Custom fonts for this template-->
+    <link
+      href="{% static 'vendor/fontawesome-free/css/all.min.css' %}" rel="stylesheet" type="text/css" />
+    <link
+      href="https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,700,700i,800,800i,900,900i" rel="stylesheet" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" />
+
+    <!-- Custom styles for this template-->
+    <link href="{% static 'css/sb-admin-2.min.css' %}" rel="stylesheet" />
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        body { overflow-x: visible; }
+        table.dataTable td { white-space: nowrap; }
+        table.dataTable tbody tr {border :1px solid grey}
+    </style>
+</head>
+
+<body  style="height: 100vh">
+    <div class="row m-5">
+        <div class="container d-flex justify-content-center" ><!--  align-items-center -->
+            <div class="col-6">
+                <form id="form-generate" action="{{absolute_url}}" method="POST" class="p-4 border rounded shadow-sm bg-white">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                            <label for="password" class="form-label">Mot de passe</label>
+                            <input 
+                                type="password" 
+                                class="form-control" 
+                                name="password" 
+                                id="password"
+                                placeholder="Entrez le mot de passe"
+                                required
+                            >
+                    </div>
+                    <div class="d-grid mb-3">
+                        <button type="submit" id="btn-submit" class="btn btn-primary">Generer</button>
+                        <button type="button" id="btn-pdf" class="btn btn-success float-right ml-3 mr-3">PDF</button>
+                        <button type="button" id="btn-mdp" class="btn btn-danger float-right">Update PWD</button>
+                    </div>
+                    {% if messages %}
+                    <div class="row mt-4  bg-danger text-center p-3">
+                        {% for message in messages %}<div class="text-center text-white"><span class="">{{ message }}</span></div>{% endfor %} 
+                    </div>
+                    {% endif %}
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="row m-5 p-5">
+        <div class="container d-flex justify-content-center" >
+            <div id="loadingMessage" class="col-6" style="display:none; margin-top:10px;">
+                ⏳ Traitement en cours... Veuillez patienter.
+            </div>
+        </div>
+    </div>
+    <div class="row m-5">
+        <div class="d-flex justify-content-center m-3 p-3" ><!--  align-items-center -->
+            <div class="info col-12" style="overflow-x: visible;">
+                {% if data %}
+                    {% if columns %}
+                        <table id="dataTable" class="display dataTable tavle-bordered table-hover">
+                            <thead class="bg-dark text-light p-2">
+                                <tr>
+                                    {% for column in columns %}
+                                        <th>{{ column }}</th>
+                                    {% endfor %}
+                                </tr>
+                            </thead>
+                            <tbody>
+                            {% for row in data %}
+                                <tr>
+                                    {% for key, value in row.items %}
+                                        {% if key != "QR_CODE" %}
+                                        <td>{{ value|upper }}</td>
+                                        {% else %}
+                                        <td><img src="{{ value }}" alt="Photo" width="75" height="75"></td>
+                                        {% endif %}
+                                    {% endfor %}
+                                </tr>
+                            {% endfor %}
+                            </tbody>
+                    </table>
+                    {% else %}
+                        {{ data.0.message}}
+                    {% endif %}
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+
+
+    <!-- Bootstrap core JavaScript-->
+    <script src="{% static 'vendor/jquery/jquery.min.js' %}"></script>
+    <script src="{% static 'vendor/bootstrap/js/bootstrap.bundle.min.js' %}"></script>
+    <!-- DataTables JS -->
+    <!-- DataTables JS -->
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap4.min.js"></script>
+    <!-- DataTables Buttons JS -->
+    <script src="https://cdn.datatables.net/buttons/2.4.2/js/dataTables.buttons.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.bootstrap4.min.js"></script>
+    <!-- Dépendances pour l'export Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.html5.min.js"></script>
+
+    <script>
+    $(document).ready(function() {
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    // Cherche le cookie correspondant au nom
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+        //const csrftoken = getCookie('csrftoken');
+        $.ajaxSetup({
+            headers: { 'X-CSRFToken': getCookie('csrftoken') }
+        });
+
+        document.getElementById("form-generate").addEventListener("submit", function () {
+            const btn = document.getElementById("btn-submit");
+            btn.disabled = true;
+            btn.innerText = "Traitement en cours...";
+            document.getElementById("loadingMessage").style.display = "block";
+        });
+
+        var mdp_url = "{{ mdp_url|escapejs }}"; // sécurise les caractères spéciaux
+        //console.log(mdp_url)
+        $(document).on("click", "#btn-mdp", function () {
+            if (confirm("Voulez-vous vraiment mettre à jour ?")) {
+                $(this).addClass("disabled")
+                document.getElementById("loadingMessage").style.display = "block";
+                $.post(mdp_url, {}, function (data) {
+                    if (data && data.success) {
+                        //console.log(data);
+                        alert("Mise à jour de la base de données MDP réussie !");
+                        $(this).removeClass("disabled")
+                    } else {
+                        alert(`Une erreur est survenue !\n${data.message}`);
+                    }
+                }).fail(function (xhr, status, error) {
+                    console.error("Erreur Ajax :", status, error);
+                    alert("La requête a échoué !");
+                    $(this).removeClass("disabled")
+                });
+            }
+        });
+
+        var pdf_url = "{{ pdf_url|escapejs }}"; 
+        //console.log(mdp_url)
+        $(document).on("click", "#btn-pdf", function () {
+            if (confirm("Voulez-vous vraiment generer les PDFs ?")) {
+                $(this).addClass("disabled")
+                document.getElementById("loadingMessage").style.display = "block";
+                $.post(pdf_url, {}, function (data) {
+                    if (data && data.success) {
+                        //console.log(data);
+                        alert("Création des PDFs réussie !");
+                        $(this).removeClass("disabled")
+                        document.getElementById("loadingMessage").style.display = "None";
+
+                    } else {
+                        alert(`Une erreur est survenue !\n${data.message}`);
+                        document.getElementById("loadingMessage").style.display = "None";
+                    }
+                }).fail(function (xhr, status, error) {
+                    console.error("Erreur Ajax :", status, error);
+                    alert("La requête a échoué !");
+                    $(this).removeClass("disabled")
+                    document.getElementById("loadingMessage").style.display = "None";
+                });
+            }
+        });
+
+        $('#dataTable').DataTable({
+            dom: 'Bfrtip',
+            scrollX: true,          
+            autoWidth: true,
+            "pageLength": 50,
+            "lengthMenu": [10, 25, 50, 100],
+            buttons: [
+                {
+                    extend: 'excelHtml5',
+                    text: 'Exporter en Excel',
+                    title: 'DATA_EAGER',
+                }
+            ] 
+           
+        })
+    });
+    </script>
+</body>
+
+</html>

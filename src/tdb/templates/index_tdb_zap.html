@@ -1,0 +1,361 @@
+{% extends 'base.html' %} {% load static %} 
+{% block style %}
+<style>
+  .p-bar-info{display: none}
+  body {
+    background-color: #f8f9fa;
+    font-size: 14px;
+  }
+  .section-title {
+    background-color: #6c757d;
+    color: white;
+    padding: 5px 0px;
+    font-weight: bold;
+    margin-top: 15px;
+    margin: 15px 12px;
+  }
+  .table th, .table td {
+    text-align: center;
+    vertical-align: middle;
+  }
+  .legend span {
+    display: inline-block;
+    margin-right: 10px;
+  }
+  .legend-box {
+    display: inline-block;
+    width: 15px;
+    height: 15px;
+    margin-right: 5px;
+  }
+  .blue { background-color: #5dade2; }
+  .yellow { background-color: #f1c40f; }
+  .red { background-color: #e74c3c; }
+  .gray-bg { background-color: #e9ecef; }
+  @media print {
+    .tab-pane {
+      width: 297mm;
+      height: auto;
+      page-break-after: always;
+    }
+  }
+  .tab-pane {
+    display: block !important;   
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
+  }
+  .tab-pane.active {
+    height: auto;
+    visibility: visible;
+  }
+</style>
+<!-- DataTables CSS -->
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap4.min.css">
+  <link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.2/css/buttons.bootstrap4.min.css">
+{% endblock %} {% block title %} TDB DREN {% endblock %} {% block filtre %}
+<span class="ml-5 text-gray-700" style="font-weight: bold">DATA MUST SPEAK / Tableau de bord / ZAP et écoles</span>
+{% endblock %} {% block container_fluid %}
+
+<style>
+  .drive-folder {
+    display: inline-block;
+    width: 120px;
+    margin: 10px;
+    text-align: center;
+    cursor: pointer;
+    transition: box-shadow 0.2s;
+    border-radius: 8px;
+    padding: 10px 5px 5px 5px;
+  }
+  .drive-folder:hover {
+    background: #f1f3f4;
+    box-shadow: 0 2px 8px rgba(60,60,60,0.08);
+  }
+  .drive-folder .folder-icon {
+    font-size: 48px;
+    color: #7fb2cfff;
+    margin-bottom: 5px;
+  }
+  .breadcrumb {
+    background: none;
+    padding: 0;
+    margin-bottom: 10px;
+  }
+  .breadcrumb-item + .breadcrumb-item::before {
+    content: ">";
+    color: #888;
+    padding: 0 6px;
+  }
+</style>
+
+  <div class="row">
+    <div class="col-12  d-flex flex-wrap " style="margin-left:50px">
+      <nav aria-label="breadcrumb">
+        <ol class="breadcrumb" id="drive-breadcrumb">
+         <li class="breadcrumb-item"><a href="#" id="bc-tous">DREN</a></li>
+        </ol>
+      </nav>
+    </div>
+  </div>
+<div class="row" id="div-data">
+  <div class="col-12 d-flex flex-wrap" id="drive-list">
+    {% for d in dren %}
+      <div class="drive-folder" data-code="{{ d.CODE_DREN }}" data-type="dren" data-name="{{ d.DREN }}">
+        <div class="folder-icon"><i class="fa fa-folder"></i></div>
+        <div class="folder-label">{{ d.DREN }}</div>
+      </div>
+    {% empty %}
+      <div class="text-muted">Aucun dossier DREN trouvé.</div>
+    {% endfor %}
+  </div>
+</div>
+<!-- div-data-->
+
+
+
+{% endblock %} 
+{% block scripts %}
+<script src="{% static 'js/referentiel.js' %}"></script>
+<!-- Script Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<!-- canevas pour PDF -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+  //const URL_TDB_DREN_N0 = "{% static 'templates_tdb/tdb_dren_n2.html' %}"
+  //console.log(URL_TDB_DREN_N0)
+</script>
+<script>
+  var BASE_URL_TDB = "{% url 'index_tdb' %}"
+</script>
+<script src="{% static 'js/tdb_zap_ecoles.js' %}"></script>
+
+<script>
+$(function() {
+
+  // Gestion du clic sur un dossier DREN
+  $(document).on('click', '.drive-folder', async function() {
+  // Gestion du clic sur le breadcrumb CISCO pour réafficher les ZAPs
+    
+    if ($(this).data('type') === 'cisco') {
+      // CLIC SUR CISCO : afficher les ZAPs
+      let codeCisco = $(this).data('code');
+      let ciscoName = $(this).data('name');
+
+      // Appel AJAX pour récupérer les ZAPs
+      let url = `${BASE_URL_TDB}listeZap/${codeCisco}`;
+      let data = await utils.fetchData(url, 'GET', {});
+      let html = '';
+      code_dren = ""
+      if(data && data.zaps && data.zaps.length > 0) {
+        data.zaps.forEach(function(zap) {
+          html += `<div class="drive-folder" data-code="${zap.CODE_ZAP}" data-name="${zap.ZAP}" data-type="zap" data-cisco="${zap.CODE_CISCO}" data-cisco-name="${zap.CISCO}" data-dren="${zap.CODE_DREN}" data-dren-name="${zap.DREN}">
+            <div class="folder-icon"><i class="fa fa-folder"></i></div>
+            <div class="folder-label">${zap.ZAP}</div>
+          </div>`;
+          code_dren = zap.CODE_DREN
+          nom_dren = zap.DREN
+        });
+      } else {
+        html = '<div class="text-muted">Aucun dossier ZAP trouvé.</div>';
+      }
+      // Breadcrumb update
+      let drenName = $('#drive-breadcrumb .breadcrumb-item.active').text() || 'DREN';
+      $('#drive-breadcrumb').html('<li class="breadcrumb-item"><a href="#" id="bc-tous">DREN</a></li>' +
+        '<li class="breadcrumb-item"><a href="#" data-code="'+code_dren+'" data-name="'+drenName+'" id="bc-dren">' + nom_dren + '</a></li>' +
+        '<li class="breadcrumb-item active">' + ciscoName + '</li>');
+
+      $('#drive-list').html(html);
+      return;
+    }
+
+    // CLIC SUR ZAP : afficher les fichiers PDF
+    if ($(this).data('type') === 'zap') {
+      let zapName = $(this).data('name');
+      let codeZap = $(this).data('code');
+      let ciscoName = $(this).data('cisco-name');
+      let drenName = $(this).data('dren-name');
+      let ciscoCode = $(this).data('cisco');
+      let drenCode = $(this).data('dren');
+
+      // Appel AJAX pour récupérer les fichiers PDF
+      let url = `${BASE_URL_TDB}liste_pdfs/?dren=${encodeURIComponent(drenName)}&cisco=${encodeURIComponent(ciscoName)}&zap=${encodeURIComponent(zapName)}`;
+      let data = await utils.fetchData(url, 'GET', {});
+      let html = '';
+      if(data && data.pdfs && data.pdfs.length > 0) {
+        html += '<div class="row">';
+        data.pdfs.forEach(function(pdf, idx) {
+          html += `<div class="col-6 col-sm-4 col-md-3 col-lg-2 mb-4">`
+            + `<div class="card shadow-sm border-0 h-100 d-flex flex-column align-items-center justify-content-center p-2">`
+            + `<a href="#" class="text-center open-pdf-modal" data-url="${pdf.url}" data-name="${pdf.name}" style="text-decoration:none;">`
+            + `<i class="fa fa-file-pdf fa-3x text-danger mb-2"></i>`
+            + `<div class="pdf-filename" title="${pdf.name}" style="font-size:0.95em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100px;">${pdf.name}</div>`
+            + `</a>`
+            + `<a href="${pdf.url}" download class="btn btn-sm btn-outline-primary mt-2" title="Télécharger"><i class="fa fa-download"></i></a>`
+            + `</div>`
+            + `</div>`;
+        });
+        // Modal PDF preview
+        if ($('#pdfPreviewModal').length === 0) {
+          $('body').append(`
+            <div class="modal fade" id="pdfPreviewModal" tabindex="-1" role="dialog" aria-labelledby="pdfPreviewModalLabel" aria-hidden="true">
+              <div class="modal-dialog modal-xl" role="document">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title" id="pdfPreviewModalLabel">Aperçu PDF</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                      <span aria-hidden="true">&times;</span>
+                    </button>
+                  </div>
+                  <div class="modal-body p-0" style="height:80vh;">
+                    <iframe id="pdfPreviewFrame" src="" style="width:100%;height:100%;border:none;"></iframe>
+                  </div>
+                </div>
+              </div>
+            </div>
+          `);
+       }
+
+
+        html += '</div>';
+      } else {
+        html = '<div class="text-muted">Aucun fichier PDF trouvé dans ce ZAP.</div>';
+      }
+      $('#drive-list').html(html);
+      // Breadcrumb update
+      let bc = '<li class="breadcrumb-item"><a href="#" id="bc-tous">DREN</a></li>' +
+        '<li class="breadcrumb-item"><a href="#" data-code="'+drenCode+'" data-name="'+drenName+'" id="bc-dren">' + drenName + '</a></li>' +
+        '<li class="breadcrumb-item"><a href="#" data-dren-code="'+drenCode+'" data-dren-name="'+drenName+'" data-code="'+ciscoCode+'" data-name="'+ciscoName+'" id="bc-cisco">' + ciscoName + '</a></li>' +
+        '<li class="breadcrumb-item active" id="bc-pdf">' + zapName + '</li>';
+      $('#drive-breadcrumb').html(bc);
+      return;
+    }
+      $(document).on('click', '.open-pdf-modal', function(e) {
+        e.preventDefault();
+        var url = $(this).data('url');
+        var name = $(this).data('name');
+        $('#pdfPreviewModalLabel').text(name);
+        $('#pdfPreviewFrame').attr('src', url);
+        $('#pdfPreviewModal').modal('show');
+      });
+
+    if ($(this).data('type') === 'dren') {
+      // CLIC SUR DREN : afficher les CISCOs
+      let codeDren = $(this).data('code');
+      let drenName = $(this).data('name');
+      $('#drive-breadcrumb').html(`<li class="breadcrumb-item"><a href="#" id="bc-tous">DREN</a></li><li class="breadcrumb-item active">${drenName}</li`);
+      let url = `${BASE_URL_TDB}listeCisco/${codeDren}`;
+      let data = await utils.fetchData(url, 'GET', {});
+      let html = '';
+      if(data && data.ciscos && data.ciscos.length > 0) {
+        data.ciscos.forEach(function(cisco) {
+          html += `<div class="drive-folder" data-code="${cisco.CODE_CISCO}" data-name="${cisco.CISCO}" data-type="cisco">
+            <div class="folder-icon"><i class="fa fa-folder"></i></div>
+            <div class="folder-label">${cisco.CISCO}</div>
+          </div>`;
+        });
+      } else {
+        html = '<div class="text-muted">Aucun dossier CISCO trouvé.</div>';
+      }
+      $('#drive-list').html(html);
+    }
+
+  });
+
+  // Breadcrumb retour Tous
+  $(document).on('click', '#bc-tous', async function(e) {
+    e.preventDefault();
+    // Recharger la liste DREN (page initiale)
+    let html = '';
+    {% for d in dren %}
+      html += `<div class=\"drive-folder\" data-type="dren" data-code=\"{{ d.CODE_DREN }}\" data-name=\"{{ d.DREN }}\">
+        <div class=\"folder-icon\"><i class=\"fa fa-folder\"></i></div>
+        <div class=\"folder-label\">{{ d.DREN }}</div>
+      </div>`;
+    {% empty %}
+      html = '<div class="text-muted">Aucun dossier DREN trouvé.</div>';
+    {% endfor %}
+    $('#drive-list').html(html);
+    $('#drive-breadcrumb').html('<li class="breadcrumb-item active" id="bc-tous" aria-current="page">DREN</li>');
+  });
+
+  
+  // Breadcrumb retour DREN
+  $(document).on('click', '#bc-dren', async function(e) {
+      e.preventDefault();
+      // On récupère le nom du DREN depuis le breadcrumb
+      let drenName = $(this).text();
+
+      // On cherche le code du DREN dans la liste affichée (si besoin, à adapter selon vos données)
+      // Pour robustesse, on peut stocker le code cisco dans un data attribut du breadcrumb lors du clic initial
+      // Ici, on va rechercher le code dans la liste des dossiers affichés précédemment
+      let codeDren =  $(this).data('code');
+      if (!codeDren) {
+        // Si on ne trouve pas, on peut demander au backend ou afficher une erreur
+        $('#drive-list').html('<div class="text-danger">Impossible de retrouver le code DREN.</div>');
+        return;
+      }
+      // Mettre à jour le breadcrumb
+      $('#drive-breadcrumb').html('<li class="breadcrumb-item"><a href="#" id="bc-tous">DREN</a></li>' +
+        '<li class="breadcrumb-item active">' + drenName + '</li>');
+      // Charger les ZAPs de ce CISCO
+      let url = `${BASE_URL_TDB}listeCisco/${codeDren}`;
+      let data = await utils.fetchData(url, 'GET', {});
+      let html = '';
+      if(data && data.ciscos && data.ciscos.length > 0) {
+        data.ciscos.forEach(function(cisco) {
+          html += `<div class="drive-folder" data-code="${cisco.CODE_CISCO}" data-name="${cisco.CISCO}" data-type="cisco">
+            <div class="folder-icon"><i class="fa fa-folder"></i></div>
+            <div class="folder-label">${cisco.CISCO}</div>
+          </div>`;
+        });
+      } else {
+        html = '<div class="text-muted">Aucun dossier CISCO trouvé.</div>';
+      }
+      $('#drive-list').html(html);
+  });
+
+  // Breadcrumb retour CISCO
+  $(document).on('click', '#bc-cisco', async function(e) {
+      e.preventDefault();
+      // On récupère le nom du CISCO depuis le breadcrumb
+      let ciscoName = $(this).text();
+      // On récupère le nom du DREN depuis le breadcrumb précédent
+      let drenCode = $(this).data('dren-code');
+      let drenName = $(this).data('dren-name');
+      // On cherche le code du CISCO dans la liste affichée (si besoin, à adapter selon vos données)
+      // Pour robustesse, on peut stocker le code cisco dans un data attribut du breadcrumb lors du clic initial
+      // Ici, on va rechercher le code dans la liste des dossiers affichés précédemment
+      let codeCisco =  $(this).data('code');;
+     
+      if (!codeCisco) {
+        // Si on ne trouve pas, on peut demander au backend ou afficher une erreur
+        $('#drive-list').html('<div class="text-danger">Impossible de retrouver le code du CISCO.</div>');
+        return;
+      }
+      // Mettre à jour le breadcrumb
+      $('#drive-breadcrumb').html('<li class="breadcrumb-item"><a href="#" id="bc-tous">DREN</a></li>' +
+      '<li class="breadcrumb-item "><a href="#" data-code="'+drenCode+'" data-name="'+drenName+'" id="bc-dren">' + drenName + '</a></li>' +
+        '<li class="breadcrumb-item active">' + ciscoName + '</li>');
+      // Charger les ZAPs de ce CISCO
+      let url = `${BASE_URL_TDB}listeZap/${codeCisco}`;
+      let data = await utils.fetchData(url, 'GET', {});
+      let html = '';
+      if(data && data.zaps && data.zaps.length > 0) {
+        data.zaps.forEach(function(zap) {
+          html += `<div class=\"drive-folder\" data-code=\"${zap.CODE_ZAP}\" data-name=\"${zap.ZAP}\" data-type=\"zap\" data-cisco=\"${codeCisco}\" data-cisco-name=\"${ciscoName}\" data-dren=\"${drenName}\">`
+            + `<div class=\"folder-icon\"><i class=\"fa fa-folder\"></i></div>`
+            + `<div class=\"folder-label\">${zap.ZAP}</div>`
+            + `</div>`;
+        });
+      } else {
+        html = '<div class="text-muted">Aucun dossier ZAP trouvé.</div>';
+      }
+      $('#drive-list').html(html);
+    });
+
+});
+</script>
+{% endblock %}

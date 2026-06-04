@@ -1,0 +1,11 @@
+[odk]
+base_url = "https://odk.digital.gov.mg/v1/projects/7/forms/2-FORMULAIRE_AJOUT_ELEVE/submissions.csv"
+username = "mtfandresena@gmail.com"
+password = "tokyfandresena"
+project_id = 7
+form_id = "2-FORMULAIRE_AJOUT_ELEVE"
+
+[drive]
+copie_folder_id = "1xc2w14wM85irqR4pbFnQ8uaGKmOTcBPa"
+cin_folder_id = "1TOEH4ui12tUjXdVVqwPD_vrTVJne29TI"
+photo_folder_id = "1g5nNJmMEG4bdS1AjJ8dVCvlEiJt2vYfU"

@@ -1,0 +1,295 @@
+<div class="col-lg-12" id="tdb-cisco-content">
+    <style>
+        #tdb-cisco-content {
+            font: 12px verdana;
+            padding: 10px;
+        }
+        #tdb-cisco-content .titre_indicateur {
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            width: 100%;
+            background: #337ab7;
+            color: #fff;
+            padding: 6px 10px;
+            margin-top: 10px;
+            margin-bottom: 8px;
+            font-weight: bold;
+            font-size: 13px;
+        }
+        #tdb-cisco-content .tdb-box {
+            border: 2px solid #000;
+            padding: 15px;
+        }
+        #tdb-cisco-content table.tdb-table {
+            font-variant-numeric: tabular-nums;
+            width: 100%;
+            max-width: 100%;
+            margin-bottom: 8px;
+            border-collapse: collapse;
+            font-size: 11px;
+        }
+        #tdb-cisco-content table.tdb-table th,
+        #tdb-cisco-content table.tdb-table td {
+            border: 1px solid #999;
+            padding: 3px 5px !important;
+            vertical-align: middle !important;
+            text-align: center;
+        }
+        #tdb-cisco-content table.tdb-table th {
+            font-weight: bold;
+            background: #e8e8ee;
+        }
+        #tdb-cisco-content .gris { background: #bbbbcc; }
+        #tdb-cisco-content .manga { background: #f1f1f1; }
+        #tdb-cisco-content .mena { background: rgba(255, 0, 0, 0.75); font-weight: 700; color: #fff; }
+        #tdb-cisco-content .mavo { background: #ffff00; }
+        #tdb-cisco-content .manquant { background: #7CB5EC; }
+        #tdb-cisco-content .item { font-size: 10px; }
+        #tdb-cisco-content .ident { padding-left: 10px !important; text-align: left !important; }
+        #tdb-cisco-content .text-left-cell { text-align: left !important; }
+        #tdb-cisco-content .img-disp { height: 50px; }
+        #tdb-cisco-content .header-table td { border: none !important; }
+        #tdb-cisco-content .legend-item {
+            display: inline-block;
+            margin-right: 12px;
+            font-size: 11px;
+        }
+        #tdb-cisco-content .legend-box-sm {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            margin-right: 4px;
+            vertical-align: middle;
+        }
+    </style>
+
+    <!-- ENTETE / HEADER -->
+    <div class="tdb-box">
+        <table style="width:100%; border:none;" class="header-table">
+            <tr>
+                <td width="20%" align="center" style="vertical-align:top;">
+                    <img src="/static/img/logoMen.jpg" width="110" height="110" alt="MEN Logo">
+                </td>
+                <td width="60%" align="center" style="vertical-align:top;">
+                    <h5 style="margin:0;font-size:16px;font-weight:bold;">Ministère de l'Éducation Nationale</h5>
+                    <h6 style="margin:5px 0;font-size:14px;">TABLEAU DE BORD DE LA CISCO : 2024-2025</h6>
+                    <p style="margin:3px 0;font-size:13px;">
+                        DREN : <strong><span id="dren_name"></span></strong> &nbsp;&nbsp;
+                        CISCO : <strong><span id="cisco_name">-</span></strong> &nbsp;&nbsp;
+                        Code : <strong><span id="cisco_code">-</span></strong>
+                    </p>
+                    <div style="margin-top:5px;">
+                        <span class="legend-item"><span class="legend-box-sm" style="background:#7CB5EC;"></span> Données manquante(s)</span>
+                        <span class="legend-item"><span class="legend-box-sm" style="background:#ffff00;"></span> Données à vérifier</span>
+                        <span class="legend-item"><span class="legend-box-sm" style="background:rgba(255,0,0,0.75);"></span> Attention</span>
+                    </div>
+                </td>
+                <td width="20%" align="center" style="vertical-align:top;">
+                    <img src="/static/img/analyse.png" width="90" height="90" alt="Analyse">
+                </td>
+            </tr>
+        </table>
+
+        <!-- =================== RÉSULTATS SCOLAIRES =================== -->
+        <div class="titre_indicateur">Résultats Scolaires</div>
+
+        <table style="width:100%;border:none;" cellspacing="0">
+            <tr>
+                <td width="50%" style="vertical-align:top;border:none;padding:0 5px 0 0;">
+                    <!-- Taux d'abandon -->
+                    <table class="tdb-table">
+                        <tr class="gris"><th colspan="4">Taux d'abandon</th></tr>
+                        <tr>
+                            <th width="34%">&nbsp;</th>
+                            <th class="item" width="22%">CISCO</th>
+                            <th class="item" width="22%">DREN</th>
+                            <th class="item" width="22%">MADA</th>
+                        </tr>
+                        <tr><td class="item text-left-cell">CP1->CP2</td><td id="abandon_cp1_cisco">-</td><td id="abandon_cp1_dren">-</td><td id="abandon_cp1_mada">-</td></tr>
+                        <tr><td class="item text-left-cell">CP2->CE</td><td id="abandon_cp2_cisco">-</td><td id="abandon_cp2_dren">-</td><td id="abandon_cp2_mada">-</td></tr>
+                        <tr><td class="item text-left-cell">CE->CM1</td><td id="abandon_ce_cisco">-</td><td id="abandon_ce_dren">-</td><td id="abandon_ce_mada">-</td></tr>
+                        <tr><td class="item text-left-cell">CM1->CM2</td><td id="abandon_cm1_cisco">-</td><td id="abandon_cm1_dren">-</td><td id="abandon_cm1_mada">-</td></tr>
+                        <tr><td class="item text-left-cell">Sur le cycle</td><td id="abandon_cycle_cisco">-</td><td id="abandon_cycle_dren">-</td><td id="abandon_cycle_mada">-</td></tr>
+                    </table>
+
+                    <!-- Taux de retention par genre -->
+                    <table style="width:100%;border:none;" cellspacing="0">
+                        <tr>
+                            <td width="50%" style="vertical-align:top;border:none;padding:0 3px 0 0;">
+                                <table class="tdb-table">
+                                    <tr class="gris"><th colspan="4">Taux de rétention par genre</th></tr>
+                                    <tr><td width="34%" class="text-left-cell">Garçon</td><td id="retention_g_cisco">-</td><td id="retention_g_dren">-</td><td id="retention_g_mada">-</td></tr>
+                                    <tr><td class="item text-left-cell">Fille</td><td id="retention_f_cisco">-</td><td id="retention_f_dren">-</td><td id="retention_f_mada">-</td></tr>
+                                    <tr><td class="item text-left-cell">Ensemble</td><td id="retention_e_cisco">-</td><td id="retention_e_dren">-</td><td id="retention_e_mada">-</td></tr>
+                                    <tr><td class="item text-left-cell">Disparité au dépens de</td><td id="retention_disp_cisco">-</td><td id="retention_disp_dren">-</td><td id="retention_disp_mada">-</td></tr>
+                                </table>
+                            </td>
+                            <td width="50%" style="vertical-align:top;border:none;padding:0 0 0 3px;">
+                                <table class="tdb-table">
+                                    <tr class="gris"><th colspan="4">Pourcentage des redoublants par genre</th></tr>
+                                    <tr><td width="34%" class="text-left-cell">Garçon</td><td id="redoub_genre_g_cisco">-</td><td id="redoub_genre_g_dren">-</td><td id="redoub_genre_g_mada">-</td></tr>
+                                    <tr><td class="item text-left-cell">Fille</td><td id="redoub_genre_f_cisco">-</td><td id="redoub_genre_f_dren">-</td><td id="redoub_genre_f_mada">-</td></tr>
+                                    <tr><td class="item text-left-cell">Ensemble</td><td id="redoub_genre_e_cisco">-</td><td id="redoub_genre_e_dren">-</td><td id="redoub_genre_e_mada">-</td></tr>
+                                    <tr><td class="item text-left-cell">Disparité au dépens de</td><td id="redoub_disp_cisco">-</td><td id="redoub_disp_dren">-</td><td id="redoub_disp_mada">-</td></tr>
+                                </table>
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+
+                <td width="50%" style="vertical-align:top;border:none;padding:0 0 0 5px;">
+                    <!-- Pourcentage des redoublants -->
+                    <table class="tdb-table">
+                        <tr class="gris"><th colspan="4">Pourcentage des redoublants</th></tr>
+                        <tr>
+                            <th width="34%">&nbsp;</th>
+                            <th class="item" width="22%">CISCO</th>
+                            <th class="item" width="22%">DREN</th>
+                            <th class="item" width="22%">MADA</th>
+                        </tr>
+                        <tr><td class="item text-left-cell">CP1</td><td id="redoub_cp1_cisco">-</td><td id="redoub_cp1_dren">-</td><td id="redoub_cp1_mada">-</td></tr>
+                        <tr><td class="item text-left-cell">CP2</td><td id="redoub_cp2_cisco">-</td><td id="redoub_cp2_dren">-</td><td id="redoub_cp2_mada">-</td></tr>
+                        <tr><td class="item text-left-cell">CE</td><td id="redoub_ce_cisco">-</td><td id="redoub_ce_dren">-</td><td id="redoub_ce_mada">-</td></tr>
+                        <tr><td class="item text-left-cell">CM1</td><td id="redoub_cm1_cisco">-</td><td id="redoub_cm1_dren">-</td><td id="redoub_cm1_mada">-</td></tr>
+                        <tr><td class="item text-left-cell">CM2</td><td id="redoub_cm2_cisco">-</td><td id="redoub_cm2_dren">-</td><td id="redoub_cm2_mada">-</td></tr>
+                    </table>
+
+                    <!-- Score moyen et resultats CEPE -->
+                    <table class="tdb-table">
+                        <tr class="gris">
+                            <th colspan="8">
+                                Score moyen(SM) sur 20 et pourcentage d'élèves ayant obtenu une note
+                                supérieure ou égale à 10/20 (Note >= 10)<br>Résultats CEPE 2024
+                            </th>
+                        </tr>
+                        <tr>
+                            <th width="25%" rowspan="2" colspan="2">Matières</th>
+                            <th width="25%" colspan="2">CISCO</th>
+                            <th width="25%" colspan="2">DREN</th>
+                            <th width="25%" colspan="2">MADA</th>
+                        </tr>
+                        <tr>
+                            <td width="12.5%"><b>SM</b></td>
+                            <td width="12.5%"><b>Note >=10</b></td>
+                            <td width="12.5%"><b>SM</b></td>
+                            <td width="12.5%"><b>Note >=10</b></td>
+                            <td width="12.5%"><b>SM</b></td>
+                            <td width="12.5%"><b>Note >=10</b></td>
+                        </tr>
+                        <tr><th colspan="2" class="text-left-cell">Malagasy</th><td id="sm_mlg_cisco">-</td><td id="note_mlg_cisco">-</td><td id="sm_mlg_dren">-</td><td id="note_mlg_dren">-</td><td id="sm_mlg_mada">-</td><td id="note_mlg_mada">-</td></tr>
+                        <tr><td class="ident" colspan="2">-Fahazoana Lahatsoratra</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>
+                        <tr><td class="ident" colspan="2">-Fitsipika</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>
+                        <tr><td class="ident" colspan="2">-Fanazarana Hanoratra</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>
+                        <tr><th colspan="2" class="text-left-cell">Français</th><td id="sm_frs_cisco">-</td><td id="note_frs_cisco">-</td><td id="sm_frs_dren">-</td><td id="note_frs_dren">-</td><td id="sm_frs_mada">-</td><td id="note_frs_mada">-</td></tr>
+                        <tr><td class="ident" colspan="2">-Compréhension</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>
+                        <tr><td class="ident" colspan="2">-Grammaire</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>
+                        <tr><td class="ident" colspan="2">-Expression écrite</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>
+                        <tr><th colspan="2" class="text-left-cell">Mathématique</th><td id="sm_mths_cisco">-</td><td id="note_mths_cisco">-</td><td id="sm_mths_dren">-</td><td id="note_mths_dren">-</td><td id="sm_mths_mada">-</td><td id="note_mths_mada">-</td></tr>
+                        <tr><td class="ident" colspan="2">-Opération</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>
+                        <tr><td class="ident" colspan="2">-Problème</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>
+                        <tr><th colspan="2" class="text-left-cell">Autre matières</th><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>
+                    </table>
+
+                    <!-- Pourcentage des admis au CEPE -->
+                    <table class="tdb-table">
+                        <tr class="gris"><th colspan="4">Pourcentage des admis au CEPE (admis/inscrit en CM2)</th></tr>
+                        <tr><td width="34%" class="text-left-cell">Garçon</td><td id="cepe_g_cisco">-</td><td id="cepe_g_dren">-</td><td id="cepe_g_mada">-</td></tr>
+                        <tr><td class="item text-left-cell">Fille</td><td id="cepe_f_cisco">-</td><td id="cepe_f_dren">-</td><td id="cepe_f_mada">-</td></tr>
+                        <tr><td class="item text-left-cell">Ensemble</td><td id="cepe_e_cisco">-</td><td id="cepe_e_dren">-</td><td id="cepe_e_mada">-</td></tr>
+                        <tr><td class="item text-left-cell">Disparité au dépens de</td><td id="cepe_disp_cisco">-</td><td id="cepe_disp_dren">-</td><td id="cepe_disp_mada">-</td></tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+
+        <!-- =================== RESSOURCES =================== -->
+        <div class="titre_indicateur">Ressources</div>
+
+        <table style="width:100%;border:none;" cellspacing="0">
+            <tr>
+                <td width="50%" style="vertical-align:top;border:none;padding:0 5px 0 0;">
+                    <table class="tdb-table">
+                        <tr>
+                            <th width="46%">&nbsp;</th>
+                            <th class="gris" width="18%">CISCO</th>
+                            <th class="gris" width="18%">DREN</th>
+                            <th class="gris" width="18%">MADA</th>
+                        </tr>
+                        <tr><td class="text-left-cell">Nombre d'écoles fonctionnelles</td><td id="nbr_etab_cisco">-</td><td id="nbr_etab_dren">-</td><td id="nbr_etab_mada">-</td></tr>
+                        <tr><td class="text-left-cell">Nombre d'élèves</td><td id="nbr_eleve_cisco">-</td><td id="nbr_eleve_dren">-</td><td id="nbr_eleve_mada">-</td></tr>
+                        <tr><td class="text-left-cell">Nombre d'enseignant en classe</td><td id="pers_en_classe_cisco">-</td><td id="pers_en_classe_dren">-</td><td id="pers_en_classe_mada">-</td></tr>
+                        <tr><td class="text-left-cell">Fonctionnaire et contractuels</td><td id="fonctionnaire_cisco">-</td><td id="fonctionnaire_dren">-</td><td id="fonctionnaire_mada">-</td></tr>
+                        <tr><td class="text-left-cell">FRAM subventionnés</td><td id="sub_cisco">-</td><td id="sub_dren">-</td><td id="sub_mada">-</td></tr>
+                        <tr><td class="text-left-cell">FRAM non subventionnés</td><td id="non_sub_cisco">-</td><td id="non_sub_dren">-</td><td id="non_sub_mada">-</td></tr>
+                        <tr><td class="text-left-cell">Nombre de classes pédagogiques</td><td id="nbr_section_cisco">-</td><td id="nbr_section_dren">-</td><td id="nbr_section_mada">-</td></tr>
+                    </table>
+                    <table class="tdb-table">
+                        <tr>
+                            <th width="46%">&nbsp;</th>
+                            <th class="gris" width="18%">CISCO</th>
+                            <th class="gris" width="18%">DREN</th>
+                            <th class="gris" width="18%">MADA</th>
+                        </tr>
+                        <tr><td class="text-left-cell">Pourcentage d'écoles continues</td><td id="tx_ecole_continue_cisco">-</td><td id="tx_ecole_continue_dren">-</td><td id="tx_ecole_continue_mada">-</td></tr>
+                        <tr><td class="text-left-cell">Pourcentage d'élèves vivant à moins de 2km de leur école</td><td id="tx_eleve_2km_cisco">-</td><td id="tx_eleve_2km_dren">-</td><td id="tx_eleve_2km_mada">-</td></tr>
+                        <tr><td class="text-left-cell">Pourcentage d'écoles avec point d'eau</td><td id="tx_eau_cisco">-</td><td id="tx_eau_dren">-</td><td id="tx_eau_mada">-</td></tr>
+                        <tr><td class="text-left-cell">Pourcentage d'écoles avec électricité</td><td id="tx_elec_cisco">-</td><td id="tx_elec_dren">-</td><td id="tx_elec_mada">-</td></tr>
+                        <tr><td class="text-left-cell">Pourcentage de fokontany ayant au moins une EPP</td><td id="tx_fkt_epp_cisco">-</td><td id="tx_fkt_epp_dren">-</td><td id="tx_fkt_epp_mada">-</td></tr>
+                    </table>
+                </td>
+                <td width="50%" style="vertical-align:top;border:none;padding:0 0 0 5px;">
+                    <table class="tdb-table">
+                        <tr>
+                            <th width="46%">&nbsp;</th>
+                            <th class="gris" width="18%">CISCO</th>
+                            <th class="gris" width="18%">DREN</th>
+                            <th class="gris" width="18%">MADA</th>
+                        </tr>
+                        <tr><td class="text-left-cell">Nombre d'élèves par maître</td><td id="ratio_eleve_maitre_cisco">-</td><td id="ratio_eleve_maitre_dren">-</td><td id="ratio_eleve_maitre_mada">-</td></tr>
+                        <tr><td class="text-left-cell">Pourcentage des enseignants n'ayant pas de diplôme pédagogique</td><td id="tx_sans_diplome_cisco">-</td><td id="tx_sans_diplome_dren">-</td><td id="tx_sans_diplome_mada">-</td></tr>
+                        <tr><td class="text-left-cell">Rapport classes pédagogiques par salle définitive</td><td id="ratio_classe_salle_cisco">-</td><td id="ratio_classe_salle_dren">-</td><td id="ratio_classe_salle_mada">-</td></tr>
+                        <tr><td class="text-left-cell">Nombre d'élèves par place assise</td><td id="eleve_place_cisco">-</td><td id="eleve_place_dren">-</td><td id="eleve_place_mada">-</td></tr>
+                        <tr><td class="text-left-cell">Nombre d'élèves par Latrine</td><td id="eleve_latrine_cisco">-</td><td id="eleve_latrine_dren">-</td><td id="eleve_latrine_mada">-</td></tr>
+                        <tr><td class="text-left-cell">Nombre des filles par latrine pour fille</td><td id="eleve_latrinef_cisco">-</td><td id="eleve_latrinef_dren">-</td><td id="eleve_latrinef_mada">-</td></tr>
+                        <tr><td class="text-left-cell">Nombre d'élèves par manuel - Malagasy</td><td id="eleve_manuel_mlg_cisco">-</td><td id="eleve_manuel_mlg_dren">-</td><td id="eleve_manuel_mlg_mada">-</td></tr>
+                        <tr><td class="ident">-Mathématique</td><td id="eleve_manuel_mths_cisco">-</td><td id="eleve_manuel_mths_dren">-</td><td id="eleve_manuel_mths_mada">-</td></tr>
+                        <tr><td class="ident">-Français</td><td id="eleve_manuel_frs_cisco">-</td><td id="eleve_manuel_frs_dren">-</td><td id="eleve_manuel_frs_mada">-</td></tr>
+                    </table>
+                    <table class="tdb-table">
+                        <tr class="gris">
+                            <th width="46%">Ressources financières par élèves</th>
+                            <th width="18%">&nbsp;</th>
+                            <th width="18%">&nbsp;</th>
+                            <th width="18%">&nbsp;</th>
+                        </tr>
+                        <tr><td class="text-left-cell">Caisse école</td><td class="manga" id="caisse_cisco">-</td><td class="manga" id="caisse_dren">-</td><td class="manga" id="caisse_mada">-</td></tr>
+                        <tr><td class="text-left-cell">Subventions</td><td class="mavo" id="subv_cisco">-</td><td class="mavo" id="subv_dren">-</td><td class="mavo" id="subv_mada">-</td></tr>
+                        <tr><td class="text-left-cell">Cotisation FRAM</td><td class="mavo" id="cotis_cisco">-</td><td class="mavo" id="cotis_dren">-</td><td id="cotis_mada">-</td></tr>
+                        <tr><td class="text-left-cell">Autres</td><td class="mavo" id="autres_cisco">-</td><td class="mavo" id="autres_dren">-</td><td class="mavo" id="autres_mada">-</td></tr>
+                        <tr><td class="text-left-cell"><b>Total</b></td><td id="total_fin_cisco">-</td><td id="total_fin_dren">-</td><td id="total_fin_mada">-</td></tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+
+        <!-- =================== GOULOT D'ÉTRANGLEMENT ET EFFICIENCE =================== -->
+        <div class="titre_indicateur">Goulot d'Étranglement &nbsp;&nbsp;et&nbsp;&nbsp; Efficience</div>
+
+        <div class="row" style="border: 1px solid #000; min-height: 400px;">
+            <div class="col-lg-6" id="cadre-goulot" style="padding:10px;">
+                <h6 class="text-center font-weight-bold">Goulot d'étranglement</h6>
+                <canvas id="chart-goulot" height="350"></canvas>
+            </div>
+            <div class="col-lg-6" id="cadre-efficience" style="padding:10px;">
+                <h6 class="text-center font-weight-bold">Efficience</h6>
+                <img src="/static/img/cadran.png" height="350" alt="efficience cadran" style="position:absolute; left:50%; transform:translateX(-50%); top:0; z-index:1;">
+                <!-- <canvas id="chart-efficience" height="350"></canvas> -->
+            </div>
+        </div>
+
+        <!-- Cadran -->
+        <div class="text-center mt-2">
+            <img src="/static/img/cadran.png" width="300" alt="Cadran d'analyse">
+        </div>
+    </div><!-- tdb-box -->
+</div>

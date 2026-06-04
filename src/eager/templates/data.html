@@ -1,0 +1,142 @@
+{% extends 'base.html' %} {% load static %} 
+{% load static %}
+
+{% block title %} DONNEES-EAGER {% endblock %} {% block filtre %}
+<span class="ml-5 text-gray-700" style="font-weight: bold">PROJET EAGER</span>
+{% endblock %}
+{% block style %}
+<style>
+.elem, .elem * {
+	box-sizing: border-box;
+	margin: 0 !important;	
+}
+.elem {
+	display: inline-block;
+	font-size: 0;
+	width: 30%;
+	border: 20px solid transparent;
+	border-bottom: none;
+	background: #fff;
+	padding: 10px;
+	height: auto;
+	background-clip: padding-box;
+}
+.elem > span {
+	display: block;
+	cursor: pointer;
+	height: 0;
+	padding-bottom:	70%;
+	background-size: cover;	
+	background-position: center center;
+}
+
+.lcl_fade_oc.lcl_pre_show #lcl_overlay,
+.lcl_fade_oc.lcl_pre_show #lcl_window,
+.lcl_fade_oc.lcl_is_closing #lcl_overlay,
+.lcl_fade_oc.lcl_is_closing #lcl_window {
+	opacity: 0 !important;
+}
+.lcl_fade_oc.lcl_is_closing #lcl_overlay {
+	-webkit-transition-delay: .15s !important; 
+	transition-delay: .15s !important;
+}
+#lcl_contents_wrap{
+    width: 800px !important;
+    height:800px !important
+}
+</style>
+{% endblock %}
+{% block container_fluid %}
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Données</title>
+
+    <!-- Custom fonts for this template-->
+    <link
+      href="{% static 'vendor/fontawesome-free/css/all.min.css' %}" rel="stylesheet" type="text/css" />
+    <link
+      href="https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,700,700i,800,800i,900,900i" rel="stylesheet" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" />
+
+    <!-- Custom styles for this template-->
+    <link href="{% static 'css/sb-admin-2.min.css' %}" rel="stylesheet" />
+    <link href="{% static 'vendor/datatables/datatables.min.css' %}" rel="stylesheet" />
+    <!-- waitme plugins -->
+    <link href="{% static 'js/waitme/waitMe.min.css' %}" rel="stylesheet" />
+    <link href="{% static 'css/custom-dpeapp.css' %}" rel="stylesheet" />
+    <!-- select2 plugins -->
+    <link href="{% static 'vendor/select2/css/select2.min.css' %}" rel="stylesheet" />
+    <!-- noUiSlider plugins -->
+    <link href="{% static 'vendor/noUiSlider/nouislider.min.css' %}" rel="stylesheet" />
+
+
+  <!-- DataTables CSS -->
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap4.min.css">
+  <link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.2/css/buttons.bootstrap4.min.css">
+
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.11.5/css/jquery.dataTables.min.css">
+ 
+</head>
+<body>
+    <div class="row">
+        <div class="col-6 text-left float-left">
+            <div class="row mt-2 rounded">
+                
+            {% if name %}
+                <div class="ml-5 mt-2">
+                    <div class="card" >
+                        <div class="row no-gutters">
+                        <!-- Image à gauche -->
+                        <div class="col-md-4">
+                            <img src="{{ jf }}" class="card-img" />
+                        </div>
+                        <!-- Infos à droite -->
+                        <div class="col-md-8">
+                            <div class="card-body">
+                            <h5 class="card-title">Nom :{{ name }}</h5>
+                            <p class="card-text"><strong>Prénom :</strong> {{ lastname }}</p>
+                            <p class="card-text"><strong> Tuteur :</strong> {{ tuteur }} </p>
+                            <p class="card-text"><strong> Recepteur :</strong> {{ recepteur }}</p>
+                            <p class="card-text"><strong> Contact :</strong> {{ tel }}</p>
+                            </div>
+                        </div>
+                        </div>
+                    </div>
+                </div>            
+            {% endif %}
+            </div>
+            <div class="row mt-2 rounded">
+                <div class="col-4 card">
+                    <img class="pj" data-title="Copie Acte de Naissance" data-thumb="{{ copie }}" src="{{ copie }}" width="200" height="200" />
+                </div>
+                <div class="col-4 card">
+                    <img class="pj" data-title="Pièce Justificatif pour Tuteur" data-thumb="{{ tt }}" src="{{ tt }}" width="200" height="200" />
+                </div>
+                <div class="col-4 card">
+                    <img class="pj" data-title="CIN Recto du Recepteur" data-thumb="{{ cin }}" src="{{ cin }}" width="200" height="200" />
+                </div>
+            </div>  
+        </div>
+    </div>
+{% endblock %} 
+{% block scripts %}
+
+<script type="text/javascript">
+$(document).ready(function(e) {
+	
+    $(document).on("click",".pj", function (){
+        src = $(this).data("thumb")
+        title = $(this).data("title")
+        console.log(src)
+        $("#msgTitle").html(title)
+        $("#msgBody").html(`<img src='${src}' width="600" height="600" />`)
+        $("#app-dialog .modal-content").css("width","700px") //style="width: 800px;"
+        $("#app-dialog").modal("show")
+
+    })
+
+});
+</script>
+{% endblock %}

@@ -1,0 +1,102 @@
+{% extends 'base.html' %} {% load static %} {% block style %}
+<link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}" />
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css"
+/>
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css"
+/>
+<link rel="stylesheet" href="{% static 'vendor/leaflet/easy-button.css' %}" />
+<link
+  rel="stylesheet"
+  href="{% static 'vendor/leaflet/fullscreen/Control.FullScreen.css' %}"
+/>
+<link
+  rel="stylesheet"
+  href="{% static 'vendor/leaflet/Contextual/contextual.css' %}"
+/>
+<link
+  rel="stylesheet"
+  href="{% static 'vendor/leaflet/Contextual/contextual.theme.css' %}"
+/>
+<style>
+    .slider-container {
+        padding: 20px;
+    }
+    #slider {
+        margin: 20px 0;
+    }
+</style>
+{% endblock %} {% block title %} VISUALISATION {% endblock %} {% block filtre %}
+<span class="ml-5 text-gray-700" style="font-weight: bold"
+  >SYSTEME D'INFORMATION GEOGRAPHIQUE / CARTE THEMATIQUE DES INDICATEURS
+</span>
+{% endblock %} {% block container_fluid %}
+<div class="row" style="">
+  <div class="col-lg-3">
+    <div class="filter-form">
+      <h3 class="text-center mb-4" style="color: #2c3e50">Filtres</h3>
+      <div class="form-group">
+        <select name="theme" id="theme" class="form-control">
+          <option value="0" selected>--Choisir un thème--</option>
+          <optgroup label="Primaire">
+            <option value="hm">Densité des écoles</option>
+            <option value="rem">Ratio élève-maître</option>
+            <option value="re-sdc">Ratio élèves par salle de classe</option>
+            <option value="ratio-pa">Ratio élèves par place assise</option>
+            <option value="elec">Pourcentage des École électrifiée</option>
+            <option value="eau">Pourcentage des École avec point d'eau</option>
+            <option value="exist-lat-g">Pourcentage des École ayant des latrines pour garçons</option>
+            <option value="exist-lat-f">Pourcentage des École ayant des latrines pour filles</option>
+            <option value="exist-lat">Pourcentage des École ayant des latrines communes</option>
+            <option value="ens-f">Pourcentage des enseignants Fonctionnaires</option>
+            <option value="ens-fsub">Pourcentage des enseignants FRAM subventionnés</option>
+            <option value="ens-fnsub">
+              Pourcentage des enseignants FRAM non subventionnés et Autres
+            </option>
+            <option value="ens-q">Pourcentage des enseignants qualifiés</option>
+            <option value="extra-ens">
+              Nombre des enseignants en sureffectif
+            </option>
+          </optgroup>
+        </select>
+      </div>
+
+      <div class="form-group d-none filter-key">
+        <div class="slider-container">
+            <label class="form-label">Plage de valeurs Min et Max :</label>
+            <div id="slider"></div>
+            <div class="range-display">
+                Plage : <span id="minValue">25</span> - <span id="maxValue">75</span>
+            </div>
+        </div>
+      </div>
+      
+      <div class="text-right  d-none filter-key">
+        <button class="btn btn-sm btn-primary" id="btn-filter">
+          <i class="fa fa-filter"></i>&nbsp;Appliquer
+        </button>
+      </div>
+    </div>
+  </div>
+  <!-- // end col-lg-3 -->
+  <div class="col-lg-9" id="div-map">
+    <div id="loading-spinner">
+      <div class="spinner"></div>
+    </div>
+  </div>
+</div>
+
+{% endblock %} {% block scripts %}
+<script src="{% static 'vendor/leaflet/leaflet.js' %}"></script>
+<script src="{% static 'vendor/leaflet/leaflet-heat.js' %}"></script>
+<script src="{% static 'vendor/leaflet/leaflet-bing-layer.min.js' %}"></script>
+<script src="{% static 'vendor/leaflet/easy-button.js' %}"></script>
+<script src="{% static 'vendor/leaflet/leaflet-easy-print.js' %}"></script>
+<script src="{% static 'vendor/leaflet/fullscreen/Control.FullScreen.js' %}"></script>
+<script src="{% static 'vendor/leaflet/Contextual/contextual.js' %}"></script>
+<script src="{% static 'js/referentiel.js' %}"></script>
+<script src="{% static 'js/cartethematique.js' %}"></script>
+{% endblock %}

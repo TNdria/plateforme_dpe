@@ -1,0 +1,271 @@
+{% extends 'base.html' %} {% load static %} 
+{% load static %}
+
+{% block title %} NETTOYAGES DE DONNEES-EAGER {% endblock %} {% block filtre %}
+<span class="ml-5 text-gray-700" style="font-weight: bold">Bonjour {{ nom }}</span>
+{% endblock %} 
+{% block style %}
+<!-- Custom fonts for this template-->
+    <link
+      href="{% static 'vendor/fontawesome-free/css/all.min.css' %}" rel="stylesheet" type="text/css" />
+    <link
+      href="https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,700,700i,800,800i,900,900i" rel="stylesheet" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" />
+
+    <!-- Custom styles for this template-->
+    <link href="{% static 'css/sb-admin-2.min.css' %}" rel="stylesheet" />
+    <link href="{% static 'vendor/datatables/datatables.min.css' %}" rel="stylesheet" />
+    <!-- waitme plugins -->
+    <link href="{% static 'js/waitme/waitMe.min.css' %}" rel="stylesheet" />
+    <link href="{% static 'css/custom-dpeapp.css' %}" rel="stylesheet" />
+    <!-- select2 plugins -->
+    <link href="{% static 'vendor/select2/css/select2.min.css' %}" rel="stylesheet" />
+    <!-- noUiSlider plugins -->
+    <link href="{% static 'vendor/noUiSlider/nouislider.min.css' %}" rel="stylesheet" />
+
+    <!-- Toastr CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css">
+
+
+  <!-- DataTables CSS -->
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap4.min.css">
+  <link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.2/css/buttons.bootstrap4.min.css">
+
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.11.5/css/jquery.dataTables.min.css">
+<style>
+  /* Style du champ de case custom-checkbox*/
+input[type="checkbox"] {
+    /* Masquer le champ de case par défaut */
+    appearance: none;
+    -webkit-appearance: none;
+
+    /* Créer une boîte personnalisée */
+  width: 30px  !important;
+  height: 30px  !important;
+  border: 2px solid #555  !important;
+  display: inline-block  !important;
+  border-radius: 4px  !important; /* arrondi */
+  margin-right: 8px  !important;
+  vertical-align: middle  !important;
+  transition: all 0.3s ease;
+
+    /* Style pour l'état coché */
+    &:checked {
+      background-color: #dbe4dbff  !important;
+      border-color: #4CAF50  !important;
+      position: relative  !important;
+    }
+}
+input[type="checkbox"]:checked::after {
+    content: '✔'  !important;
+    color: #4CAF50  !important;
+    position: absolute  !important;
+    top: 50%  !important;
+    left: 50%  !important;
+    transform: translate(-50%, -50%)  !important;
+    /*color: white  !important;*/
+    font-size: 12px  !important;
+}
+
+tr td {
+  vertical-align: middle !important;
+  
+}
+
+</style>
+{% endblock %}
+{% block container_fluid %}
+
+
+<div class="row mb-1 card-header">
+    <div class="col-lg-12">
+      <form class="form-inline" style="width:100%; margin:0 auto;" >       
+        <div class="form-group mb-2 mr-2">
+          <label for="cisco" class="mr-2">CISCO:</label>
+          <select class="form-control" id="cisco">
+            <option value="0"  selected>Sélectionner une CISCO</option>
+              {% for c in ciscos %}
+              <option value="{{ c }}">{{ c }}</option>
+              {% endfor %}
+          </select>
+        </div>
+        <div class="form-group mb-2 mr-2">
+          <label for="zap" class="mr-2">ETABLISSEMENT:</label>
+          <select class="form-control" id="ecole">
+            <option value="0">Sélectionner Etablissement</option>
+          </select>
+        </div>
+
+        <button type="submit" id="btn-filter" onclick="return false" class="btn btn-primary mb-2">&nbsp;Filtrer</button>
+      </form>
+    </div>
+  </div>
+  <div class="row mb-2 card-body">
+    <div class="col-lg-12" id="div-data"></div>
+  </div>
+
+{% endblock %} 
+{% block scripts %}
+<!-- Toast -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+
+<script type="text/javascript">
+  $(document).ready(function(e) {
+  $(document).on("ajaxSend", function (event, jqXHR, ajaxSettings) {
+      utils.waitmeShow('div-data', 'win8')
+  })
+  $(document).on("ajaxComplete", function (event, jqXHR, ajaxSettings) {
+      utils.waitmeClose('div-data')
+  })
+  $(document).on("ajaxStop", function () {
+      utils.waitmeClose('div-data')
+  })
+     
+  $(document).on("click",".pj", function (){
+      src = $(this).attr("src")
+      title = $(this).data("title")
+      $("#msgTitle").html(title)
+      $("#msgBody").html(`<img src='${src}' width="600" height="600" />`)
+      $("#app-dialog .modal-content").css("width","700px") //style="width: 800px;"
+      $("#app-dialog").modal("show")
+
+  })
+    //console.log(data)
+    $(document).on("change","#cisco", function (){
+        url = "/eager/datachecking/getlisteceg/"+$(this).val()+"/"
+        $.get(url, function(data, status){
+            //console.log(data)
+            $("#ecole").empty();
+            $("#ecole").append(new Option("Sélectionner Etablissement", "0"))
+            data.forEach(item => {
+                $("#ecole").append(new Option(item.etab, item.code))
+            })
+        })
+    })
+
+  $(document).on("click","#btn-filter", function (){
+      if($("#cisco").val() == "0"){
+          alert("Veuillez sélectionner une CISCO")
+          return
+      }
+      if($("#ecole").val() == "0"){
+          alert("Veuillez sélectionner un établissement")
+          return
+      }
+      url = "/eager/datachecking/getlistepj/"+parseInt($("#ecole").val())+"/"
+      $.get(url, function(data, status){
+          //console.log(data)
+          var table_html = `
+          <table id="dataTable" class="table table-bordered table-striped" style="width:100%">
+              <thead>
+                  <tr class='text-center'>
+                      <th width='200'>NOM PRENOMS</th>
+                      <th width='50'>NIVEAU</th>
+                      <th>MERE</th>
+                      <th>COPIE</th>
+                      <th>ELEVE </th>
+                      <th>PIECE TUTEUR </th>
+                      <th>CIN RECEPTEUR </th>
+                      <th>COPIE</th>
+                      <th>ELEVE </th>
+                      <th>PJ TUTEUR</th>
+                      <th>CIN RECEPTEUR</th>
+                  </tr>
+              </thead>
+              <tbody>
+          `
+          data.forEach(item => {
+              console.log(item.is_copie_valid)
+              jf = item.photo_jeune_fille ? item.photo_jeune_fille : "default.jpg"
+              cp = item.photo_acte_de_naissance ? item.photo_acte_de_naissance : "default.jpg"
+              pj = item.photo_piece ? item.photo_piece : "default.jpg"
+              cin = item.photo_cin_recepteur_recto ? item.photo_cin_recepteur_recto : "default.jpg"  
+              table_html += `
+                <tr>
+                    <td>${(item.nom).toUpperCase()} ${item.prenom}</td>
+                    <td class="text-center">${item.niveau}</td>
+                    <td>${item.nom_mere}</td>
+                    <td>
+                        <img class="pj text-center" data-title="Acte de Naissance de ${(item.nom).toUpperCase()}" src="https://dpe-men.mg/pjeager/PHOTO_ACTE_DE_NAISSANCE/${cp}" width="200" />
+                    </td>
+                    <td>
+                        <img class="pj text-center" data-title="Photo de ${(item.nom).toUpperCase()}" src="https://dpe-men.mg/pjeager/PHOTO_JEUNE_FILLE/${jf}" width="200" />
+                    </td>
+                    <td>
+                        <img class="pj text-center" data-title="PJ Tuteur de ${(item.nom).toUpperCase()}" src="https://dpe-men.mg/pjeager/PHOTO_PIECE/${pj}" width="200" />
+                    </td>
+                    <td>
+                        <img class="pj text-center" data-title="CIN du Recepteur de la bourse de ${(item.nom).toUpperCase()}" src="https://dpe-men.mg/pjeager/PHOTO_CIN_RECEPTEUR_RECTO/${cin}" width="200"  />
+                    </td>
+                    <td>
+                        <label for="cp_${item.instanceid}" class="sr-only">Valider Copie</label>
+                        <input type="checkbox" class="custom-checkbox chk_pj" id="cp_${item.instanceid}" data-field="is_copie_valid" data-uuid="${item.instanceid}" ${item.is_copie_valid ? "checked" : ""}>
+                    </td>
+                    <td>
+                        <label for="jf_${item.instanceid}" class="sr-only">Valider photo JF</label>
+                        <input type="checkbox" class="custom-checkbox chk_pj" id="jf_${item.instanceid}" data-field="is_jf_valid" data-uuid="${item.instanceid}" ${item.is_jf_valid ? "checked" : ""}>
+                    </td>
+                    <td>
+                        <label for="pj_${item.instanceid}" class="sr-only">Valider tuteur</label>
+                        <input type="checkbox" class="custom-checkbox chk_pj" id="pj_${item.instanceid}" data-field="is_pj_valid" data-uuid="${item.instanceid}" ${item.is_pj_valid ? "checked" : ""}>
+                    </td>
+                    <td>
+                        <label for="cin_${item.instanceid}" class="sr-only">Valider CIN</label>
+                        <input type="checkbox" class="custom-checkbox chk_pj" id="cin_${item.instanceid}" data-field="is_cin_valid" data-uuid="${item.instanceid}" ${item.is_cin_valid ? "checked" : ""}>
+                    </td>
+                </tr>
+              `
+          })
+          table_html += `
+              </tbody>
+          </table>
+          `
+          $("#div-data").html(table_html)
+          $('#dataTable').DataTable({
+              dom: 'frtip',
+              buttons: [
+                  'copy', 'csv', 'excel', 'pdf', 'print'
+              ],
+            "pageLength": 100,
+            "bLengthChange": false 
+          });
+      })
+  })
+
+  $(document).on("change",".chk_pj", function (){
+    toastr.options = {
+        "closeButton": true,
+        "debug": false,
+        "newestOnTop": true,
+        "progressBar": true,
+        "positionClass": "toast-top-right",
+        "preventDuplicates": false,
+        "onclick": null,
+        "showDuration": "300",
+        "hideDuration": "1000",
+        "timeOut": "5000",
+        "extendedTimeOut": "1000",
+        "showEasing": "swing",
+        "hideEasing": "linear",
+        "showMethod": "fadeIn",
+        "hideMethod": "fadeOut"
+      }
+      uuid = $(this).data("uuid")
+      is_checked = $(this).is(":checked") ? 1 : 0
+      col = $(this).parent().index() //récupérer l'index de la colonne
+      field  =  $(this).data("field")
+      if(field == "") return
+      url = `/eager/datachecking/updatepj/${uuid}/${field}/${is_checked}/`
+      $.get(url, function(res, status){
+          if(res.result != "ok"){
+            toastr.error(`Erreur lors de la mise à jour,\n ${res.message} \n Veuillez réessayer plus tard`);
+            return
+          }
+          toastr.success("Mise à jour effectuée avec succès");
+
+      })
+  })
+
+});
+</script>
+{% endblock %}

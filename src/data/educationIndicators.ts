@@ -1,0 +1,175 @@
+/**
+ * National-level education indicators from "EDUCATION EN CHIFFRES 2024-2025"
+ * Source: MEN Madagascar - Mars 2025
+ */
+
+export interface FluxData {
+  garcons: number;
+  filles: number;
+  total: number;
+}
+
+export interface FluxByYear {
+  [year: string]: FluxData;
+}
+
+export interface EfficaciteData {
+  taux_achevement: {
+    primaire: { [year: string]: FluxData };
+    college: { [year: string]: FluxData };
+    lycee: { [year: string]: FluxData };
+  };
+  taux_transition: {
+    primaire_college: { [year: string]: { filles: number; total: number } };
+    college_lycee: { [year: string]: { filles: number; total: number } };
+  };
+  coefficient_efficacite: {
+    [year: string]: { global: number; sans_redoublement: number; sans_abandon: number };
+  };
+}
+
+export const fluxNationaux = {
+  promotion: {
+    primaire: {
+      "2019-2020": { garcons: 47.8, filles: 49.2, total: 48.5 },
+      "2020-2021": { garcons: 43.6, filles: 45.5, total: 44.5 },
+      "2021-2022": { garcons: 50.3, filles: 52.8, total: 51.5 },
+      "2022-2023": { garcons: 52.9, filles: 55.4, total: 54.2 },
+      "2023-2024": { garcons: 54.2, filles: 56.8, total: 55.5 },
+    },
+    college: {
+      "2019-2020": { garcons: 66.0, filles: 66.7, total: 66.4 },
+      "2020-2021": { garcons: 61.0, filles: 63.0, total: 62.0 },
+      "2021-2022": { garcons: 68.8, filles: 70.6, total: 69.7 },
+      "2022-2023": { garcons: 68.6, filles: 68.7, total: 68.6 },
+      "2023-2024": { garcons: 70.6, filles: 72.7, total: 71.7 },
+    },
+    lycee: {
+      "2019-2020": { garcons: 81.3, filles: 80.6, total: 80.9 },
+      "2020-2021": { garcons: 71.3, filles: 72.5, total: 72.0 },
+      "2021-2022": { garcons: 68.7, filles: 71.0, total: 69.9 },
+      "2022-2023": { garcons: 68.8, filles: 70.1, total: 69.5 },
+      "2023-2024": { garcons: 69.1, filles: 69.9, total: 69.5 },
+    },
+  },
+  redoublement: {
+    primaire: {
+      "2019-2020": { garcons: 20.7, filles: 19.3, total: 20.0 },
+      "2020-2021": { garcons: 20.9, filles: 18.8, total: 19.9 },
+      "2021-2022": { garcons: 24.3, filles: 22.0, total: 23.2 },
+      "2022-2023": { garcons: 23.1, filles: 21.0, total: 22.1 },
+      "2023-2024": { garcons: 23.3, filles: 21.2, total: 22.3 },
+    },
+    college: {
+      "2019-2020": { garcons: 5.8, filles: 5.1, total: 5.5 },
+      "2020-2021": { garcons: 9.0, filles: 7.8, total: 8.4 },
+      "2021-2022": { garcons: 9.7, filles: 8.4, total: 9.0 },
+      "2022-2023": { garcons: 8.6, filles: 7.1, total: 7.8 },
+      "2023-2024": { garcons: 8.7, filles: 7.6, total: 8.1 },
+    },
+    lycee: {
+      "2019-2020": { garcons: 3.4, filles: 2.8, total: 3.1 },
+      "2020-2021": { garcons: 5.3, filles: 4.2, total: 4.7 },
+      "2021-2022": { garcons: 5.0, filles: 4.3, total: 4.6 },
+      "2022-2023": { garcons: 4.0, filles: 4.9, total: 4.5 },
+      "2023-2024": { garcons: 5.9, filles: 4.7, total: 5.3 },
+    },
+  },
+  abandon: {
+    primaire: {
+      "2019-2020": { garcons: 31.5, filles: 31.5, total: 31.5 },
+      "2020-2021": { garcons: 35.5, filles: 35.7, total: 35.6 },
+      "2021-2022": { garcons: 25.4, filles: 25.2, total: 25.3 },
+      "2022-2023": { garcons: 23.9, filles: 23.6, total: 23.7 },
+      "2023-2024": { garcons: 22.5, filles: 22.0, total: 22.2 },
+    },
+    college: {
+      "2019-2020": { garcons: 28.2, filles: 28.1, total: 28.2 },
+      "2020-2021": { garcons: 29.9, filles: 29.2, total: 29.6 },
+      "2021-2022": { garcons: 21.5, filles: 21.0, total: 21.3 },
+      "2022-2023": { garcons: 22.8, filles: 24.2, total: 23.5 },
+      "2023-2024": { garcons: 20.7, filles: 21.8, total: 20.2 },
+    },
+    lycee: {
+      "2019-2020": { garcons: 15.3, filles: 16.7, total: 16.1 },
+      "2020-2021": { garcons: 23.4, filles: 23.3, total: 23.3 },
+      "2021-2022": { garcons: 26.3, filles: 24.6, total: 25.4 },
+      "2022-2023": { garcons: 27.2, filles: 25.0, total: 26.0 },
+      "2023-2024": { garcons: 25.0, filles: 25.4, total: 25.2 },
+    },
+  },
+};
+
+export const efficaciteNationale = {
+  taux_achevement: {
+    primaire: {
+      "2020-2021": { garcons: 36.6, filles: 40.3, total: 38.4 },
+      "2021-2022": { garcons: 35.5, filles: 39.4, total: 37.4 },
+      "2022-2023": { garcons: 39.9, filles: 44.5, total: 42.2 },
+      "2023-2024": { garcons: 40.7, filles: 45.3, total: 43.0 },
+      "2024-2025": { garcons: 53.4, filles: 59.2, total: 56.3 },
+    },
+    college: {
+      "2020-2021": { garcons: 23.1, filles: 25.0, total: 24.1 },
+      "2021-2022": { garcons: 21.7, filles: 24.2, total: 22.9 },
+      "2022-2023": { garcons: 23.7, filles: 26.3, total: 25.0 },
+      "2023-2024": { garcons: 22.8, filles: 26.3, total: 24.5 },
+      "2024-2025": { garcons: 26.7, filles: 29.4, total: 28.0 },
+    },
+    lycee: {
+      "2020-2021": { garcons: 8.7, filles: 9.3, total: 9.0 },
+      "2021-2022": { garcons: 5.0, filles: 5.2, total: 5.1 },
+      "2022-2023": { garcons: 14.3, filles: 15.0, total: 14.6 },
+      "2023-2024": { garcons: 15.5, filles: 16.2, total: 15.9 },
+      "2024-2025": { garcons: 12.4, filles: 14.1, total: 13.2 },
+    },
+  },
+  taux_transition: {
+    primaire_college: {
+      "2020-2021": { filles: 59.0, total: 58.2 },
+      "2021-2022": { filles: 57.7, total: 57.1 },
+      "2022-2023": { filles: 65.9, total: 65.1 },
+      "2023-2024": { filles: 71.4, total: 70.1 },
+      "2024-2025": { filles: 72.0, total: 71.7 },
+    },
+    college_lycee: {
+      "2020-2021": { filles: 51.8, total: 50.5 },
+      "2021-2022": { filles: 52.8, total: 53.0 },
+      "2022-2023": { filles: 58.0, total: 56.7 },
+      "2023-2024": { filles: 63.0, total: 62.5 },
+      "2024-2025": { filles: 67.3, total: 65.7 },
+    },
+  },
+  coefficient_efficacite: {
+    "2020-2021": { global: 0.445, sans_redoublement: 0.556, sans_abandon: 0.801 },
+    "2021-2022": { global: 0.376, sans_redoublement: 0.467, sans_abandon: 0.805 },
+    "2022-2023": { global: 0.541, sans_redoublement: 0.695, sans_abandon: 0.778 },
+    "2023-2024": { global: 0.482, sans_redoublement: 0.612, sans_abandon: 0.789 },
+    "2024-2025": { global: 0.478, sans_redoublement: 0.607, sans_abandon: 0.787 },
+  },
+};
+
+/** Get the latest year's data for a flux type */
+export const getLatestFlux = (type: 'promotion' | 'redoublement' | 'abandon', level: 'primaire' | 'college' | 'lycee') => {
+  const data = fluxNationaux[type][level];
+  const years = Object.keys(data).sort();
+  const latestYear = years[years.length - 1];
+  return { year: latestYear, ...data[latestYear] };
+};
+
+/** Get evolution data (all years) for charts */
+export const getFluxEvolution = (type: 'promotion' | 'redoublement' | 'abandon', level: 'primaire' | 'college' | 'lycee') => {
+  const data = fluxNationaux[type][level];
+  return Object.entries(data).map(([year, values]) => ({
+    year: year.split('-')[0],
+    ...values,
+  }));
+};
+
+export const getAchevementEvolution = (level: 'primaire' | 'college' | 'lycee') => {
+  const data = efficaciteNationale.taux_achevement[level];
+  return Object.entries(data).map(([year, values]) => ({
+    year: year.split('-')[0],
+    ...values,
+  }));
+};

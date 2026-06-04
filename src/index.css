@@ -1,0 +1,521 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 
+ * DPE Plateforme Design System
+ * Modern, Professional Education Platform
+ * All colors MUST be HSL.
+ */
+
+@layer base {
+  :root {
+    /* Background & Foreground */
+    --background: 215 30% 97%;
+    --foreground: 224 71% 4%;
+
+    /* Card */
+    --card: 0 0% 100%;
+    --card-foreground: 224 71% 4%;
+
+    /* Popover */
+    --popover: 0 0% 100%;
+    --popover-foreground: 224 71% 4%;
+
+    /* Primary - Modern Blue */
+    /* Primary - DPE Blue (logo DPE) */
+    --primary: 220 50% 35%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 220 55% 50%;
+
+    /* Secondary - MEN Green (logo Ministère) */
+    --secondary: 142 100% 29%;
+    --secondary-foreground: 0 0% 100%;
+
+    /* Muted */
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 46%;
+
+    /* Accent - soft DPE blue */
+    --accent: 220 60% 95%;
+    --accent-foreground: 220 50% 30%;
+
+    /* Destructive - MEN Red (logo Ministère) */
+    --destructive: 0 100% 41%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Warning */
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    /* Success - aligned with MEN green */
+    --success: 142 100% 29%;
+    --success-foreground: 0 0% 100%;
+
+    /* Info */
+    --info: 215 70% 45%;
+    --info-foreground: 0 0% 100%;
+
+    /* Borders & Inputs */
+    --border: 220 20% 89%;
+    --input: 220 20% 89%;
+    --ring: 220 50% 35%;
+
+    --radius: 0.75rem;
+
+    /* Sidebar - Deep DPE Blue with subtle gradient feel */
+    --sidebar-background: 220 60% 13%;
+    --sidebar-foreground: 220 20% 96%;
+    --sidebar-primary: 142 90% 38%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 55% 22%;
+    --sidebar-accent-foreground: 220 20% 96%;
+    --sidebar-border: 220 45% 24%;
+    --sidebar-ring: 142 90% 38%;
+    --sidebar-gradient: linear-gradient(180deg, hsl(220 60% 13%) 0%, hsl(220 65% 9%) 100%);
+
+    /* Chart Colors */
+    --chart-1: 220 50% 35%;
+    --chart-2: 142 100% 29%;
+    --chart-3: 38 92% 50%;
+    --chart-4: 0 100% 41%;
+    --chart-5: 215 70% 55%;
+
+    /* Gradients - identité MEN/DPE */
+    --gradient-primary: linear-gradient(135deg, hsl(220 55% 25%) 0%, hsl(220 50% 45%) 100%);
+    --gradient-secondary: linear-gradient(135deg, hsl(142 100% 29%) 0%, hsl(142 80% 38%) 100%);
+    --gradient-accent: linear-gradient(135deg, hsl(220 60% 95%) 0%, hsl(142 60% 95%) 100%);
+    --gradient-dark: linear-gradient(135deg, hsl(220 55% 12%) 0%, hsl(220 55% 20%) 100%);
+    --gradient-tricolor: linear-gradient(90deg, hsl(142 100% 29%) 0%, hsl(220 50% 35%) 50%, hsl(0 100% 41%) 100%);
+    
+    /* Shadows */
+    --shadow-sm: 0 1px 2px 0 hsl(224 71% 4% / 0.05);
+    --shadow: 0 1px 3px 0 hsl(224 71% 4% / 0.1), 0 1px 2px -1px hsl(224 71% 4% / 0.1);
+    --shadow-md: 0 4px 6px -1px hsl(224 71% 4% / 0.1), 0 2px 4px -2px hsl(224 71% 4% / 0.1);
+    --shadow-lg: 0 10px 15px -3px hsl(224 71% 4% / 0.1), 0 4px 6px -4px hsl(224 71% 4% / 0.1);
+    --shadow-xl: 0 20px 25px -5px hsl(224 71% 4% / 0.1), 0 8px 10px -6px hsl(224 71% 4% / 0.1);
+    --shadow-glow: 0 0 20px hsl(220 50% 35% / 0.3);
+  }
+
+  .dark {
+    --background: 224 71% 4%;
+    --foreground: 220 14% 96%;
+
+    --card: 224 71% 8%;
+    --card-foreground: 220 14% 96%;
+
+    --popover: 224 71% 8%;
+    --popover-foreground: 220 14% 96%;
+
+    --primary: 220 60% 55%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 220 65% 65%;
+
+    --secondary: 142 80% 40%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 224 71% 12%;
+    --muted-foreground: 220 14% 65%;
+
+    --accent: 224 71% 15%;
+    --accent-foreground: 220 14% 96%;
+
+    --destructive: 0 85% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --warning: 38 92% 55%;
+    --warning-foreground: 0 0% 0%;
+
+    --success: 142 76% 42%;
+    --success-foreground: 0 0% 100%;
+
+    --info: 199 89% 55%;
+    --info-foreground: 0 0% 100%;
+
+    --border: 224 50% 18%;
+    --input: 224 50% 18%;
+    --ring: 220 60% 55%;
+
+    --sidebar-background: 224 71% 6%;
+    --sidebar-foreground: 220 14% 96%;
+    --sidebar-primary: 142 80% 45%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 55% 18%;
+    --sidebar-accent-foreground: 220 14% 96%;
+    --sidebar-border: 220 45% 20%;
+    --sidebar-ring: 142 80% 45%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', 'Plus Jakarta Sans', system-ui, sans-serif;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+    @apply font-semibold tracking-tight;
+  }
+}
+
+@layer components {
+  /* Glass Effect */
+  .glass {
+    @apply bg-card/80 backdrop-blur-xl border border-border/50;
+  }
+
+  /* Gradient Text */
+  .gradient-text {
+    @apply bg-clip-text text-transparent;
+    background-image: var(--gradient-primary);
+  }
+
+  /* Card Hover Effect */
+  .card-hover {
+    @apply transition-all duration-300 ease-out;
+  }
+
+  .card-hover:hover {
+    @apply shadow-lg -translate-y-1;
+  }
+
+  /* Stat Card Styles */
+  .stat-card {
+    @apply relative overflow-hidden rounded-xl border bg-card p-6 shadow-sm transition-all duration-300;
+  }
+
+  .stat-card:hover {
+    @apply shadow-md border-primary/20;
+  }
+
+  .stat-card::before {
+    content: '';
+    @apply absolute inset-0 opacity-0 transition-opacity duration-300;
+    background: var(--gradient-primary);
+  }
+
+  .stat-card:hover::before {
+    @apply opacity-5;
+  }
+
+  /* Shimmer Effect */
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      hsl(var(--muted)) 0%,
+      hsl(var(--muted-foreground) / 0.1) 50%,
+      hsl(var(--muted)) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  /* Pulse Glow */
+  .pulse-glow {
+    animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  /* Smooth Scroll */
+  .smooth-scroll {
+    scroll-behavior: smooth;
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+
+  .smooth-scroll::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .smooth-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .smooth-scroll::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--border));
+    border-radius: 3px;
+  }
+
+  .smooth-scroll::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground));
+  }
+}
+
+@layer utilities {
+  /* Text Gradient */
+  .text-gradient {
+    @apply bg-gradient-to-r from-primary via-info to-secondary bg-clip-text text-transparent;
+  }
+
+  /* Border Gradient */
+  .border-gradient {
+    border: 1px solid transparent;
+    background: linear-gradient(hsl(var(--card)), hsl(var(--card))) padding-box,
+                var(--gradient-primary) border-box;
+  }
+
+  /* Focus Ring */
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
+  }
+
+  /* Bande tricolore identitaire MEN / DPE (vert / bleu / rouge) */
+  .tricolor-bar {
+    background: var(--gradient-tricolor);
+    height: 4px;
+    width: 100%;
+  }
+
+  .tricolor-border-top {
+    border-top: 4px solid transparent;
+    border-image: var(--gradient-tricolor) 1;
+  }
+}
+
+/* Animations */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes route-progress {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 hsl(var(--primary) / 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px hsl(var(--primary) / 0);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes slide-up {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-in-right {
+  0% {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes scale-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.5s ease-out forwards;
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.5s ease-out forwards;
+}
+
+.animate-scale-in {
+  animation: scale-in 0.3s ease-out forwards;
+}
+
+/* Staggered Animation */
+.stagger-1 { animation-delay: 0.1s; }
+.stagger-2 { animation-delay: 0.2s; }
+.stagger-3 { animation-delay: 0.3s; }
+.stagger-4 { animation-delay: 0.4s; }
+.stagger-5 { animation-delay: 0.5s; }
+
+/* Hide scrollbar */
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+
+/* SIG Layer Control Styling - matching Django original */
+.leaflet-control-layers {
+  background: rgba(255, 255, 255, 0.95) !important;
+  border-radius: 6px !important;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15) !important;
+  padding: 8px 12px !important;
+  font-size: 13px !important;
+  max-height: 70vh !important;
+  overflow-y: auto !important;
+}
+
+.leaflet-control-layers-expanded {
+  padding: 8px 12px 8px 8px !important;
+}
+
+.leaflet-control-layers-list label {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  margin-bottom: 3px !important;
+  cursor: pointer !important;
+  font-weight: 500 !important;
+  color: #333 !important;
+  font-size: 12px !important;
+  white-space: nowrap !important;
+}
+
+.leaflet-control-layers-overlays {
+  display: block !important;
+}
+
+.leaflet-control-layers-overlays label {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  margin-bottom: 2px !important;
+  padding: 2px 0 !important;
+}
+
+.leaflet-control-layers-overlays input[type="checkbox"] {
+  appearance: auto !important;
+  -webkit-appearance: auto !important;
+  width: 16px !important;
+  height: 16px !important;
+  min-width: 16px !important;
+  border: 2px solid #8b9e3c !important;
+  border-radius: 3px !important;
+  cursor: pointer !important;
+  accent-color: #8b9e3c !important;
+  background-color: #f5f5f0 !important;
+  margin: 0 !important;
+}
+
+.leaflet-control-layers-base input[type="radio"] {
+  appearance: auto !important;
+  -webkit-appearance: auto !important;
+  width: 14px !important;
+  height: 14px !important;
+  min-width: 14px !important;
+  cursor: pointer !important;
+  accent-color: #8b9e3c !important;
+  margin: 0 !important;
+}
+
+.leaflet-control-layers-separator {
+  border-top: 1px solid #ccc !important;
+  margin: 6px 0 !important;
+}
+
+/* Ensure leaflet-control-layers-selector is visible */
+.leaflet-control-layers-selector {
+  appearance: auto !important;
+  -webkit-appearance: auto !important;
+  margin: 0 !important;
+}
+
+/* SIG Legend */
+.legend {
+  background: rgba(255, 255, 255, 0.92) !important;
+  padding: 10px 14px !important;
+  border-radius: 8px !important;
+  font-size: 12px !important;
+  line-height: 1.8 !important;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15) !important;
+}
+
+/* SIG Aire Control */
+.control-aire {
+  padding: 8px 10px !important;
+  background: rgba(255, 255, 255, 0.95) !important;
+  font-size: 12px !important;
+  box-shadow: 0 0 15px rgba(0, 0, 0, 0.2) !important;
+  border: 2px solid #999 !important;
+  border-radius: 5px !important;
+  line-height: 2.2 !important;
+  min-width: 120px !important;
+}
+
+.control-aire label {
+  display: flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  cursor: pointer !important;
+  margin: 0 !important;
+  white-space: nowrap !important;
+}
+
+.control-aire input[type="checkbox"] {
+  width: 15px !important;
+  height: 15px !important;
+  min-width: 15px !important;
+  cursor: pointer !important;
+  accent-color: #e09c35 !important;
+  margin: 0 !important;
+}
+
+/* SIG Move Control */
+.control-move {
+  background: rgba(255, 255, 255, 0.95) !important;
+  padding: 6px 10px !important;
+  border-radius: 6px !important;
+  font-size: 12px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12) !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+.control-move input[type="checkbox"] {
+  appearance: auto !important;
+  -webkit-appearance: auto !important;
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px !important;
+  cursor: pointer !important;
+  accent-color: #e09c35 !important;
+  border-radius: 50% !important;
+  margin: 0 !important;
+}
+
+/* DataViz context menu styling */
+.dataviz-context-menu {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  border: 1px solid #e0e0e0;
+  padding: 4px 0;
+  min-width: 240px;
+  z-index: 2000;
+}

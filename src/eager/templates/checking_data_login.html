@@ -1,0 +1,84 @@
+{% load static %}
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Nettoyage des données</title>
+
+    <!-- Custom fonts for this template-->
+    <link
+      href="{% static 'vendor/fontawesome-free/css/all.min.css' %}" rel="stylesheet" type="text/css" />
+    <link
+      href="https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,700,700i,800,800i,900,900i" rel="stylesheet" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" />
+
+    <!-- Custom styles for this template-->
+    <link href="{% static 'css/sb-admin-2.min.css' %}" rel="stylesheet" />
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+</head>
+<body>
+    <div class="row">
+        
+        <div class="container d-flex justify-content-center align-items-center" style="height: 100vh;">
+        
+            <div class="col-8">
+                <form action="{{cheking_url}}" method="POST" class="p-4 border rounded shadow-sm bg-white">
+                    {% csrf_token %}
+                    <h4 class="text-center mb-4 text-info">Indentification</h4>
+                    
+                    <div class="mb-3">
+                        <label for="login" class="form-label">Login</label>
+                        <input 
+                            type="text" 
+                            pattern="[a-zA-Z0-9]+" 
+                            class="form-control" 
+                            name="login" 
+                            id="login"
+                            placeholder="Entrez votre login"
+                            required
+                        >
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="password" class="form-label">Mot de passe</label>
+                        <input 
+                            type="password" 
+                            class="form-control" 
+                            name="password" 
+                            id="password"
+                            placeholder="Entrez le mot de passe"
+                            required
+                        >
+                    </div>
+                    <div class="d-grid mb-3">
+                        <button type="submit" class="btn btn-primary">Valider</button>
+
+                    </div>
+                    {% if error_message %}
+                    <div class="row mt-4  bg-danger text-center p-3">
+                        <div class="text-center text-white"><span class="">{{ error_message }}</span></div>
+                    </div>
+                    {% endif %}
+                </form>
+            </div>
+        </div>
+    </div>
+    <!-- Bootstrap core JavaScript-->
+    <script src="{% static 'vendor/jquery/jquery.min.js' %}"></script>
+    <script src="{% static 'vendor/bootstrap/js/bootstrap.bundle.min.js' %}"></script>
+    <!-- DataTables JS -->
+    <!-- DataTables JS -->
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap4.min.js"></script>
+    <!-- DataTables Buttons JS -->
+    <script src="https://cdn.datatables.net/buttons/2.4.2/js/dataTables.buttons.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.bootstrap4.min.js"></script>
+    <!-- Dépendances pour l'export Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.html5.min.js"></script>
+</body>
+
+</html>
+

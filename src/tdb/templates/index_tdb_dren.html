@@ -1,0 +1,147 @@
+{% extends 'base.html' %} {% load static %} 
+{% block style %}
+<style>
+  .p-bar-info{display: none}
+  body {
+    background-color: #f8f9fa;
+    font-size: 14px;
+  }
+  .section-title {
+    background-color: #6c757d;
+    color: white;
+    padding: 5px 0px;
+    font-weight: bold;
+    margin-top: 15px;
+    margin: 15px 12px;
+  }
+  .table th, .table td {
+    text-align: center;
+    vertical-align: middle;
+  }
+  .legend span {
+    display: inline-block;
+    margin-right: 10px;
+  }
+  .legend-box {
+    display: inline-block;
+    width: 15px;
+    height: 15px;
+    margin-right: 5px;
+  }
+  .blue { background-color: #5dade2; }
+  .yellow { background-color: #f1c40f; }
+  .red { background-color: #e74c3c; }
+  .gray-bg { background-color: #e9ecef; }
+  @media print {
+    .tab-pane {
+      width: 297mm;
+      height: auto;
+      page-break-after: always;
+    }
+  }
+  .tab-pane {
+    display: block !important;   
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
+  }
+  .tab-pane.active {
+    height: auto;
+    visibility: visible;
+  }
+</style>
+<!-- DataTables CSS -->
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap4.min.css">
+  <link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.2/css/buttons.bootstrap4.min.css">
+{% endblock %} {% block title %} TDB DREN {% endblock %} {% block filtre %}
+<span class="ml-5 text-gray-700" style="font-weight: bold"
+  >DATA MUST SPEAK / Tableau de bord / DREN
+</span>
+{% endblock %} {% block container_fluid %}
+<button type="button" class="btn btn-primary mb-2 ml-3"  data-toggle="modal" data-target="#paramModal">
+  <i class="fas fa-cog"></i> Paramètres
+</button>
+<button type="button" class="btn btn-secondary mb-2 text-right float-right mr-3 d-none" id="btn-pdf">
+  <i class="fas fa-file-pdf text-danger"></i>&nbsp;PDF
+</button>
+
+
+<!-- Modal Bootstrap -->
+<div class="modal fade" id="paramModal" tabindex="-1" role="dialog" data-backdrop="static" data-keyboard="false"
+ aria-labelledby="paramModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered d-flex justify-content-center" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="paramModalLabel">Paramètres</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Fermer">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <form class="" style="width:100%; margin:0 auto;" >
+          <div class="form-group mb-2 mr-2">
+            <label for="annee" class="mr-2">ANNEE</label>
+            <select class="form-control" disabled id="annee">
+              <option value="2025" selected>2025</option>
+            </select>
+          </div>
+
+          <div class="form-group mb-2 mr-2" >
+            <label for="dren" class="mr-2">DREN</label>
+            <select class="form-control" id="dren">
+              <option value="0">-Choisir la DREN-</option>
+              {% for d in dren %}
+              <option value="{{ d.CODE_DREN }}">{{ d.DREN }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group mb-2 mr-2">
+            <label for="niveau" class="mr-2">Niveau</label>
+            <select class="form-control"  id="niveau">
+              <option value="0" selected>Présco</option>
+              <option value="1" >Primaire</option>
+              <option value="2" >Collège</option>
+              <option value="3" >Lycée</option>
+            </select>
+          </div>
+        </form>
+      </div>
+      <div class="col-12 p-bar-info">Veuillez patienter pendant le traitement...</div>
+      <div class="col-12 p-bar-info">
+        <div class="progress" style="height: 25px;">
+          <div class="progress-bar progress-bar-striped progress-bar-animated bg-info" id="p-bar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+            60%
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer mt-2">
+  <button type="button" id="btn-apply" class="btn btn-primary">Appliquer</button>
+  <button type="button" class="btn btn-secondary" data-dismiss="modal">Annuler</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<div class="row" id="div-data">
+  
+</div>
+<!-- div-data-->
+
+
+
+{% endblock %} 
+{% block scripts %}
+<script src="{% static 'js/referentiel.js' %}"></script>
+<!-- Script Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<!-- canevas pour PDF -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+  //const URL_TDB_DREN_N0 = "{% static 'templates_tdb/tdb_dren_n2.html' %}"
+  //console.log(URL_TDB_DREN_N0)
+</script>
+<script src="{% static 'js/tdb_dren.js' %}"></script>
+{% endblock %}
