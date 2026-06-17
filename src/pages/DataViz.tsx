@@ -7,16 +7,21 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
-import { Loader2, Filter, RotateCcw, Map, MapPin } from 'lucide-react';
+import { Loader2, Filter, RotateCcw, Map, MapPin, Camera, Info } from 'lucide-react';
 import { datavizApi, dashboardApi, Dren } from '@/services/api';
 import { toast } from 'sonner';
+import html2canvas from 'html2canvas';
 import {
   THEMES,
+  NIVEAUX,
+  getThemesForNiveau,
+  type Niveau,
   getSliderDefaults,
   calculateRatio,
   getThematicColor,
   getThemeUnit,
   isPercentageTheme,
+  formatThemeValue,
   STYLE_DREN,
   STYLE_CISCO,
   STYLE_COMMUNE,
@@ -52,6 +57,7 @@ type ActiveLayer = 'dren' | 'cisco' | 'commune';
 
 const DataViz = () => {
   const [drens, setDrens] = useState<Dren[]>([]);
+  const [niveau, setNiveau] = useState<Niveau>('primaire');
   const [theme, setTheme] = useState('0');
   const [loading, setLoading] = useState(false);
   const [activeLayer, setActiveLayer] = useState<ActiveLayer>('dren');
@@ -111,6 +117,13 @@ const DataViz = () => {
     };
     init();
   }, []);
+
+  const availableThemes = useMemo(() => getThemesForNiveau(niveau), [niveau]);
+
+  // Reset theme when niveau changes if current theme not available
+  useEffect(() => {
+    if (!availableThemes.some(t => t.value === theme)) setTheme('0');
+  }, [niveau, availableThemes, theme]);
 
   // Update slider when theme changes
   useEffect(() => {
@@ -230,6 +243,35 @@ const DataViz = () => {
     setContextMenu(null);
   }, []);
 
+  // Capture & download the map as PNG
+  const handleCaptureMap = useCallback(async () => {
+    const node = mapContainerRef.current;
+    if (!node) return;
+    setContextMenu(null);
+    try {
+      // Hide leaflet controls in capture to keep it clean (optional)
+      const canvas = await html2canvas(node, {
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        scale: 2,
+      });
+      const link = document.createElement('a');
+      const themeSlug = (THEMES.find(t => t.value === appliedTheme)?.label || 'carte')
+        .toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const date = new Date().toISOString().slice(0, 10);
+      link.download = `carte-thematique-${themeSlug}-${date}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+      toast.success('Carte téléchargée');
+    } catch (err) {
+      console.error('Capture error:', err);
+      toast.error('Impossible de capturer la carte');
+    }
+  }, [appliedTheme]);
+
   // Context menu handlers
   const handleContextMenuOnLayer = useCallback((code: number, name: string, e: any) => {
     if (appliedTheme === '0') {
@@ -314,7 +356,8 @@ const DataViz = () => {
 
     if (stat && appliedTheme !== '0' && appliedTheme !== 'hm') {
       const ratio = calculateRatio(stat, appliedTheme);
-      const text = `${name} : ${ratio.toFixed(1)}${ptg}`;
+      const valueHtml = `<span style="display:inline-block;min-width:80px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600">${formatThemeValue(ratio, appliedTheme)}${ptg ? ptg : unit}</span>`;
+      const text = `<div style="font-size:12px"><strong>${name}</strong><br/>${selectedThemeLabel} : ${valueHtml}</div>`;
       (layer as any).bindTooltip(text, { permanent: false, direction: 'top' });
       (layer as any).bindPopup(text);
     } else {
@@ -325,7 +368,7 @@ const DataViz = () => {
     (layer as any).on('contextmenu', (e: any) => {
       handleContextMenuOnLayer(parseInt(code), name, e);
     });
-  }, [dataDren, appliedTheme, ptg, handleContextMenuOnLayer]);
+  }, [dataDren, appliedTheme, ptg, unit, selectedThemeLabel, handleContextMenuOnLayer]);
 
   const onEachCisco = useCallback((feature: any, layer: L.Layer) => {
     const name = feature?.properties?.NAME || '';
@@ -334,7 +377,8 @@ const DataViz = () => {
 
     if (stat && appliedTheme !== '0' && appliedTheme !== 'hm') {
       const ratio = calculateRatio(stat, appliedTheme);
-      const text = `${name} : ${ratio.toFixed(1)}${ptg}`;
+      const valueHtml = `<span style="display:inline-block;min-width:80px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600">${formatThemeValue(ratio, appliedTheme)}${ptg ? ptg : unit}</span>`;
+      const text = `<div style="font-size:12px"><strong>${name}</strong><br/>${selectedThemeLabel} : ${valueHtml}</div>`;
       (layer as any).bindTooltip(text, { permanent: false, direction: 'top' });
       (layer as any).bindPopup(text);
     } else {
@@ -345,7 +389,7 @@ const DataViz = () => {
     (layer as any).on('contextmenu', (e: any) => {
       handleContextMenuOnLayer(parseInt(code), name, e);
     });
-  }, [dataCisco, appliedTheme, ptg, handleContextMenuOnLayer]);
+  }, [dataCisco, appliedTheme, ptg, unit, selectedThemeLabel, handleContextMenuOnLayer]);
 
   const onEachCommune = useCallback((feature: any, layer: L.Layer) => {
     const name = feature?.properties?.NAME || '';
@@ -354,13 +398,14 @@ const DataViz = () => {
 
     if (stat && appliedTheme !== '0' && appliedTheme !== 'hm') {
       const ratio = calculateRatio(stat, appliedTheme);
-      const text = `${name} : ${ratio.toFixed(1)}${ptg}`;
+      const valueHtml = `<span style="display:inline-block;min-width:80px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600">${formatThemeValue(ratio, appliedTheme)}${ptg ? ptg : unit}</span>`;
+      const text = `<div style="font-size:12px"><strong>${name}</strong><br/>${selectedThemeLabel} : ${valueHtml}</div>`;
       (layer as any).bindTooltip(text, { permanent: false, direction: 'top' });
       (layer as any).bindPopup(text);
     } else {
       (layer as any).bindTooltip(`COMMUNE ${name}`, { permanent: false, direction: 'top' });
     }
-  }, [dataCommune, appliedTheme, ptg]);
+  }, [dataCommune, appliedTheme, ptg, unit, selectedThemeLabel]);
 
   // GeoJSON keys for forced re-render
   const drenKey = useMemo(() => `dren-${appliedTheme}-${appliedBounds.join('-')}-${dataDren.length}`, [appliedTheme, appliedBounds, dataDren]);
@@ -411,6 +456,21 @@ const DataViz = () => {
             </CardHeader>
             <CardContent className="space-y-4">
               {/* Theme */}
+              {/* Niveau */}
+              <div className="space-y-2">
+                <Label className="text-xs font-medium">Niveau</Label>
+                <Select value={niveau} onValueChange={(v) => setNiveau(v as Niveau)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {NIVEAUX.map(n => (
+                      <SelectItem key={n.value} value={n.value}>{n.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="space-y-2">
                 <Label className="text-xs font-medium">Thème</Label>
                 <Select value={theme} onValueChange={setTheme}>
@@ -418,13 +478,18 @@ const DataViz = () => {
                     <SelectValue placeholder="--Choisir un thème--" />
                   </SelectTrigger>
                   <SelectContent>
-                    {THEMES.map(t => (
+                    {availableThemes.map(t => (
                       <SelectItem key={t.value} value={t.value}>
-                        {t.group ? `[${t.group}] ` : ''}{t.label}
+                        {t.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {niveau !== 'primaire' && (
+                  <p className="text-[10px] text-muted-foreground italic">
+                    Note : les indicateurs Collège/Lycée utilisent actuellement les données primaires disponibles. La séparation complète sera effective dès l'import des données dédiées.
+                  </p>
+                )}
               </div>
 
               {/* Slider */}
@@ -454,10 +519,22 @@ const DataViz = () => {
                   <RotateCcw className="w-4 h-4" />
                 </Button>
               </div>
+
+              {/* Capture / téléchargement de la carte */}
+              <Button
+                variant="secondary"
+                className="w-full"
+                onClick={handleCaptureMap}
+                disabled={loading}
+                title="Capturer et télécharger la carte en image PNG"
+              >
+                <Camera className="w-4 h-4 mr-2" />
+                Capturer la carte (PNG)
+              </Button>
             </CardContent>
           </Card>
 
-          {/* Layer Controls */}
+          {/* Layer Controls — uniquement DREN / CISCO */}
           {appliedTheme !== '0' && appliedTheme !== 'hm' && (
           <Card>
               <CardHeader className="pb-3">
@@ -478,16 +555,16 @@ const DataViz = () => {
                     onCheckedChange={() => { setActiveLayer('cisco'); setCommuneGeoJson(null); setShowEtab(false); }}
                   />
                 </div>
-                {dataEtab.length > 0 && (
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs">Écoles ({dataEtab.length})</Label>
-                    <Switch checked={showEtab} onCheckedChange={setShowEtab} />
-                  </div>
-                )}
-                <div className="p-2 bg-muted/50 rounded-md">
-                  <p className="text-[10px] text-muted-foreground">
-                    <strong>📌 Guide :</strong> Faites un <strong>clic droit</strong> sur une zone DREN ou CISCO pour afficher la carte par commune et/ou par établissement.
+                <div className="p-2 bg-primary/5 border border-primary/20 rounded-md space-y-1.5">
+                  <p className="text-[11px] font-semibold flex items-center gap-1.5 text-primary">
+                    <Info className="w-3.5 h-3.5" /> Guide d'utilisation
                   </p>
+                  <ul className="text-[10px] text-muted-foreground space-y-1 list-disc list-inside leading-relaxed">
+                    <li>Choisissez le <strong>niveau</strong> et le <strong>thème</strong>, puis cliquez sur <em>Appliquer</em>.</li>
+                    <li>Basculez entre <strong>DREN</strong> et <strong>CISCO</strong> avec les interrupteurs ci-dessus.</li>
+                    <li><strong>Clic droit</strong> sur une zone pour accéder à la carte par <em>Commune</em> ou par <em>Établissement</em>.</li>
+                    <li>Utilisez <em>Capturer la carte</em> pour télécharger une image PNG de la vue.</li>
+                  </ul>
                 </div>
               </CardContent>
             </Card>
@@ -510,15 +587,15 @@ const DataViz = () => {
                   <>
                     <div className="flex items-center gap-2">
                       <span className="w-4 h-3 border" style={{ backgroundColor: '#FFFFFF' }} />
-                      <span>Inférieur à {appliedBounds[0]}{unit}</span>
+                      <span className="flex-1 text-right tabular-nums">Inférieur à {formatThemeValue(appliedBounds[0], appliedTheme)}{ptg ? ptg : unit}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="w-4 h-3" style={{ backgroundColor: '#00AA00' }} />
-                      <span>[{appliedBounds[0]} - {appliedBounds[1]}]{unit}</span>
+                      <span className="flex-1 text-right tabular-nums">[{formatThemeValue(appliedBounds[0], appliedTheme)} – {formatThemeValue(appliedBounds[1], appliedTheme)}]{ptg ? ptg : unit}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="w-4 h-3" style={{ backgroundColor: '#FF0000' }} />
-                      <span>Supérieur à {appliedBounds[1]}{unit}</span>
+                      <span className="flex-1 text-right tabular-nums">Supérieur à {formatThemeValue(appliedBounds[1], appliedTheme)}{ptg ? ptg : unit}</span>
                     </div>
                   </>
                 )}
@@ -653,7 +730,7 @@ const DataViz = () => {
                 <Popup>
                   <div className="text-sm">
                     <strong>{m.name}</strong>
-                    <div className="mt-1">{selectedThemeLabel}: {m.ratio.toFixed(1)}{ptg}</div>
+                    <div className="mt-1 text-right tabular-nums">{selectedThemeLabel}: <strong>{formatThemeValue(m.ratio, appliedTheme)}{ptg ? ptg : unit}</strong></div>
                   </div>
                 </Popup>
               </CircleMarker>

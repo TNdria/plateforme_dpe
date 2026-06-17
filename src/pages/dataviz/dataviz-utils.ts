@@ -3,23 +3,46 @@
  * Ported from original cartethematique.js
  */
 
-export const THEMES = [
-  { value: '0', label: '--Choisir un thème--', group: '' },
-  { value: 'hm', label: 'Densité des écoles', group: 'Primaire' },
-  { value: 'rem', label: 'Ratio élève-maître', group: 'Primaire' },
-  { value: 're-sdc', label: 'Ratio élèves par salle de classe', group: 'Primaire' },
-  { value: 'ratio-pa', label: 'Ratio élèves par place assise', group: 'Primaire' },
-  { value: 'elec', label: 'Pourcentage des École électrifiée', group: 'Primaire' },
-  { value: 'eau', label: "Pourcentage des École avec point d'eau", group: 'Primaire' },
-  { value: 'exist-lat-g', label: 'Pourcentage des École ayant des latrines pour garçons', group: 'Primaire' },
-  { value: 'exist-lat-f', label: 'Pourcentage des École ayant des latrines pour filles', group: 'Primaire' },
-  { value: 'exist-lat', label: 'Pourcentage des École ayant des latrines communes', group: 'Primaire' },
-  { value: 'ens-f', label: 'Pourcentage des enseignants Fonctionnaires', group: 'Primaire' },
-  { value: 'ens-fsub', label: 'Pourcentage des enseignants FRAM subventionnés', group: 'Primaire' },
-  { value: 'ens-fnsub', label: 'Pourcentage des enseignants FRAM non subventionnés et Autres', group: 'Primaire' },
-  { value: 'ens-q', label: 'Pourcentage des enseignants qualifiés', group: 'Primaire' },
-  { value: 'extra-ens', label: 'Nombre des enseignants en sureffectif', group: 'Primaire' },
-] as const;
+export type Niveau = 'primaire' | 'college' | 'lycee';
+
+export const NIVEAUX: { value: Niveau; label: string }[] = [
+  { value: 'primaire', label: 'Primaire (EPP)' },
+  { value: 'college', label: 'Collège (CEG)' },
+  { value: 'lycee', label: 'Lycée' },
+];
+
+type ThemeEntry = { value: string; label: string; niveaux: Niveau[] };
+
+export const ALL_THEMES: ThemeEntry[] = [
+  { value: '0', label: '--Choisir un thème--', niveaux: ['primaire', 'college', 'lycee'] },
+  { value: 'hm', label: 'Densité des écoles', niveaux: ['primaire', 'college', 'lycee'] },
+  { value: 'rem', label: 'Ratio élève-maître', niveaux: ['primaire', 'college', 'lycee'] },
+  { value: 're-sdc', label: 'Ratio élèves par salle de classe', niveaux: ['primaire', 'college', 'lycee'] },
+  { value: 'ratio-pa', label: 'Ratio élèves par place assise', niveaux: ['primaire', 'college', 'lycee'] },
+  { value: 'elec', label: 'Pourcentage des écoles électrifiées', niveaux: ['primaire', 'college', 'lycee'] },
+  { value: 'eau', label: "Pourcentage des écoles avec point d'eau", niveaux: ['primaire', 'college', 'lycee'] },
+  { value: 'exist-lat-g', label: 'Pourcentage des écoles ayant des latrines pour garçons', niveaux: ['primaire', 'college', 'lycee'] },
+  { value: 'exist-lat-f', label: 'Pourcentage des écoles ayant des latrines pour filles', niveaux: ['primaire', 'college', 'lycee'] },
+  { value: 'exist-lat', label: 'Pourcentage des écoles ayant des latrines communes', niveaux: ['primaire', 'college', 'lycee'] },
+  { value: 'ens-f', label: 'Pourcentage des enseignants Fonctionnaires', niveaux: ['primaire', 'college', 'lycee'] },
+  { value: 'ens-fsub', label: 'Pourcentage des enseignants FRAM subventionnés', niveaux: ['primaire'] },
+  { value: 'ens-fnsub', label: 'Pourcentage des enseignants FRAM non subventionnés et Autres', niveaux: ['primaire'] },
+  { value: 'ens-q', label: 'Pourcentage des enseignants qualifiés', niveaux: ['primaire', 'college', 'lycee'] },
+  { value: 'extra-ens', label: 'Nombre des enseignants en sureffectif', niveaux: ['primaire', 'college', 'lycee'] },
+  // ── Nouveaux indicateurs (ajoutés suite à la consolidation) ──
+  { value: 'nbr-etab', label: "Nombre d'établissements", niveaux: ['primaire', 'college', 'lycee'] },
+  { value: 'eff-total', label: "Effectif total des élèves", niveaux: ['primaire', 'college', 'lycee'] },
+  { value: 're-etab', label: "Ratio élèves par établissement", niveaux: ['primaire', 'college', 'lycee'] },
+  { value: 'sdc-be-pct', label: "Pourcentage de salles de classe en bon état", niveaux: ['primaire', 'college', 'lycee'] },
+  { value: 'pers-etab', label: "Personnel enseignant par établissement", niveaux: ['primaire', 'college', 'lycee'] },
+];
+
+/** Backward compat: themes filtered by current niveau */
+export const THEMES = ALL_THEMES;
+
+export function getThemesForNiveau(niveau: Niveau): ThemeEntry[] {
+  return ALL_THEMES.filter(t => t.niveaux.includes(niveau));
+}
 
 /** Get default slider range and start values per theme */
 export function getSliderDefaults(theme: string): { range: [number, number]; start: [number, number] } {
@@ -34,6 +57,12 @@ export function getSliderDefaults(theme: string): { range: [number, number]; sta
       return { range: [0, 100], start: [30, 60] };
     case 'ens-q': return { range: [0, 100], start: [35, 75] };
     case 'extra-ens': return { range: [0, 20], start: [1, 2] };
+    // Nouveaux indicateurs
+    case 'nbr-etab': return { range: [0, 2000], start: [50, 500] };
+    case 'eff-total': return { range: [0, 200000], start: [5000, 50000] };
+    case 're-etab': return { range: [0, 1000], start: [100, 400] };
+    case 'sdc-be-pct': return { range: [0, 100], start: [40, 75] };
+    case 'pers-etab': return { range: [0, 50], start: [3, 10] };
     default: return { range: [0, 100], start: [25, 75] };
   }
 }
@@ -75,6 +104,19 @@ export function calculateRatio(data: any, theme: string): number {
       const sdcE = pf(data.sdc_be) + pf(data.sdc_me);
       return pi(data.en_classe) - (sdcE * 2);
     }
+    // Nouveaux indicateurs
+    case 'nbr-etab':
+      return pf(data.nbr_etab);
+    case 'eff-total':
+      return pf(data.eff_2025);
+    case 're-etab':
+      return safeDiv(pf(data.eff_2025), pf(data.nbr_etab));
+    case 'sdc-be-pct': {
+      const tot = pf(data.sdc_be) + pf(data.sdc_me);
+      return safeDiv(pf(data.sdc_be), tot) * 100;
+    }
+    case 'pers-etab':
+      return safeDiv(pf(data.pers_total), pf(data.nbr_etab));
     default:
       return 0;
   }
@@ -91,17 +133,38 @@ export function getThematicColor(ratio: number, minBound: number, maxBound: numb
 /** Check if theme is a percentage indicator */
 export function isPercentageTheme(theme: string): boolean {
   return ['elec', 'eau', 'exist-lat-g', 'exist-lat-f', 'exist-lat',
-    'ens-f', 'ens-fsub', 'ens-fnsub', 'ens-q'].includes(theme);
+    'ens-f', 'ens-fsub', 'ens-fnsub', 'ens-q', 'sdc-be-pct'].includes(theme);
+}
+
+/** Check if theme is an integer count (no decimals) */
+export function isCountTheme(theme: string): boolean {
+  return ['nbr-etab', 'eff-total', 'extra-ens'].includes(theme);
 }
 
 /** Get unit suffix */
 export function getThemeUnit(theme: string): string {
   if (isPercentageTheme(theme)) return '%';
-  if (theme === 'rem') return 'élèves/ens';
-  if (theme === 're-sdc') return 'élèves/sdc';
-  if (theme === 'ratio-pa') return 'élèves/place';
+  if (theme === 'rem') return ' élèves/ens';
+  if (theme === 're-sdc') return ' élèves/sdc';
+  if (theme === 'ratio-pa') return ' élèves/place';
+  if (theme === 're-etab') return ' élèves/étab';
+  if (theme === 'pers-etab') return ' ens/étab';
+  if (theme === 'nbr-etab') return ' étab';
+  if (theme === 'eff-total') return ' élèves';
+  if (theme === 'extra-ens') return ' ens.';
   return '';
 }
+
+/** Format a numeric value for the carte thématique (fr-FR thousands separator, smart decimals). */
+export function formatThemeValue(value: number, theme: string): string {
+  if (!Number.isFinite(value)) return '—';
+  const isCount = isCountTheme(theme);
+  const opts: Intl.NumberFormatOptions = isCount
+    ? { maximumFractionDigits: 0 }
+    : { minimumFractionDigits: 1, maximumFractionDigits: 1 };
+  return value.toLocaleString('fr-FR', opts);
+}
+
 
 /** GeoJSON styles for boundary layers */
 export const STYLE_DREN = { fillColor: '#4e73df', color: '#4e73df', weight: 1, opacity: 1, fillOpacity: 0.02 };

@@ -37,9 +37,11 @@ const Home = () => {
     ciscos: 114,
     zaps: 1700,
     ecolesN1: NATIONAL_DATA.etablissements.primaire,
-    ecolesN2: NATIONAL_DATA.etablissements.college + NATIONAL_DATA.etablissements.lycee,
+    ecolesCollege: NATIONAL_DATA.etablissements.college,
+    ecolesLycee: NATIONAL_DATA.etablissements.lycee,
     elevesN1: NATIONAL_DATA.eleves.primaire,
-    elevesN2: NATIONAL_DATA.eleves.college + NATIONAL_DATA.eleves.lycee,
+    elevesCollege: NATIONAL_DATA.eleves.college,
+    elevesLycee: NATIONAL_DATA.eleves.lycee,
     enseignants: NATIONAL_DATA.enseignants.primaire + NATIONAL_DATA.enseignants.college + NATIONAL_DATA.enseignants.lycee,
     loading: false
   });
@@ -82,9 +84,7 @@ const Home = () => {
   }, []);
 
   const formatNumber = (num: number) => {
-    if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
-    if (num >= 1000) return `${(num / 1000).toFixed(0)}K`;
-    return num.toLocaleString();
+    return num.toLocaleString('fr-FR');
   };
 
   const features = [
@@ -149,14 +149,21 @@ const Home = () => {
       value: stats.ecolesN1, 
       icon: School, 
       color: "from-emerald-500 to-teal-500",
-      description: "Écoles élémentaires"
+      description: "Écoles élémentaires (EPP)"
     },
     { 
-      label: "Établissements Secondaires", 
-      value: stats.ecolesN2, 
-      icon: GraduationCap, 
+      label: "Établissements Collèges (CEG)", 
+      value: stats.ecolesCollege, 
+      icon: Building2, 
       color: "from-orange-500 to-amber-500",
-      description: "Collèges & lycées"
+      description: "Collèges d'enseignement général"
+    },
+    { 
+      label: "Établissements Lycées", 
+      value: stats.ecolesLycee, 
+      icon: GraduationCap, 
+      color: "from-amber-500 to-red-500",
+      description: "Lycées d'enseignement général"
     },
     { 
       label: "Élèves du Primaire", 
@@ -166,11 +173,18 @@ const Home = () => {
       description: "Effectifs scolarisés"
     },
     { 
-      label: "Élèves du Secondaire", 
-      value: stats.elevesN2, 
+      label: "Élèves des Collèges", 
+      value: stats.elevesCollege, 
       icon: BookOpen, 
       color: "from-violet-500 to-purple-500",
-      description: "Effectifs scolarisés"
+      description: "Effectifs CEG"
+    },
+    { 
+      label: "Élèves des Lycées", 
+      value: stats.elevesLycee, 
+      icon: BookOpen, 
+      color: "from-fuchsia-500 to-pink-500",
+      description: "Effectifs lycées"
     },
   ];
 
@@ -297,24 +311,7 @@ const Home = () => {
               </Button>
             </div>
 
-            {/* Highlights */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-24">
-              {highlights.map((highlight, index) => (
-                <div 
-                  key={highlight.title}
-                  className="flex items-start gap-4 p-6 bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10 hover:bg-white/10 transition-all duration-300 scroll-trigger"
-                  style={{ animationDelay: `${index * 0.2}s` }}
-                >
-                  <div className="p-3 bg-white/10 rounded-xl">
-                    <highlight.icon className="h-6 w-6 text-primary" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-white mb-2">{highlight.title}</h3>
-                    <p className="text-sm text-gray-400">{highlight.description}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+            {/* Highlights retirés à la demande (Sécurité/Performance/Précision) */}
           </div>
         </section>
 
@@ -332,7 +329,7 @@ const Home = () => {
               </h2>
             </div>
             
-            <div className="grid grid-cols-2 lg:grid-cols-7 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-4">
               {statsCards.map((stat, index) => (
                 <div 
                   key={stat.label}

@@ -13,31 +13,24 @@ import { supabase } from "@/integrations/supabase/client";
 const YEARS_STORAGE_KEY = "dpe_dashboard_enabled_years";
 const YEARS_SETTINGS_KEY = "dashboard_enabled_years";
 
+interface LevelStat { prescolaire: number; primaire: number; college: number; lycee: number; }
 interface LocalStats {
-  etablissements: {
-    prescolaire: number;
-    primaire: number;
-    college: number;
-    lycee: number;
-  };
-  eleves: {
-    prescolaire: number;
-    primaire: number;
-    college: number;
-    lycee: number;
-  };
-  enseignants: {
-    prescolaire: number;
-    primaire: number;
-    college: number;
-    lycee: number;
-  };
+  etablissements: LevelStat;
+  eleves: LevelStat;
+  enseignants: LevelStat;
+  // Année effectivement utilisée pour chaque bloc (peut différer si pas encore de données 2025-2026)
+  etabYear: number | null;
+  elevesYear: number | null;
+  enseignantsYear: number | null;
 }
 
 const defaultStats: LocalStats = {
   etablissements: { prescolaire: 0, primaire: 0, college: 0, lycee: 0 },
   eleves: { prescolaire: 0, primaire: 0, college: 0, lycee: 0 },
   enseignants: { prescolaire: 0, primaire: 0, college: 0, lycee: 0 },
+  etabYear: null,
+  elevesYear: null,
+  enseignantsYear: null,
 };
 
 const DIPLOME_COLORS = ['#C5E17A', '#7ED4A6', '#5B8DEF', '#9B6DD7', '#F59E0B', '#EF4444', '#06B6D4', '#8B5CF6'];
@@ -224,27 +217,49 @@ const Dashboard = () => {
         setDiplomeCollege(toDiplomeArray(diplomes.college));
         setDiplomeLycee(toDiplomeArray(diplomes.lycee));
 
-        // Update display stats with the latest available year
-        const ly = latestYear;
+        // Recherche la dernière année disponible (<= latestYear) qui contient effectivement
+        // des données non-nulles pour le bloc. Évite d'afficher des "0" partout quand la
+        // dernière collecte (ex: 2025-2026) n'a pas encore été chargée dans la table cible.
+        const yearsDesc = (displayYears.length ? displayYears : [latestYear]).slice().sort((a, b) => b - a);
+        const pickYear = (row: any, keys: string[]): number | null => {
+          for (const y of yearsDesc) {
+            const sum = keys.reduce((acc, k) => acc + (Number(row?.[`${k}_${y}`]) || 0), 0);
+            if (sum > 0) return y;
+          }
+          return null;
+        };
+        const valForYear = (row: any, key: string, y: number | null) =>
+          y == null ? 0 : Number(row?.[`${key}_${y}`]) || 0;
+
+        const etabYear = pickYear(etab, ["N0", "N1", "N2", "N3"]);
+        const elevesYearN0N1 = pickYear(elevesN0N1, ["N0", "N1"]);
+        const elevesYearN2N3 = pickYear(elevesN2N3, ["N2", "N3"]);
+        // On garde une seule année "élèves" pour l'étiquette (la plus récente des deux)
+        const elevesYear = Math.max(elevesYearN0N1 ?? 0, elevesYearN2N3 ?? 0) || null;
+        const enseignantsYear = pickYear(enseignants, ["N0", "N1", "N2", "N3"]);
+
         setStats({
           etablissements: {
-            prescolaire: Number(etab[`N0_${ly}`]) || 0,
-            primaire: Number(etab[`N1_${ly}`]) || 0,
-            college: Number(etab[`N2_${ly}`]) || 0,
-            lycee: Number(etab[`N3_${ly}`]) || 0,
+            prescolaire: valForYear(etab, "N0", etabYear),
+            primaire: valForYear(etab, "N1", etabYear),
+            college: valForYear(etab, "N2", etabYear),
+            lycee: valForYear(etab, "N3", etabYear),
           },
           eleves: {
-            prescolaire: Number(elevesN0N1[`N0_${ly}`]) || 0,
-            primaire: Number(elevesN0N1[`N1_${ly}`]) || 0,
-            college: Number(elevesN2N3[`N2_${ly}`]) || 0,
-            lycee: Number(elevesN2N3[`N3_${ly}`]) || 0,
+            prescolaire: valForYear(elevesN0N1, "N0", elevesYearN0N1),
+            primaire: valForYear(elevesN0N1, "N1", elevesYearN0N1),
+            college: valForYear(elevesN2N3, "N2", elevesYearN2N3),
+            lycee: valForYear(elevesN2N3, "N3", elevesYearN2N3),
           },
           enseignants: {
-            prescolaire: Number(enseignants[`N0_${ly}`]) || 0,
-            primaire: Number(enseignants[`N1_${ly}`]) || 0,
-            college: Number(enseignants[`N2_${ly}`]) || 0,
-            lycee: Number(enseignants[`N3_${ly}`]) || 0,
+            prescolaire: valForYear(enseignants, "N0", enseignantsYear),
+            primaire: valForYear(enseignants, "N1", enseignantsYear),
+            college: valForYear(enseignants, "N2", enseignantsYear),
+            lycee: valForYear(enseignants, "N3", enseignantsYear),
           },
+          etabYear,
+          elevesYear,
+          enseignantsYear,
         });
       } catch (err) {
         console.error("Erreur lors du chargement des statistiques:", err);
@@ -255,7 +270,7 @@ const Dashboard = () => {
     };
 
     fetchStats();
-  }, [selectedDren, selectedCisco, selectedSecteur, latestYear]);
+  }, [selectedDren, selectedCisco, selectedSecteur, latestYear, displayYears]);
 
   // Build evolution data for establishments - based on years selected by admin
   const evolutionEtabData = useMemo(() => {
@@ -417,6 +432,12 @@ const Dashboard = () => {
                 <h3 className="text-sm font-semibold text-primary uppercase tracking-wide">
                   Nombre d'établissement
                 </h3>
+                {stats.etabYear && (
+                  <p className="text-[11px] text-muted-foreground -mt-2">
+                    Année {stats.etabYear - 1}-{stats.etabYear}
+                    {stats.etabYear !== latestYear && " (dernière disponible)"}
+                  </p>
+                )}
                 <div className="space-y-1.5 text-sm">
                   <div className="flex gap-3">
                     <span className="text-muted-foreground w-20">Préscolaire:</span>
@@ -452,6 +473,12 @@ const Dashboard = () => {
                 <h3 className="text-sm font-semibold text-secondary uppercase tracking-wide">
                   Nombre d'élèves
                 </h3>
+                {stats.elevesYear && (
+                  <p className="text-[11px] text-muted-foreground -mt-2">
+                    Année {stats.elevesYear - 1}-{stats.elevesYear}
+                    {stats.elevesYear !== latestYear && " (dernière disponible)"}
+                  </p>
+                )}
                 <div className="space-y-1.5 text-sm">
                   <div className="flex gap-3">
                     <span className="text-muted-foreground w-20">Préscolaire:</span>
@@ -487,6 +514,12 @@ const Dashboard = () => {
                 <h3 className="text-sm font-semibold text-destructive uppercase tracking-wide">
                   Nombre d'enseignants en salle
                 </h3>
+                {stats.enseignantsYear && (
+                  <p className="text-[11px] text-muted-foreground -mt-2">
+                    Année {stats.enseignantsYear - 1}-{stats.enseignantsYear}
+                    {stats.enseignantsYear !== latestYear && " (dernière disponible)"}
+                  </p>
+                )}
                 <div className="space-y-1.5 text-sm">
                   <div className="flex gap-3">
                     <span className="text-muted-foreground w-20">Préscolaire:</span>

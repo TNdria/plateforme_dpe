@@ -246,10 +246,19 @@ const TDBEcole = () => {
                   <table style={{ width: '100%', borderCollapse: 'collapse' }} border={1} cellPadding={1} cellSpacing={0}>
                     <thead>
                       <tr style={s.gris}><th colSpan={4} style={s.th}>Taux d'abandon</th></tr>
-                      <tr><th style={{ ...s.th, width: '34%' }}>Niveau</th>{labels.map(l => <th key={l} style={{ ...s.th, width: '22%', fontSize: '9px' }}>{l}</th>)}</tr>
+                      <tr><th style={{ ...s.th, width: '34%' }}>Classe</th>{labels.map(l => <th key={l} style={{ ...s.th, width: '22%', fontSize: '9px' }}>{l}</th>)}</tr>
                     </thead>
                     <tbody>
-                      {[['T1→T2', 'eff_t1', 'eff_t2', 'red_t1', 'red_t2'], ['T2→T3', 'eff_t2', 'eff_t3', 'red_t2', 'red_t3'], ['T3→T4', 'eff_t3', 'eff_t4', 'red_t3', 'red_t4'], ['T4→T5', 'eff_t4', 'eff_t5', 'red_t4', 'red_t5']].map(([label, f, t, rf, rt]) => {
+                      {(() => {
+                        const rowsByNiveau: Record<string, Array<[string,string,string,string,string]>> = {
+                          primaire: [['T1→T2','eff_t1','eff_t2','red_t1','red_t2'],['T2→T3','eff_t2','eff_t3','red_t2','red_t3'],['T3→T4','eff_t3','eff_t4','red_t3','red_t4'],['T4→T5','eff_t4','eff_t5','red_t4','red_t5']],
+                          college: [['6e→5e','eff_t1','eff_t2','red_t1','red_t2'],['5e→4e','eff_t2','eff_t3','red_t2','red_t3'],['4e→3e','eff_t3','eff_t4','red_t3','red_t4']],
+                          lycee:   [['2nde→1ère','eff_t1','eff_t2','red_t1','red_t2'],['1ère→Tle','eff_t2','eff_t3','red_t2','red_t3']],
+                        };
+                        const rows = rowsByNiveau[selectedNiveau];
+                        const lastKey = selectedNiveau === 'primaire' ? 't5' : selectedNiveau === 'college' ? 't4' : 't3';
+                        const ensembleRow: [string,string,string,string,string] = ['Ensemble','eff_t1',`eff_${lastKey}`,'red_t1',`red_${lastKey}`];
+                        return [...rows, ensembleRow].map(([label, f, t, rf, rt]) => {
                         const eV = abCalc(e, f, t, rf, rt), zV = abCalc(z, f, t, rf, rt);
                         return (
                           <tr key={label}>
@@ -259,7 +268,8 @@ const TDBEcole = () => {
                             <td style={{ ...s.td, textAlign: 'right', ...manq(abFmt(c, f, t, rf, rt)) }}>{abFmt(c, f, t, rf, rt)}</td>
                           </tr>
                         );
-                      })}
+                      });
+                      })()}
                     </tbody>
                   </table>
                 </td>
@@ -267,10 +277,16 @@ const TDBEcole = () => {
                   <table style={{ width: '100%', borderCollapse: 'collapse' }} border={1} cellPadding={1} cellSpacing={0}>
                     <thead>
                       <tr style={s.gris}><th colSpan={4} style={s.th}>% Redoublants</th></tr>
-                      <tr><th style={{ ...s.th, width: '34%' }}>Niveau</th>{labels.map(l => <th key={l} style={{ ...s.th, width: '22%', fontSize: '9px' }}>{l}</th>)}</tr>
+                      <tr><th style={{ ...s.th, width: '34%' }}>Classe</th>{labels.map(l => <th key={l} style={{ ...s.th, width: '22%', fontSize: '9px' }}>{l}</th>)}</tr>
                     </thead>
                     <tbody>
-                      {[['T1', 1], ['T2', 2], ['T3', 3], ['T4', 4]].map(([label, idx]: any) => {
+                      {(() => {
+                        const redRowsByNiveau: Record<string, Array<[string, number]>> = {
+                          primaire: [['T1',1],['T2',2],['T3',3],['T4',4]],
+                          college: [['6e',1],['5e',2],['4e',3],['3e',4]],
+                          lycee:   [['2nde',1],['1ère',2],['Tle',3]],
+                        };
+                        return redRowsByNiveau[selectedNiveau].map(([label, idx]: any) => {
                         const eV = pctVal(e.ressources[`red_t${idx}`], e.ressources[`eff_t${idx}`]);
                         const zV = pctVal(z.ressources[`red_t${idx}`], z.ressources[`eff_t${idx}`]);
                         return (
@@ -281,7 +297,8 @@ const TDBEcole = () => {
                             <td style={{ ...s.td, textAlign: 'right' }}>{pct(c.ressources[`red_t${idx}`], c.ressources[`eff_t${idx}`])}</td>
                           </tr>
                         );
-                      })}
+                      });
+                      })()}
                     </tbody>
                   </table>
                 </td>
@@ -295,11 +312,12 @@ const TDBEcole = () => {
                     <tbody>
                       {[e, z, c].map(() => null)}
                       {(() => {
+                        const lastT = selectedNiveau === 'primaire' ? 't5' : selectedNiveau === 'college' ? 't4' : 't3';
                         const ret = (lvl: any, numKey: string, denKey: string) => pct(lvl.ressources?.[numKey], lvl.ressources?.[denKey]);
                         return (<>
-                          <tr><td style={s.td}>Garçons</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'right' }}>{ret(l, 'eff_t5_g', 'eff_t1_g')}</td>)}</tr>
-                          <tr><td style={s.td}>Filles</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'right' }}>{ret(l, 'eff_t5_f', 'eff_t1_f')}</td>)}</tr>
-                          <tr><td style={s.td}>Ensemble</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'right' }}>{pct(l.ressources?.eff_t5, l.ressources?.eff_t1)}</td>)}</tr>
+                          <tr><td style={s.td}>Garçons</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'right' }}>{ret(l, `eff_${lastT}_g`, 'eff_t1_g')}</td>)}</tr>
+                          <tr><td style={s.td}>Filles</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'right' }}>{ret(l, `eff_${lastT}_f`, 'eff_t1_f')}</td>)}</tr>
+                          <tr><td style={s.td}>Ensemble</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'right' }}>{pct(l.ressources?.[`eff_${lastT}`], l.ressources?.eff_t1)}</td>)}</tr>
                         </>);
                       })()}
                     </tbody>
@@ -361,11 +379,12 @@ const TDBEcole = () => {
                           ['SVT', 'sm_svt', 'svt_sup10'],
                         ];
                 const smFmt = (v: any) => { const n = Number(v); return isNaN(n) || n === 0 ? '-' : n.toFixed(1); };
-                const noteFmt = (sup: any, tot: any) => {
-                  const sv = Number(sup), t = Number(tot);
+                const noteFmt = (sup: any, examData: any) => {
+                  const sv = Number(sup);
                   if (isNaN(sv) || sv === 0) return '-';
-                  if (!t || isNaN(t)) return sv <= 100 ? `${sv.toFixed(1)}%` : fmt(sv);
-                  return (sv / t * 100).toFixed(0) + '%';
+                  const t = Number(examData?.total_candidats) || (Number(examData?.nbr_g || 0) + Number(examData?.nbr_f || 0));
+                  if (!t || isNaN(t)) return '-';
+                  return (sv / t * 100).toFixed(1) + '%';
                 };
                 const gP = (lvl: any) => {
                   const x = lvl?.[examKey] || {};
@@ -400,7 +419,7 @@ const TDBEcole = () => {
                             const x = lvl?.[examKey] || {};
                             return (<>
                               <td key={`${i}sm`} style={{ ...s.td, textAlign: 'center', ...manq(smFmt(x[smKey])) }}>{smFmt(x[smKey])}</td>
-                              <td key={`${i}n`} style={{ ...s.td, textAlign: 'center', ...manq(noteFmt(x[noteKey], x.total_candidats)) }}>{noteFmt(x[noteKey], x.total_candidats)}</td>
+                              <td key={`${i}n`} style={{ ...s.td, textAlign: 'center', ...manq(noteFmt(x[noteKey], x)) }}>{noteFmt(x[noteKey], x)}</td>
                             </>);
                           })}
                         </tr>
@@ -467,18 +486,18 @@ const TDBEcole = () => {
             {/* RIGHT - Ratios */}
             <td style={{ width: '50%', verticalAlign: 'top', paddingLeft: '4px' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }} border={1} cellPadding={1} cellSpacing={0}>
-                <thead><tr><th style={{ ...s.th, width: '46%' }}>Ratios</th>{labels.map(l => <th key={l} style={{ ...s.gris, ...s.th, width: '18%' }}>{l}</th>)}</tr></thead>
+                <thead><tr><th style={{ ...s.th, width: '46%' }}>Indicateurs</th>{labels.map(l => <th key={l} style={{ ...s.gris, ...s.th, width: '18%' }}>{l}</th>)}</tr></thead>
                 <tbody>
                   {[
                     ['Élèves/maître', [ratio(e.ressources?.nbr_eleve, e.personnel?.pers_en_classe), ratio(z.ressources?.nbr_eleve, z.personnel?.pers_en_classe), ratio(c.ressources?.nbr_eleve, c.personnel?.pers_en_classe)]],
-                    ['% ens. qualifiés', [pct(Number(e.personnel?.pers_en_classe || 0) - Number(e.personnel?.sans_diplome_ped || 0), e.personnel?.pers_en_classe), pct(Number(z.personnel?.pers_en_classe || 0) - Number(z.personnel?.sans_diplome_ped || 0), z.personnel?.pers_en_classe), pct(Number(c.personnel?.pers_en_classe || 0) - Number(c.personnel?.sans_diplome_ped || 0), c.personnel?.pers_en_classe)]],
+                    ['% enseignants qualifiés', [pct(Number(e.personnel?.pers_en_classe || 0) - Number(e.personnel?.sans_diplome_ped || 0), e.personnel?.pers_en_classe), pct(Number(z.personnel?.pers_en_classe || 0) - Number(z.personnel?.sans_diplome_ped || 0), z.personnel?.pers_en_classe), pct(Number(c.personnel?.pers_en_classe || 0) - Number(c.personnel?.sans_diplome_ped || 0), c.personnel?.pers_en_classe)]],
                     ['Classes/salle', [ratio(e.sections?.nbr_section, e.sections?.nbr_sdc), ratio(z.sections?.nbr_section, z.sections?.nbr_sdc), ratio(c.sections?.nbr_section, c.sections?.nbr_sdc)]],
-                    ['Élèves/place', [ratio(e.ressources?.nbr_eleve, e.places?.places_assises), ratio(z.ressources?.nbr_eleve, z.places?.places_assises), ratio(c.ressources?.nbr_eleve, c.places?.places_assises)]],
-                    ['Élèves/latrine', [ratio(e.ressources?.nbr_eleve, e.places?.latrines), ratio(z.ressources?.nbr_eleve, z.places?.latrines), ratio(c.ressources?.nbr_eleve, c.places?.latrines)]],
-                    ['Filles/latrine F', [ratio(e.ressources?.nbr_eleve_f, e.places?.latrines_fille), ratio(z.ressources?.nbr_eleve_f, z.places?.latrines_fille), ratio(c.ressources?.nbr_eleve_f, c.places?.latrines_fille)]],
-                    ['Élèves/manuel Mlg', [ratio(e.ressources?.nbr_eleve, e.manuels?.malagasy), ratio(z.ressources?.nbr_eleve, z.manuels?.malagasy), ratio(c.ressources?.nbr_eleve, c.manuels?.malagasy)]],
-                    ['Élèves/manuel Math', [ratio(e.ressources?.nbr_eleve, e.manuels?.maths), ratio(z.ressources?.nbr_eleve, z.manuels?.maths), ratio(c.ressources?.nbr_eleve, c.manuels?.maths)]],
-                    ['Élèves/manuel Fr', [ratio(e.ressources?.nbr_eleve, e.manuels?.francais), ratio(z.ressources?.nbr_eleve, z.manuels?.francais), ratio(c.ressources?.nbr_eleve, c.manuels?.francais)]],
+                    ["Nombre d'élèves par place", [ratio(e.ressources?.nbr_eleve, e.places?.places_assises), ratio(z.ressources?.nbr_eleve, z.places?.places_assises), ratio(c.ressources?.nbr_eleve, c.places?.places_assises)]],
+                    ["Nombre d'élèves par latrine", [ratio(e.ressources?.nbr_eleve, e.places?.latrines), ratio(z.ressources?.nbr_eleve, z.places?.latrines), ratio(c.ressources?.nbr_eleve, c.places?.latrines)]],
+                    ['Nombre de filles par latrine fille', [ratio(e.ressources?.nbr_eleve_f, e.places?.latrines_fille), ratio(z.ressources?.nbr_eleve_f, z.places?.latrines_fille), ratio(c.ressources?.nbr_eleve_f, c.places?.latrines_fille)]],
+                    ["Nombre d'élèves par manuel Malagasy", [ratio(e.ressources?.nbr_eleve, e.manuels?.malagasy), ratio(z.ressources?.nbr_eleve, z.manuels?.malagasy), ratio(c.ressources?.nbr_eleve, c.manuels?.malagasy)]],
+                    ["Nombre d'élèves par manuel Mathématiques", [ratio(e.ressources?.nbr_eleve, e.manuels?.maths), ratio(z.ressources?.nbr_eleve, z.manuels?.maths), ratio(c.ressources?.nbr_eleve, c.manuels?.maths)]],
+                    ["Nombre d'élèves par manuel Français", [ratio(e.ressources?.nbr_eleve, e.manuels?.francais), ratio(z.ressources?.nbr_eleve, z.manuels?.francais), ratio(c.ressources?.nbr_eleve, c.manuels?.francais)]],
                   ].map(([label, vals]: any) => (
                     <tr key={label}><td style={s.td}>{label}</td>{vals.map((v: string, i: number) => <td key={i} style={{ ...s.td, textAlign: 'right', ...manq(v) }}>{v}</td>)}</tr>
                   ))}

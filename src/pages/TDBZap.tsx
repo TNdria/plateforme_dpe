@@ -454,7 +454,7 @@ const TDBZap = () => {
                 <table style={{ width: '100%', marginTop: '4px' }}><tbody><tr>
                   <td style={{ width: '50%', verticalAlign: 'top', paddingRight: '2px' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'center' }} border={1} cellPadding={1} cellSpacing={0}>
-                      <thead><tr style={s.gris}><th colSpan={3} style={s.th}>Disparité aux dépens de</th></tr></thead>
+                      <thead><tr style={s.gris}><th colSpan={3} style={s.th}>Disparité au dépens des</th></tr></thead>
                       <tbody>
                         <tr>
                           <td style={{ ...s.td, textAlign: 'center', padding: '4px' }}>{getSmiley(abZap, abCisco)}</td>
@@ -466,7 +466,7 @@ const TDBZap = () => {
                   </td>
                   <td style={{ width: '50%', verticalAlign: 'top', paddingLeft: '2px' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'center' }} border={1} cellPadding={1} cellSpacing={0}>
-                      <thead><tr style={s.gris}><th colSpan={3} style={s.th}>Disparité aux dépens de</th></tr></thead>
+                      <thead><tr style={s.gris}><th colSpan={3} style={s.th}>Disparité au dépens des</th></tr></thead>
                       <tbody>
                         <tr>
                           <td style={{ ...s.td, textAlign: 'center', padding: '4px' }}>{getSmiley(redZap, redCisco)}</td>
@@ -535,15 +535,16 @@ const TDBZap = () => {
                   <tbody>
                     {(() => {
                       const smFmt = (v: any) => { const n = Number(v); return isNaN(n) || n === 0 ? '-' : n.toFixed(1); };
-                      const noteFmt = (sup: any, tot: any) => {
-                        const sv = Number(sup), t = Number(tot);
+                      const noteFmt = (sup: any, examData: any) => {
+                        const sv = Number(sup);
                         if (isNaN(sv) || sv === 0) return '-';
-                        if (!t || isNaN(t)) return sv <= 100 ? `${sv.toFixed(1)}%` : fmt(sv);
-                        return (sv / t * 100).toFixed(0) + '%';
+                        const t = Number(examData?.total_candidats) || (Number(examData?.nbr_g || 0) + Number(examData?.nbr_f || 0));
+                        if (!t || isNaN(t)) return '-';
+                        return (sv / t * 100).toFixed(1) + '%';
                       };
                         const cepeRow = (label: string, smKey: string, noteKey: string, isSub = false) => {
                           const zSm = smFmt(z.cepe?.[smKey]), cSm = smFmt(c.cepe?.[smKey]), dSm = smFmt(d.cepe?.[smKey]);
-                          const zN = noteFmt(z.cepe?.[noteKey], z.cepe?.total_candidats), cN = noteFmt(c.cepe?.[noteKey], c.cepe?.total_candidats), dN = noteFmt(d.cepe?.[noteKey], d.cepe?.total_candidats);
+                          const zN = noteFmt(z.cepe?.[noteKey], z.cepe), cN = noteFmt(c.cepe?.[noteKey], c.cepe), dN = noteFmt(d.cepe?.[noteKey], d.cepe);
                           return (
                             <tr key={label}>
                               {isSub ? <td colSpan={2} style={{ ...s.td, paddingLeft: '10px' }}>{label}</td>

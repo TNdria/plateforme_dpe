@@ -230,7 +230,7 @@ const TDBDren = () => {
                 <table style={{ width: '100%', borderCollapse: 'collapse' }} border={1} cellPadding={2} cellSpacing={0}>
                   <thead>
                     <tr style={st.gris}><th colSpan={3} style={st.th}>Taux d'abandon</th></tr>
-                    <tr><th style={{ ...st.th, width: '40%' }}>&nbsp;</th><th style={{ ...st.th, width: '30%', fontSize: '10px' }}>DREN</th><th style={{ ...st.th, width: '30%', fontSize: '10px' }}>MADA</th></tr>
+                    <tr><th style={{ ...st.th, width: '40%' }}>Classe</th><th style={{ ...st.th, width: '30%', fontSize: '10px' }}>DREN</th><th style={{ ...st.th, width: '30%', fontSize: '10px' }}>MADA</th></tr>
                   </thead>
                   <tbody>
                     {[['CP1->CP2','eff_t1','eff_t2','red_t1','red_t2'],['CP2->CE','eff_t2','eff_t3','red_t2','red_t3'],['CE->CM1','eff_t3','eff_t4','red_t3','red_t4'],['CM1->CM2','eff_t4','eff_t5','red_t4','red_t5']].map(([label, from, to, rF, rT]) => {
@@ -255,7 +255,7 @@ const TDBDren = () => {
                 <table style={{ width: '100%', borderCollapse: 'collapse' }} border={1} cellPadding={2} cellSpacing={0}>
                   <thead>
                     <tr style={st.gris}><th colSpan={3} style={st.th}>Pourcentage des redoublants</th></tr>
-                    <tr><th style={{ ...st.th, width: '40%' }}>&nbsp;</th><th style={{ ...st.th, width: '30%', fontSize: '10px' }}>DREN</th><th style={{ ...st.th, width: '30%', fontSize: '10px' }}>MADA</th></tr>
+                    <tr><th style={{ ...st.th, width: '40%' }}>Classe</th><th style={{ ...st.th, width: '30%', fontSize: '10px' }}>DREN</th><th style={{ ...st.th, width: '30%', fontSize: '10px' }}>MADA</th></tr>
                   </thead>
                   <tbody>
                     {[['CP1→CP2',1],['CP2→CE',2],['CE→CM1',3],['CM1→CM2',4]].map(([label, idx]: any) => {
@@ -334,15 +334,16 @@ const TDBDren = () => {
               <tbody>
                 {(() => {
                   const smFmt = (v: any) => { const n = Number(v); return isNaN(n) || n === 0 ? '-' : n.toFixed(1); };
-                  const noteFmt = (sup: any, tot: any) => {
-                    const s = Number(sup), t = Number(tot);
+                  const noteFmt = (sup: any, examData: any) => {
+                    const s = Number(sup);
                     if (isNaN(s) || s === 0) return '-';
-                    if (!t || isNaN(t)) return s <= 100 ? `${s.toFixed(1)}%` : fmt(s);
-                    return (s/t*100).toFixed(0)+'%';
+                    const t = Number(examData?.total_candidats) || (Number(examData?.nbr_g || 0) + Number(examData?.nbr_f || 0));
+                    if (!t || isNaN(t)) return '-';
+                    return (s/t*100).toFixed(1)+'%';
                   };
                   const row = (label: string, smK: string, nK: string, isSub = false) => {
                     const dSm = smFmt(d.cepe?.[smK]), mSm = smFmt(m.cepe?.[smK]);
-                    const dN = noteFmt(d.cepe?.[nK], d.cepe?.total_candidats), mN = noteFmt(m.cepe?.[nK], m.cepe?.total_candidats);
+                    const dN = noteFmt(d.cepe?.[nK], d.cepe), mN = noteFmt(m.cepe?.[nK], m.cepe);
                     return (
                       <tr key={label}>
                         {isSub ? <td colSpan={2} style={{ ...st.td, paddingLeft: '10px' }}>{label}</td> : <th colSpan={2} style={{ ...st.td, textAlign: 'left', fontWeight: 'bold' }}>{label}</th>}

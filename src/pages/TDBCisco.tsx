@@ -270,7 +270,7 @@ const TDBCisco = () => {
                           <thead>
                             <tr style={styles.gris}><th colSpan={4} style={styles.th}>Taux d'abandon</th></tr>
                             <tr>
-                              <th style={{ ...styles.th, width: '34%' }}>&nbsp;</th>
+                              <th style={{ ...styles.th, width: '34%' }}>Classe</th>
                               <th style={{ ...styles.th, width: '22%', fontSize: '10px' }}>CISCO</th>
                               <th style={{ ...styles.th, width: '22%', fontSize: '10px' }}>DREN</th>
                               <th style={{ ...styles.th, width: '22%', fontSize: '10px' }}>MADA</th>
@@ -406,7 +406,7 @@ const TDBCisco = () => {
                                     <td style={{ ...styles.td, textAlign: 'right' }}>{retE(m)}</td>
                                   </tr>
                                   <tr>
-                                    <td style={{ ...styles.td, fontSize: '10px' }}>Disparité au dépens de</td>
+                                    <td style={{ ...styles.td, fontSize: '10px' }}>Disparité au dépens des</td>
                                     {[c, d, m].map((lvl, i) => {
                                       const rg = Number(lvl.ressources?.eff_t1_g||0) > 0 ? Number(lvl.ressources?.eff_t5_g||0) / Number(lvl.ressources?.eff_t1_g||1) * 100 : 0;
                                       const rf = Number(lvl.ressources?.eff_t1_f||0) > 0 ? Number(lvl.ressources?.eff_t5_f||0) / Number(lvl.ressources?.eff_t1_f||1) * 100 : 0;
@@ -453,7 +453,7 @@ const TDBCisco = () => {
                                     <td style={{ ...styles.td, textAlign: 'right' }}>{redEpct(m)}</td>
                                   </tr>
                                   <tr>
-                                    <td style={{ ...styles.td, fontSize: '10px' }}>Disparité au dépens de</td>
+                                    <td style={{ ...styles.td, fontSize: '10px' }}>Disparité au dépens des</td>
                                     {[c, d, m].map((lvl, i) => {
                                       const rg = pctVal(lvl.ressources.red_g, lvl.ressources.nbr_eleve_g);
                                       const rf = pctVal(lvl.ressources.red_f, lvl.ressources.nbr_eleve_f);
@@ -500,15 +500,16 @@ const TDBCisco = () => {
                   <tbody>
                     {(() => {
                       const smFmt = (v: any) => { const n = Number(v); return isNaN(n) || n === 0 ? '-' : n.toFixed(1); };
-                      const noteFmt = (sup: any, tot: any) => {
-                        const s = Number(sup), t = Number(tot);
+                      const noteFmt = (sup: any, examData: any) => {
+                        const s = Number(sup);
                         if (isNaN(s) || s === 0) return '-';
-                        if (!t || isNaN(t)) return s <= 100 ? `${s.toFixed(1)}%` : fmt(s);
-                        return (s / t * 100).toFixed(0) + '%';
+                        const t = Number(examData?.total_candidats) || (Number(examData?.nbr_g || 0) + Number(examData?.nbr_f || 0));
+                        if (!t || isNaN(t)) return '-';
+                        return (s / t * 100).toFixed(1) + '%';
                       };
                       const cepeRow = (label: string, smKey: string, noteKey: string, isSub = false) => {
                         const cSm = smFmt(c.cepe?.[smKey]), dSm = smFmt(d.cepe?.[smKey]), mSm = smFmt(m.cepe?.[smKey]);
-                        const cN = noteFmt(c.cepe?.[noteKey], c.cepe?.total_candidats), dN = noteFmt(d.cepe?.[noteKey], d.cepe?.total_candidats), mN = noteFmt(m.cepe?.[noteKey], m.cepe?.total_candidats);
+                        const cN = noteFmt(c.cepe?.[noteKey], c.cepe), dN = noteFmt(d.cepe?.[noteKey], d.cepe), mN = noteFmt(m.cepe?.[noteKey], m.cepe);
                         return (
                           <tr key={label}>
                             {isSub ? <td colSpan={2} style={{ ...styles.td, paddingLeft: '10px' }}>{label}</td>
@@ -560,7 +561,7 @@ const TDBCisco = () => {
                       </>);
                     })()}
                     <tr>
-                      <td style={{ ...styles.td, fontSize: '10px' }}>Disparité au dépens de</td>
+                      <td style={{ ...styles.td, fontSize: '10px' }}>Disparité au dépens des</td>
                       {[c, d, m].map((lvl, i) => {
                         const txG = pctVal(lvl.cepe?.admis_g, lvl.cepe?.nbr_g);
                         const txF = pctVal(lvl.cepe?.admis_f, lvl.cepe?.nbr_f);

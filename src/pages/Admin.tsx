@@ -130,15 +130,18 @@ const BEPC_ALIASES: Record<string, string> = {
   matricule: "MATRICULE",
   codeetablissement: "CODE_ETAB",
   codeetab: "CODE_ETAB",
+  codeecole: "CODE_ETAB",
   ecoledorigine: "ECOLE_ORIGINE",
   ecoleorigine: "ECOLE_ORIGINE",
   codecentre: "CODE_CENTRE",
+  sexe: "GENRE",
   genre: "GENRE",
   option: "OPTION",
   malagasy: "MALAGASY",
   francais: "FRANCAIS",
   anglais: "ANGLAIS",
   mathematique: "MATHEMATIQUE",
+  mathematiques: "MATHEMATIQUE",
   maths: "MATHEMATIQUE",
   physique: "PHYSIQUE",
   bonus: "BONUS",
@@ -149,8 +152,39 @@ const BEPC_ALIASES: Record<string, string> = {
   total: "TOTAL",
   moyennebepc: "MOYENNE",
   moyenne: "MOYENNE",
+  resultat: "BEPC",
+  decision: "BEPC",
   bepc: "BEPC",
   anneescolaire: "ANNEE_SCOLAIRE",
+  annee: "ANNEE_SCOLAIRE",
+};
+
+const CEPE_ALIASES: Record<string, string> = {
+  anneescolaire: "ANNEE_SCOLAIRE",
+  annee: "ANNEE_SCOLAIRE",
+  codeetab: "CODE_ETAB",
+  codeetablissement: "CODE_ETAB",
+  codeecole: "CODE_ETAB",
+  sexe: "GENRE",
+  genre: "GENRE",
+  op: "OP",
+  operation: "OP",
+  probleme: "PROBLEME",
+  problemes: "PROBLEME",
+  svt: "SVT",
+  tfm: "TFM",
+  malagasy: "MALAGASY",
+  mlg: "MALAGASY",
+  francais: "FRANCAIS",
+  frs: "FRANCAIS",
+  geographie: "GEOGRAPHIE",
+  geo: "GEOGRAPHIE",
+  total: "TOTAL",
+  totalgeneral: "TOTAL",
+  moyenne: "MOYENNE",
+  resultat: "CEPE",
+  decision: "CEPE",
+  cepe: "CEPE",
 };
 
 const IMPORT_TARGETS = [
@@ -286,7 +320,7 @@ const Admin = () => {
   const isBepcImport = importTarget?.table === "examen_bepc_candidates";
   const isExamenImport = isCepeImport || isBepcImport;
   const [importYear, setImportYear] = useState<string>(String(new Date().getFullYear()));
-  const importCanReachStep3 = !!importData && (tableColumns.length > 0 || isExamenImport);
+  const importCanReachStep3 = !!importData;
   const displayedImportRowCount = workerBackedImport ? importRowCount : (importData?.rows.length ?? 0);
   const effectiveTableColumns = useMemo(() => {
     if (isCepeImport) {
@@ -518,14 +552,13 @@ const Admin = () => {
         const cols = table === "examen_cepe_candidates"
           ? (EXAMEN_CEPE_COLUMNS as readonly string[])
           : (EXAMEN_BEPC_COLUMNS as readonly string[]);
+        const aliases = table === "examen_cepe_candidates" ? CEPE_ALIASES : BEPC_ALIASES;
         const mapping: Record<string, string> = {};
         hdrs.forEach((h) => {
           const direct = cols.find((c) => c.toLowerCase() === h.toLowerCase().trim());
           if (direct) { mapping[h] = direct; return; }
-          if (table === "examen_bepc_candidates") {
-            const alias = BEPC_ALIASES[normHeader(h)];
-            if (alias && cols.includes(alias)) mapping[h] = alias;
-          }
+          const alias = aliases[normHeader(h)];
+          if (alias && cols.includes(alias)) mapping[h] = alias;
         });
         return mapping;
       };
@@ -587,14 +620,13 @@ const Admin = () => {
       const cols = t.table === "examen_cepe_candidates"
         ? (EXAMEN_CEPE_COLUMNS as readonly string[])
         : (EXAMEN_BEPC_COLUMNS as readonly string[]);
+      const aliases = t.table === "examen_cepe_candidates" ? CEPE_ALIASES : BEPC_ALIASES;
       const fallbackMapping: Record<string, string> = {};
       importData.headers.forEach((h) => {
         const direct = cols.find((c) => c.toLowerCase() === h.toLowerCase().trim());
         if (direct) { fallbackMapping[h] = direct; return; }
-        if (t.table === "examen_bepc_candidates") {
-          const alias = BEPC_ALIASES[normHeader(h)];
-          if (alias && cols.includes(alias)) fallbackMapping[h] = alias;
-        }
+        const alias = aliases[normHeader(h)];
+        if (alias && cols.includes(alias)) fallbackMapping[h] = alias;
       });
       setTableColumns([]);
       setColumnMapping(fallbackMapping);
@@ -639,7 +671,11 @@ const Admin = () => {
       let totalInserted = 0;
       const errors: string[] = [];
       const totalSourceRows = workerBackedImport ? importRowCount : importData.rows.length;
-      const batch = totalSourceRows > 50000 ? 2000 : 500;
+      // Lots plus petits + pause réelle entre les lots → évite la surchauffe machine
+      // (anciennement jusqu'à 2000 lignes/lot sans pause, ce qui saturait CPU et RAM
+      // lors des très gros imports CEPE).
+      const batch = totalSourceRows > 100000 ? 500 : totalSourceRows > 20000 ? 400 : 300;
+      const pauseMs = totalSourceRows > 100000 ? 250 : totalSourceRows > 20000 ? 150 : 60;
       const importBatchId = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
       const importBatchTs = new Date().toISOString();
       for (let i = 0; i < totalSourceRows; i += batch) {
@@ -670,7 +706,8 @@ const Admin = () => {
           break;
         }
         setImportProgress(Math.round(((i + slice.length) / totalSourceRows) * 100));
-        await new Promise((r) => setTimeout(r, 0));
+        // Vraie pause pour laisser le CPU respirer (évite la surchauffe).
+        await new Promise((r) => setTimeout(r, pauseMs));
       }
       if (errors.length === 0) {
         toast.success(`${totalInserted} lignes insérées dans ${importTarget.table}`);

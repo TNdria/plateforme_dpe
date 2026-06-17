@@ -165,8 +165,10 @@ const QuickImportDialog = ({ open, onOpenChange, table, tableLabel, adminUsernam
         }
       }
 
-      // Larger batches drastically reduce round-trips for huge files (600k rows).
-      const batch = data.rows.length > 50000 ? 2000 : 500;
+      // Lots plus petits + pause entre lots → évite de surchauffer la machine
+      // sur les très gros imports CEPE/BEPC.
+      const batch = allRows.length > 100000 ? 500 : allRows.length > 20000 ? 400 : 300;
+      const pauseMs = allRows.length > 100000 ? 250 : allRows.length > 20000 ? 150 : 60;
       let inserted = 0;
       const errors: string[] = [];
       let targetTable: string | undefined;
@@ -190,8 +192,8 @@ const QuickImportDialog = ({ open, onOpenChange, table, tableLabel, adminUsernam
           break;
         }
         setProgress(Math.round(((i + slice.length) / allRows.length) * 100));
-        // Yield to the browser so the page stays responsive between batches.
-        await new Promise((r) => setTimeout(r, 0));
+        // Vraie pause entre les lots pour ne pas surchauffer la machine.
+        await new Promise((r) => setTimeout(r, pauseMs));
       }
       const tgt = targetTable && targetTable !== table ? ` → table ${targetTable}` : "";
       const ignoredMsg = ignoredAll.size > 0 ? ` (${ignoredAll.size} colonnes ignorées : ${[...ignoredAll].slice(0, 4).join(", ")}${ignoredAll.size > 4 ? "…" : ""})` : "";
