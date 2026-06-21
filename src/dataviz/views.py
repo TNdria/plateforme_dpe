@@ -155,35 +155,52 @@ def get_layer_commune(request, code):
     res = to_dicts_json(q)
     return res
 
-def get_data_dren(request):
-    q = """ SELECT * FROM v_ct_n1_dren  """
+def parse_niveau(request, niveau=None):
+    if niveau is None:
+        niveau = request.GET.get('niveau', '1')
+    try:
+        niveau = int(niveau)
+    except (TypeError, ValueError):
+        niveau = 1
+    if niveau not in (1, 2, 3):
+        niveau = 1
+    return niveau
+
+
+def get_data_dren(request, niveau=None):
+    niveau = parse_niveau(request, niveau)
+    q = f"SELECT * FROM v_ct_n{niveau}_dren"
     res = to_dicts_json(q)
     return res
 
 
-def get_data_cisco(request):
-    q = """ SELECT * FROM v_ct_n1_cisco """
+def get_data_cisco(request, niveau=None):
+    niveau = parse_niveau(request, niveau)
+    q = f"SELECT * FROM v_ct_n{niveau}_cisco"
     res = to_dicts_json(q)
     return res
 
 
-def get_data_commune(request, code):
-    q = """ SELECT * FROM v_ct_n1_commune {0} {1} """
-    if (code < 70):
-        q = q.format(' WHERE "CODE_DREN" = ', code)
-    else :
-        q = q.format(' WHERE "CODE_CISCO" = ', code)
+def get_data_commune(request, code, niveau=None):
+    niveau = parse_niveau(request, niveau)
+    q = f"SELECT * FROM v_ct_n{niveau}_commune"
+    if code < 70:
+        q += f' WHERE "CODE_DREN" = {code}'
+    else:
+        q += f' WHERE "CODE_CISCO" = {code}'
 
     res = to_dicts_json(q)
     return res
-    
+
+
 # obtenir les donnees des ecoles
-def get_data_etab(request,code):
-    q = """ SELECT * FROM v_ct_n1_ecole {0} {1} """
-    if (code < 70):
-        q = q.format(' WHERE "CODE_DREN" = ', code)
-    else :
-        q = q.format(' WHERE "CODE_CISCO" = ', code)
+def get_data_etab(request, code, niveau=None):
+    niveau = parse_niveau(request, niveau)
+    q = f"SELECT * FROM v_ct_n{niveau}_ecole"
+    if code < 70:
+        q += f' WHERE "CODE_DREN" = {code}'
+    else:
+        q += f' WHERE "CODE_CISCO" = {code}'
 
     res = to_dicts_json(q)
     return res

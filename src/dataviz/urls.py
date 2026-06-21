@@ -13,7 +13,11 @@ urlpatterns = [
     path('layerCisco/',get_layer_cisco),
     path('layerCommune/<int:code>',get_layer_commune),
     path('getDataDren/',get_data_dren),
+    path('getDataDren/<int:niveau>/',get_data_dren),
     path('getDataCisco/',get_data_cisco),
-    path('getDataCommune/<int:code>',get_data_commune),
+    path('getDataCisco/<int:niveau>/',get_data_cisco),
+    path('getDataCommune/<int:code>/',get_data_commune),
+    path('getDataCommune/<int:code>/<int:niveau>/',get_data_commune),
     path('getDataEtab/<int:code>/',get_data_etab),
+    path('getDataEtab/<int:code>/<int:niveau>/',get_data_etab),
 ]

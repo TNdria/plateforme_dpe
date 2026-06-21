@@ -1,6 +1,15 @@
 import { supabase } from "@/integrations/supabase/client";
 
-const DJANGO_BACKEND_URL = "https://102.16.234.114";
+const DEFAULT_DJANGO_BACKEND_URL = "https://dpe-men.mg";
+
+function normalizeDjangoBackendUrl(url: string) {
+  const cleaned = url.trim().replace(/\/$/, "");
+  return cleaned.replace(/^https?:\/\/102\.16\.234\.114$/, DEFAULT_DJANGO_BACKEND_URL);
+}
+
+const DJANGO_BACKEND_URL = normalizeDjangoBackendUrl(
+  import.meta.env.VITE_API_URL || DEFAULT_DJANGO_BACKEND_URL,
+);
 
 // Construct Supabase URL from project ID to avoid stale .env issues
 const getSupabaseUrl = () => {
@@ -109,15 +118,13 @@ async function fetchDBPost<T>(action: string, body: Record<string, any>): Promis
 
 // Legacy proxy function for other endpoints (fallback)
 async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const supabaseUrl = getSupabaseUrl();
-  const proxyUrl = `${supabaseUrl}/functions/v1/django-proxy?path=${encodeURIComponent(endpoint)}`;
-  
+  const proxyUrl = `${DJANGO_BACKEND_URL}${endpoint}`;
+
   try {
     const response = await fetch(proxyUrl, {
       method: options?.method || 'GET',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         ...options?.headers,
       },
       body: options?.body,
@@ -417,19 +424,19 @@ export const authApi = {
   logout: () => fetchAPI<any>('/login/logout/', { method: 'POST' }),
 };
 
-// DataViz API - Using direct database connection
+// DataViz API - Uses Django endpoints directly via configured backend URL
 export const datavizApi = {
-  getHeatmapN0: () => fetchDB<any[]>('getHeatmapN0'),
-  getHeatmapN1: () => fetchDB<any[]>('getHeatmapN1'),
-  getHeatmapN2: () => fetchDB<any[]>('getHeatmapN2'),
-  getHeatmapN3: () => fetchDB<any[]>('getHeatmapN3'),
-  getLayerDren: () => fetchDB<any[]>('getDatavizLayerDren'),
-  getLayerCisco: () => fetchDB<any[]>('getDatavizLayerCisco'),
-  getLayerCommune: (code: number) => fetchDB<any[]>('getDatavizLayerCommune', { code }),
-  getDataDren: () => fetchDB<any[]>('getDatavizDataDren'),
-  getDataCisco: () => fetchDB<any[]>('getDatavizDataCisco'),
-  getDataCommune: (code: number) => fetchDB<any[]>('getDatavizDataCommune', { code }),
-  getDataEtab: (code: number) => fetchDB<any[]>('getDatavizDataEtab', { code }),
+  getHeatmapN0: () => fetchAPI<any[]>('/dataviz/layerHeatmapEtabN0/'),
+  getHeatmapN1: () => fetchAPI<any[]>('/dataviz/layerHeatmapEtabN1/'),
+  getHeatmapN2: () => fetchAPI<any[]>('/dataviz/layerHeatmapEtabN2/'),
+  getHeatmapN3: () => fetchAPI<any[]>('/dataviz/layerHeatmapEtabN3/'),
+  getLayerDren: () => fetchAPI<any[]>('/dataviz/layerDren/'),
+  getLayerCisco: () => fetchAPI<any[]>('/dataviz/layerCisco/'),
+  getLayerCommune: (code: number) => fetchAPI<any[]>(`/dataviz/layerCommune/${code}`),
+  getDataDren: (niveau: number) => fetchAPI<any[]>(`/dataviz/getDataDren/${niveau}/`),
+  getDataCisco: (niveau: number) => fetchAPI<any[]>(`/dataviz/getDataCisco/${niveau}/`),
+  getDataCommune: (code: number, niveau: number) => fetchAPI<any[]>(`/dataviz/getDataCommune/${code}/${niveau}/`),
+  getDataEtab: (code: number, niveau: number) => fetchAPI<any[]>(`/dataviz/getDataEtab/${code}/${niveau}/`),
 };
 
 // Donnees API - Uses direct database connection

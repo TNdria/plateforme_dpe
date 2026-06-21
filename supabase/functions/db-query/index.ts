@@ -720,28 +720,38 @@ serve(async (req: Request) => {
         result = await client.queryObject(q);
         break;
       }
-      case "getDatavizDataDren":
-        result = await client.queryObject(`SELECT * FROM v_ct_n1_dren`);
+      case "getDatavizDataDren": {
+        const niveauParam = parseInt(url.searchParams.get("niveau") || "1");
+        const niveau = [1, 2, 3].includes(niveauParam) ? niveauParam : 1;
+        result = await client.queryObject(`SELECT * FROM v_ct_n${niveau}_dren`);
         break;
-      case "getDatavizDataCisco":
-        result = await client.queryObject(`SELECT * FROM v_ct_n1_cisco`);
+      }
+      case "getDatavizDataCisco": {
+        const niveauParam = parseInt(url.searchParams.get("niveau") || "1");
+        const niveau = [1, 2, 3].includes(niveauParam) ? niveauParam : 1;
+        result = await client.queryObject(`SELECT * FROM v_ct_n${niveau}_cisco`);
         break;
+      }
       case "getDatavizDataCommune": {
         const code = parseInt(url.searchParams.get("code") || "0");
+        const niveauParam = parseInt(url.searchParams.get("niveau") || "1");
+        const niveau = [1, 2, 3].includes(niveauParam) ? niveauParam : 1;
         let cWhere = '';
         if (code > 0) {
           cWhere = code < 70 ? `WHERE "CODE_DREN" = ${code}` : `WHERE "CODE_CISCO" = ${code}`;
         }
-        result = await client.queryObject(`SELECT * FROM v_ct_n1_commune ${cWhere}`);
+        result = await client.queryObject(`SELECT * FROM v_ct_n${niveau}_commune ${cWhere}`);
         break;
       }
       case "getDatavizDataEtab": {
         const code = parseInt(url.searchParams.get("code") || "0");
+        const niveauParam = parseInt(url.searchParams.get("niveau") || "1");
+        const niveau = [1, 2, 3].includes(niveauParam) ? niveauParam : 1;
         let eWhere = '';
         if (code > 0) {
           eWhere = code < 70 ? `WHERE "CODE_DREN" = ${code}` : `WHERE "CODE_CISCO" = ${code}`;
         }
-        result = await client.queryObject(`SELECT * FROM v_ct_n1_ecole ${eWhere}`);
+        result = await client.queryObject(`SELECT * FROM v_ct_n${niveau}_ecole ${eWhere}`);
         break;
       }
 

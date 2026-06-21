@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
-// Use HTTP to avoid SSL certificate issues
-const DJANGO_BACKEND_URL = "http://102.16.234.114";
+// Proxy backend set to HTTPS so redirects are followed correctly
+const DJANGO_BACKEND_URL = "https://dpe-men.mg";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -30,7 +30,7 @@ serve(async (req) => {
 
     console.log(`Proxying request to: ${djangoUrl}`);
 
-    // Create a custom fetch that doesn't follow redirects
+    // Follow redirects normally so HTTPS redirections are handled by fetch.
     const response = await fetch(djangoUrl, {
       method: req.method,
       headers: {
@@ -38,28 +38,8 @@ serve(async (req) => {
         "Accept": "application/json",
       },
       body: req.method !== "GET" ? await req.text() : undefined,
-      redirect: "manual", // Don't follow redirects to HTTPS
+      redirect: "follow",
     });
-
-    // If we get a redirect, try to extract data anyway or return error
-    if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get("Location");
-      console.log(`Redirect detected to: ${location}`);
-      
-      // If redirecting to HTTPS, we can't follow due to invalid cert
-      // Return a meaningful error
-      return new Response(
-        JSON.stringify({ 
-          error: "Server redirects to HTTPS but has invalid SSL certificate",
-          suggestion: "Configure Django to allow HTTP for API endpoints or install valid SSL certificate",
-          redirectTo: location
-        }),
-        {
-          status: 502,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
-      );
-    }
 
     const data = await response.text();
     
