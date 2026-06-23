@@ -20,6 +20,7 @@ window['shp_dren'] = null
 window['shp_cisco'] = null
 window['shp_commune'] = null
 window["heatLayer"] = null
+const DEFAULT_DATAVIZ_NIVEAU = 1
 
 $(document).ready(async function () {
     utils.waitmeClose('div-map')
@@ -515,7 +516,7 @@ $(document).ready(async function () {
     };
 
     const getDataDren = async function () {
-        const url = 'getDataDren/';
+        const url = `getDataDren/${DEFAULT_DATAVIZ_NIVEAU}/`;
         try {
             // Afficher l'indicateur de chargement une seule fois
             utils.waitmeShow('div-map', 'win8');
@@ -531,7 +532,7 @@ $(document).ready(async function () {
         }
     }
     const getDataCisco = async function () {
-        const url = 'getDataCisco/';
+        const url = `getDataCisco/${DEFAULT_DATAVIZ_NIVEAU}/`;
         try {
             // Afficher l'indicateur de chargement une seule fois
             utils.waitmeShow('div-map', 'win8');
@@ -547,7 +548,7 @@ $(document).ready(async function () {
         }
     }
     const getDaCommune = async function (code_cisco) {
-        const url = `getDataCommune/${code_cisco}`;
+        const url = `getDataCommune/${code_cisco}/${DEFAULT_DATAVIZ_NIVEAU}/`;
         try {
             // Afficher l'indicateur de chargement une seule fois
             utils.waitmeShow('div-map', 'win8');
@@ -713,7 +714,7 @@ $(document).ready(async function () {
     //creation des markers pour les etablissements niveau 1 par code_dren ou code_cisco
     const create_markers_n1 = async (code) => {
         const ptg = $("#theme").find(":selected").text().toLowerCase().includes("pourcentage") ? "%" : ""
-        const url = `getDataEtab/${code}`;
+        const url = `getDataEtab/${code}/${DEFAULT_DATAVIZ_NIVEAU}/`;
         let markers = []
         try {
             // Afficher l'indicateur de chargement une seule fois

@@ -380,9 +380,15 @@ export const tdbApi = {
 };
 
 // SIG API - Using direct database connection
-export const sigApi = {
+/*export const sigApi = {
   getDrens: () => fetchDB<Dren[]>('getDrens'),
   getCiscos: (codeDren: number) => fetchDB<Cisco[]>('getCiscos', { code_dren: codeDren }),
+  // Configuration
+  getConfig: (key: string) => 
+    fetchDB<any>('getConfig', { key }),
+  setConfig: (key: string, value: any) => 
+    fetchDBPost('setConfig', { key, value }),
+  // -------------
   getLayerEtabN0: (codeDren: number, codeCisco: number) =>
     fetchDB<Etablissement[]>('getLayerEtabN0', { code_dren: codeDren, code_cisco: codeCisco }),
   getLayerEtabN1: (codeDren: number, codeCisco: number) =>
@@ -411,6 +417,94 @@ export const sigApi = {
     fetchDBPost('sigGeolocaliserVillage', data),
   updatePositionVillage: (id: number, longitude: number, latitude: number) =>
     fetchDBPost('sigUpdatePositionVillage', { id, longitude, latitude }),
+};*/
+// ====================== SIG API - Django Direct ======================
+export const sigApi = {
+  getDrens: () => 
+    fetchAPI<Dren[]>('/sig/dren/'),
+
+  getCiscos: (codeDren: number) => 
+    fetchAPI<Cisco[]>(`/sig/cisco/${codeDren}/`),
+
+  // ====================== COUCHES ÉTABLISSEMENTS ======================
+  getLayerEtabN0: (codeDren: number, codeCisco: number) =>
+    fetchAPI<Etablissement[]>(`/sig/etab/n0/${codeDren}/${codeCisco}/`),
+
+  getLayerEtabN1: (codeDren: number, codeCisco: number) =>
+    fetchAPI<Etablissement[]>(`/sig/etab/n1/${codeDren}/${codeCisco}/`),
+
+  getLayerEtabN2: (codeDren: number, codeCisco: number) =>
+    fetchAPI<Etablissement[]>(`/sig/etab/n2/${codeDren}/${codeCisco}/`),
+
+  getLayerEtabN3: (codeDren: number, codeCisco: number) =>
+    fetchAPI<Etablissement[]>(`/sig/etab/n3/${codeDren}/${codeCisco}/`),
+
+  // ====================== VILLAGES & NON GÉOLOCALISÉS ======================
+  getVillages: (codeDren: number, codeCisco: number) =>
+    fetchAPI<any[]>(`/sig/village/${codeDren}/${codeCisco}/`),
+
+  getEtabNonGeolocalise: (codeDren: number, codeCisco: number) =>
+    fetchAPI<any[]>(`/sig/etab/non-geolocalise/${codeDren}/${codeCisco}/`),
+
+  // ====================== SHAPES (GeoJSON) ======================
+  getLayerDren: (codeDren: number) =>
+    fetchAPI<Array<{ shape: GeoJSONFeatureCollection }>>(`/sig/shape/dren/${codeDren}/`),
+
+  getLayerCisco: (codeDren: number, codeCisco: number) =>
+    fetchAPI<Array<{ shape: GeoJSONFeatureCollection }>>(`/sig/shape/cisco/${codeDren}/${codeCisco}/`),
+
+  getLayerCommune: (codeDren: number, codeCisco: number) =>
+    fetchAPI<Array<{ shape: GeoJSONFeatureCollection }>>(`/sig/shape/commune/${codeDren}/${codeCisco}/`),
+
+  getLayerFokontany: (codeDren: number, codeCisco: number) =>
+    fetchAPI<Array<{ shape: GeoJSONFeatureCollection }>>(`/sig/shape/fokontany/${codeDren}/${codeCisco}/`),
+
+  // ====================== ACTIONS (Géolocalisation) ======================
+  geolocaliserEtab: (codeEtab: number, longitude: number, latitude: number) =>
+    fetchAPI<any>('/sig/geolocaliser/etablissement/', {
+      method: 'POST',
+      body: JSON.stringify({ code_etab: codeEtab, longitude, latitude }),
+    }),
+
+  updatePositionEtab: (codeEtab: number, longitude: number, latitude: number) =>
+    fetchAPI<any>('/sig/update/etablissement/', {
+      method: 'POST',
+      body: JSON.stringify({ code_etab: codeEtab, longitude, latitude }),
+    }),
+
+  geolocaliserVillage: (data: {
+    name: string;
+    dren: number;
+    cisco: number;
+    population: number;
+    airtel: boolean;
+    orange: boolean;
+    telma: boolean;
+    elec: boolean;
+    eau: boolean;
+    latitude: number;
+    longitude: number;
+  }) =>
+    fetchAPI<any>('/sig/geolocaliser/village/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  updatePositionVillage: (id: number, longitude: number, latitude: number) =>
+    fetchAPI<any>('/sig/update/village/', {
+      method: 'POST',
+      body: JSON.stringify({ id, longitude, latitude }),
+    }),
+
+  // Configuration SIG (si encore utilisée)
+  getConfig: (key: string) => 
+    fetchAPI<any>(`/api/config/${key}/`),        // À adapter si tu as un endpoint spécifique
+
+  setConfig: (key: string, value: any) => 
+    fetchAPI<any>('/api/config/', {
+      method: 'POST',
+      body: JSON.stringify({ key, value }),
+    }),
 };
 
 // Auth API - Based on src/login/urls.py

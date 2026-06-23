@@ -482,6 +482,130 @@ async function aggregateCandidatesBepc(
   }
 }
 
+// Fetch configuration from Supabase table sig_config and return as JSON
+async function getConfig(client: any) {
+  const result = await client.queryObject(`
+    SELECT *
+    FROM sig_config
+    ORDER BY cle_fonction
+  `);
+
+  return {
+    success: true,
+    data: result.rows,
+  };
+}
+
+async function updateConfig(
+  client: any,
+  payload: any,
+) {
+  const {
+    adminUsername,
+    cle_fonction,
+    est_active,
+  } = payload;
+
+  // Vérification superadmin
+  const adminCheck = await client.queryObject(
+    `
+      SELECT is_superuser
+      FROM login_customuser
+      WHERE username = $1
+    `,
+    [adminUsername],
+  );
+
+  if (
+    adminCheck.rows.length === 0 ||
+    !(adminCheck.rows[0] as any).is_superuser
+  ) {
+    return {
+      success: false,
+      error: "Accès refusé",
+    };
+  }
+
+  // ancienne valeur
+  const oldConfig = await client.queryObject(
+    `
+      SELECT est_active
+      FROM sig_config
+      WHERE cle_fonction = $1
+    `,
+    [cle_fonction],
+  );
+
+  const ancienneValeur =
+    oldConfig.rows.length > 0
+      ? oldConfig.rows[0].est_active
+      : null;
+
+  // update
+  await client.queryObject(
+    `
+      UPDATE sig_config
+      SET est_active = $1
+      WHERE cle_fonction = $2
+    `,
+    [est_active, cle_fonction],
+  );
+
+  // audit
+  await client.queryObject(
+    `
+      INSERT INTO sig_config_audit
+      (
+        cle_fonction,
+        ancienne_valeur,
+        nouvelle_valeur,
+        modifie_par
+      )
+      VALUES
+      (
+        $1,
+        $2,
+        $3,
+        $4
+      )
+    `,
+    [
+      cle_fonction,
+      ancienneValeur,
+      est_active,
+      adminUsername,
+    ],
+  );
+
+  return {
+    success: true,
+  };
+}
+
+async function checkFeature(
+  client: any,
+  payload: any,
+) {
+  const { cle_fonction } = payload;
+
+  const result = await client.queryObject(
+    `
+      SELECT est_active
+      FROM sig_config
+      WHERE cle_fonction = $1
+    `,
+    [cle_fonction],
+  );
+
+  return {
+    success: true,
+    est_active:
+      result.rows.length > 0
+        ? result.rows[0].est_active
+        : false,
+  };
+}
+
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -533,7 +657,6 @@ serve(async (req: Request) => {
       case "getDrens":
         result = await client.queryObject('SELECT DISTINCT "CODE_DREN", "DREN" FROM v_dren WHERE "CODE_DREN" IS NOT NULL ORDER BY "DREN"');
         break;
-
       case "getCiscos":
         if (!codeDren || codeDren === 0) {
           result = await client.queryObject('SELECT DISTINCT "CODE_CISCO", "CISCO", "CODE_DREN" FROM v_cisco WHERE "CODE_DREN" > 0 ORDER BY "CISCO"');
@@ -541,7 +664,6 @@ serve(async (req: Request) => {
           result = await client.queryObject(`SELECT DISTINCT "CODE_CISCO", "CISCO", "CODE_DREN" FROM v_cisco WHERE "CODE_DREN" = ${codeDren} ORDER BY "CISCO"`);
         }
         break;
-
       case "getLayerEtabN0":
         result = await executeLayerEtab(client, codeDren, codeCisco, 'v_fiche_ecole_n0');
         break;
@@ -953,6 +1075,21 @@ serve(async (req: Request) => {
       }
 
       // ============ SIG actions ============
+      case "getConfig": {
+        result = await getConfig(client);
+        break;
+      }
+      case "checkFeature": {
+        const body = await req.json();
+        result = await checkFeature(client, body);
+        break;
+      }
+      case "setConfig": {
+        const body = await req.json();
+        result = await updateConfig(client, body);
+        break;
+      }
+
       case "getSigVillages": {
         const q = `SELECT id, name, dren as code_dren, cisco as code_cisco, longitude, latitude, population, is_airtel, is_orange, is_telma, is_elec, is_eau FROM sig_village ${codeDren > 0 && codeCisco === 0 ? `WHERE dren = ${codeDren}` : codeCisco > 0 ? `WHERE cisco = ${codeCisco}` : 'WHERE dren > 0'} ORDER BY name`;
         result = await client.queryObject(q);

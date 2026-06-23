@@ -8,8 +8,23 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
+
+    // proxy les requêtes vers le backend Django,
+    // on peut utiliser la configuration suivante :
+    proxy: {
+      "/sig": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+        secure: false,
+      },
+    },
   },
-  plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
+
+  plugins: [
+    react(),
+    mode === "development" && componentTagger(),
+  ].filter(Boolean),
+
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
