@@ -153,9 +153,10 @@ function normalizeImportedCepe(row: any): any | null {
   return {
     source: 'csv_import',
     total_candidats: total,
-    nbr_g: nbrG ?? (txG !== null ? 100 : null), nbr_f: nbrF ?? (txF !== null ? 100 : null),
-    admis_g: admisG ?? (nbrG !== null && txG !== null ? Math.round(nbrG * txG / 100) : txG),
-    admis_f: admisF ?? (nbrF !== null && txF !== null ? Math.round(nbrF * txF / 100) : txF),
+    nbr_g: nbrG,
+    nbr_f: nbrF,
+    admis_g: admisG ?? (nbrG !== null && txG !== null ? Math.round(nbrG * txG / 100) : null),
+    admis_f: admisF ?? (nbrF !== null && txF !== null ? Math.round(nbrF * txF / 100) : null),
     tx_admis_g: txG, tx_admis_f: txF, tx_admis: tx,
     sm_mlg: smMlg, mlg_sup10: supMlg,
     sm_mlg_fahazoana: pickNumber(row, ['sm_mlg_fahazoana', 'SM_FAHALALANA', 'sm_fahazoana_lahatsoratra']) ?? smMlg,
@@ -196,6 +197,28 @@ function completeCepe(row: any): any {
     geographie_sup10: withValue('geographie_sup10', pickNumber(row, ['sup_10_geo', 'SUP_10_GEOGRAPHIE']) ?? supAutres),
     sm_svt: withValue('sm_svt', pickNumber(row, ['SM_SVT']) ?? smAutres),
     svt_sup10: withValue('svt_sup10', pickNumber(row, ['sup_10_svt', 'SUP_10_SVT']) ?? supAutres),
+  };
+}
+
+// Merge candidate-aggregated counts into CSV-imported cepe row so frontend can
+// compute Note>=10 percentages. CSV imports miss nbr_g/nbr_f/total_candidats;
+// the candidates aggregation provides them.
+function mergeCepeWithCounts(csvCepe: any, candCepe: any): any | null {
+  if (!csvCepe && !candCepe) return null;
+  if (!csvCepe) return candCepe;
+  if (!candCepe) return csvCepe;
+  const fill = (k: string) => (csvCepe[k] === null || csvCepe[k] === undefined || csvCepe[k] === 0) && candCepe[k] != null
+    ? candCepe[k] : csvCepe[k];
+  return {
+    ...csvCepe,
+    total_candidats: fill('total_candidats'),
+    nbr_g: fill('nbr_g'),
+    nbr_f: fill('nbr_f'),
+    admis_g: fill('admis_g'),
+    admis_f: fill('admis_f'),
+    tx_admis: fill('tx_admis'),
+    tx_admis_g: fill('tx_admis_g'),
+    tx_admis_f: fill('tx_admis_f'),
   };
 }
 
@@ -508,14 +531,14 @@ serve(async (req: Request) => {
 
     switch (action) {
       case "getDrens":
-        result = await client.queryObject('SELECT * FROM v_dren ORDER BY "DREN"');
+        result = await client.queryObject('SELECT DISTINCT "CODE_DREN", "DREN" FROM v_dren WHERE "CODE_DREN" IS NOT NULL ORDER BY "DREN"');
         break;
 
       case "getCiscos":
         if (!codeDren || codeDren === 0) {
-          result = await client.queryObject('SELECT * FROM v_cisco WHERE "CODE_DREN" > 0 ORDER BY "CISCO"');
+          result = await client.queryObject('SELECT DISTINCT "CODE_CISCO", "CISCO", "CODE_DREN" FROM v_cisco WHERE "CODE_DREN" > 0 ORDER BY "CISCO"');
         } else {
-          result = await client.queryObject(`SELECT * FROM v_cisco WHERE "CODE_DREN" = ${codeDren} ORDER BY "CISCO"`);
+          result = await client.queryObject(`SELECT DISTINCT "CODE_CISCO", "CISCO", "CODE_DREN" FROM v_cisco WHERE "CODE_DREN" = ${codeDren} ORDER BY "CISCO"`);
         }
         break;
 
@@ -773,7 +796,14 @@ serve(async (req: Request) => {
 
       // ============ Available years ============
       case "getAvailableYears": {
-        result = await client.queryObject(`SELECT DISTINCT "ANNEE_SCOLAIRE" AS annee FROM fpe_a1 WHERE "ANNEE_SCOLAIRE" > 2000 ORDER BY "ANNEE_SCOLAIRE" DESC`);
+        // Only return years that actually have data (EXISTE_PRIMAIRE / COLLEGE / LYCEE)
+        result = await client.queryObject(`
+          SELECT DISTINCT "ANNEE_SCOLAIRE" AS annee
+          FROM fpe_a1
+          WHERE "ANNEE_SCOLAIRE" > 2000
+            AND ("EXISTE_PRIMAIRE" = 1 OR "EXISTE_COLLEGE" = 1 OR "EXISTE_LYCEE" = 1)
+          ORDER BY "ANNEE_SCOLAIRE" DESC
+        `);
         break;
       }
 
@@ -790,9 +820,9 @@ serve(async (req: Request) => {
             aggregateCandidatesCepe(client, annee, { type: 'dren', codeDren }),
             aggregateCandidatesCepe(client, annee, { type: 'mada' }),
           ]);
-          rawData.cisco.cepe = completeCepe(normalizeImportedCepe(csvCisco) ?? candCisco ?? rawData.cisco.cepe);
-          rawData.dren.cepe = completeCepe(normalizeImportedCepe(csvDren) ?? candDren ?? rawData.dren.cepe);
-          rawData.mada.cepe = completeCepe(normalizeImportedCepe(csvMada) ?? candMada ?? rawData.mada.cepe);
+          rawData.cisco.cepe = completeCepe(mergeCepeWithCounts(normalizeImportedCepe(csvCisco), candCisco) ?? rawData.cisco.cepe);
+          rawData.dren.cepe = completeCepe(mergeCepeWithCounts(normalizeImportedCepe(csvDren), candDren) ?? rawData.dren.cepe);
+          rawData.mada.cepe = completeCepe(mergeCepeWithCounts(normalizeImportedCepe(csvMada), candMada) ?? rawData.mada.cepe);
           await client.end();
           return new Response(
             JSON.stringify({ ...serializeData(rawData), examen_annee: annee }),
@@ -819,8 +849,8 @@ serve(async (req: Request) => {
             aggregateCandidatesCepe(client, annee, { type: 'dren', codeDren }),
             aggregateCandidatesCepe(client, annee, { type: 'mada' }),
           ]);
-          rawData.dren.cepe = completeCepe(normalizeImportedCepe(csvDren) ?? candDren ?? rawData.dren.cepe);
-          rawData.mada.cepe = completeCepe(normalizeImportedCepe(csvMada) ?? candMada ?? rawData.mada.cepe);
+          rawData.dren.cepe = completeCepe(mergeCepeWithCounts(normalizeImportedCepe(csvDren), candDren) ?? rawData.dren.cepe);
+          rawData.mada.cepe = completeCepe(mergeCepeWithCounts(normalizeImportedCepe(csvMada), candMada) ?? rawData.mada.cepe);
           await client.end();
           return new Response(JSON.stringify({ ...serializeData(rawData), examen_annee: annee }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         } catch (tdbErr: any) {
@@ -844,9 +874,9 @@ serve(async (req: Request) => {
             aggregateCandidatesCepe(client, annee, { type: 'cisco', codeCisco, codeDren }),
             aggregateCandidatesCepe(client, annee, { type: 'dren', codeDren }),
           ]);
-          rawData.zap.cepe = completeCepe(normalizeImportedCepe(csvZap) ?? candZap ?? rawData.zap.cepe);
-          rawData.cisco.cepe = completeCepe(normalizeImportedCepe(csvCisco) ?? candCisco ?? rawData.cisco.cepe);
-          rawData.dren.cepe = completeCepe(normalizeImportedCepe(csvDren) ?? candDren ?? rawData.dren.cepe);
+          rawData.zap.cepe = completeCepe(mergeCepeWithCounts(normalizeImportedCepe(csvZap), candZap) ?? rawData.zap.cepe);
+          rawData.cisco.cepe = completeCepe(mergeCepeWithCounts(normalizeImportedCepe(csvCisco), candCisco) ?? rawData.cisco.cepe);
+          rawData.dren.cepe = completeCepe(mergeCepeWithCounts(normalizeImportedCepe(csvDren), candDren) ?? rawData.dren.cepe);
           await client.end();
           return new Response(
             JSON.stringify({ ...serializeData(rawData), examen_annee: annee }),
@@ -868,10 +898,11 @@ serve(async (req: Request) => {
         const niveau = (url.searchParams.get("niveau") || "primaire").toLowerCase();
         const niveauCol = niveau === "college" ? "EXISTE_COLLEGE" : niveau === "lycee" ? "EXISTE_LYCEE" : "EXISTE_PRIMAIRE";
         const q = `
-          SELECT DISTINCT a1."CODE_ETAB", a1."NOM_ETAB", a1."SECTEUR", a1."CODE_ZAP"
+          SELECT a1."CODE_ETAB", MIN(a1."NOM_ETAB") AS "NOM_ETAB", MIN(a1."SECTEUR") AS "SECTEUR", MIN(a1."CODE_ZAP") AS "CODE_ZAP"
           FROM fpe_a1 a1
           WHERE a1."ANNEE_SCOLAIRE" = ${annee} AND a1."CODE_ZAP" = ${codeZapParam} AND a1."${niveauCol}" = 1 AND a1."SECTEUR" = 0
-          ORDER BY a1."NOM_ETAB"
+          GROUP BY a1."CODE_ETAB"
+          ORDER BY MIN(a1."NOM_ETAB")
         `;
         result = await client.queryObject(q);
         break;
@@ -893,9 +924,9 @@ serve(async (req: Request) => {
             aggregateCandidatesCepe(client, annee, { type: 'zap', codeZap: codeZapParam, codeCisco, codeDren }),
             aggregateCandidatesCepe(client, annee, { type: 'cisco', codeCisco, codeDren }),
           ]);
-          rawData.ecole.cepe = completeCepe(normalizeImportedCepe(csvEcole) ?? candEcole ?? rawData.ecole.cepe);
-          rawData.zap.cepe = completeCepe(normalizeImportedCepe(csvZap) ?? candZap ?? rawData.zap.cepe);
-          rawData.cisco.cepe = completeCepe(normalizeImportedCepe(csvCisco) ?? candCisco ?? rawData.cisco.cepe);
+          rawData.ecole.cepe = completeCepe(mergeCepeWithCounts(normalizeImportedCepe(csvEcole), candEcole) ?? rawData.ecole.cepe);
+          rawData.zap.cepe = completeCepe(mergeCepeWithCounts(normalizeImportedCepe(csvZap), candZap) ?? rawData.zap.cepe);
+          rawData.cisco.cepe = completeCepe(mergeCepeWithCounts(normalizeImportedCepe(csvCisco), candCisco) ?? rawData.cisco.cepe);
 
           if (niveau === 'college') {
             const [bepcE, bepcZ, bepcC] = await Promise.all([
@@ -2465,7 +2496,7 @@ async function executeTdbNbrStdDren(client: Client, codeDren: number) {
 }
 
 async function executeTdbZapsByCisco(client: Client, codeCisco: number) {
-  return await client.queryObject(`SELECT * FROM v_zap WHERE "CODE_CISCO" = ${codeCisco || 101} ORDER BY "ZAP"`);
+  return await client.queryObject(`SELECT DISTINCT "CODE_ZAP", "ZAP", "CODE_CISCO" FROM v_zap WHERE "CODE_CISCO" = ${codeCisco || 101} ORDER BY "ZAP"`);
 }
 
 async function executeTdb111(client: Client, codeDren: number) {

@@ -36,7 +36,7 @@ const NIVEAU_META: Record<Niveau, {
   lycee:    { label: "Lycée",    icon: GraduationCap, badgeBg: "bg-violet-600", badgeText: "text-white", activeBg: "bg-violet-600", activeText: "text-white", ring: "ring-violet-500/30" },
 };
 
-// Ratios standards MEN Madagascar
+// Ratios standards MEN Madagascar (fallback si effectifs détaillés indisponibles)
 const RATIOS: Record<Niveau, { elevesParEns: number; elevesParTB: number; manuelsParEleve: number }> = {
   primaire: { elevesParEns: 40, elevesParTB: 2, manuelsParEleve: 5 },
   college:  { elevesParEns: 35, elevesParTB: 2, manuelsParEleve: 7 },
@@ -46,7 +46,127 @@ const RATIOS: Record<Niveau, { elevesParEns: number; elevesParTB: number; manuel
 type CategorieDef = {
   id: Categorie; label: string; shortLabel: string; icon: any; unit: string;
   requisKeys: string[]; existantKeys: string[]; besoinKeys: string[]; excedentKeys: string[];
-  computeRequis?: (eff: number, niveau: Niveau) => number;
+  computeRequis?: (eff: number, niveau: Niveau, row?: any) => number;
+};
+
+// ============================================================================
+//  Calcul des classes pédagogiques / sections (selon doc MEN — juin 2025)
+// ============================================================================
+
+const pickNumRaw = (row: any, keys: string[]): number | null => {
+  if (!row) return null;
+  for (const k of keys) {
+    const v = row[k] ?? row[k.toLowerCase()] ?? row[k.toUpperCase()];
+    if (v != null && v !== "") {
+      const n = Number(v);
+      if (Number.isFinite(n)) return n;
+    }
+  }
+  return null;
+};
+
+// --- PRIMAIRE : tests T1-T2, T3, T1-T2-T3, T4-T5 ---
+const computeRequisPrimaire = (row: any, effTotal: number): number => {
+  const t1 = pickNumRaw(row, ["EFF_T1", "eff_t1"]);
+  const t2 = pickNumRaw(row, ["EFF_T2", "eff_t2"]);
+  const t3 = pickNumRaw(row, ["EFF_T3", "eff_t3"]);
+  const t4 = pickNumRaw(row, ["EFF_T4", "eff_t4"]);
+  const t5 = pickNumRaw(row, ["EFF_T5", "eff_t5"]);
+  if ([t1, t2, t3, t4, t5].some((v) => v == null)) {
+    // fallback ratio si effectifs détaillés absents
+    return Math.ceil((effTotal || 0) / RATIOS.primaire.elevesParEns);
+  }
+  const NORMAL = 50, RESTE_INTEG = 10, MULTI_MAX = 50;
+  const classesPourGroupe = (a: number, b: number): number => {
+    const cA = Math.floor(a / NORMAL), cB = Math.floor(b / NORMAL);
+    const rA = a % NORMAL, rB = b % NORMAL;
+    let extra = 0;
+    if (rA <= RESTE_INTEG && rB <= RESTE_INTEG) extra = 0;
+    else if (rA + rB < MULTI_MAX) extra = 1; // 1 classe multigrade
+    else extra = 2;
+    return cA + cB + extra;
+  };
+  // Test 3 : si T1+T2+T3 ≤ 50 → 1 seule multigrade pour T1-T3
+  const sumT123 = (t1 || 0) + (t2 || 0) + (t3 || 0);
+  let classesT1T3: number;
+  if (sumT123 > 0 && sumT123 <= 50) {
+    classesT1T3 = 1;
+  } else {
+    // T1-T2
+    const cT12 = classesPourGroupe(t1 || 0, t2 || 0);
+    // T3 seul
+    const cT3base = Math.floor((t3 || 0) / NORMAL);
+    const rT3 = (t3 || 0) % NORMAL;
+    const cT3 = cT3base + (rT3 > RESTE_INTEG ? 1 : 0);
+    classesT1T3 = cT12 + cT3;
+  }
+  // T4-T5
+  const cT45 = classesPourGroupe(t4 || 0, t5 || 0);
+  return classesT1T3 + cT45;
+};
+
+// --- COLLÈGE : sections T6..T9 puis Σ horaires / 22 ---
+const computeRequisCollege = (row: any, effTotal: number): number => {
+  const t6 = pickNumRaw(row, ["EFF_T6", "eff_t6", "EFF_6E"]);
+  const t7 = pickNumRaw(row, ["EFF_T7", "eff_t7", "EFF_5E"]);
+  const t8 = pickNumRaw(row, ["EFF_T8", "eff_t8", "EFF_4E"]);
+  const t9 = pickNumRaw(row, ["EFF_T9", "eff_t9", "EFF_3E"]);
+  const effs = [t6, t7, t8, t9];
+  if (effs.some((v) => v == null)) {
+    return Math.ceil((effTotal || 0) / RATIOS.college.elevesParEns);
+  }
+  const MIN = 40, NORMAL = 50, VOL = 22, HOR_TOTAL = 16 + 14 + 2; // sci+litt+EPS
+  const total = effs.reduce<number>((s, v) => s + (v || 0), 0);
+  const section = (eff: number): number => {
+    if (eff <= 0) return 0;
+    if (total < 160 && eff < MIN) return 1;
+    const base = Math.floor(eff / NORMAL);
+    const reste = eff % NORMAL;
+    return reste >= MIN ? base + 1 : Math.max(base, eff >= MIN ? 1 : 0);
+  };
+  const totSect = effs.reduce<number>((s, v) => s + section(v || 0), 0);
+  return Math.ceil((HOR_TOTAL * totSect) / VOL);
+};
+
+// --- LYCÉE : sections par classe puis Σ (horaire_eleves * section) / 20 ---
+const LYCEE_CLASSES: Array<{ keys: string[]; horaire: number }> = [
+  { keys: ["EFF_2NDE", "EFF_2ND", "eff_2nde"], horaire: 31 },
+  { keys: ["EFF_1ERE_A", "eff_1ere_a"], horaire: 26 },
+  { keys: ["EFF_1ERE_L", "eff_1ere_l"], horaire: 30 },
+  { keys: ["EFF_1ERE_C", "eff_1ere_c"], horaire: 32 },
+  { keys: ["EFF_1ERE_D", "EFF_1D", "eff_1ere_d"], horaire: 33 },
+  { keys: ["EFF_1ERE_S", "EFF_1S", "eff_1ere_s"], horaire: 30 },
+  { keys: ["EFF_1ERE_OSE", "EFF_1OSE", "eff_1ere_ose"], horaire: 30 },
+  { keys: ["EFF_TLE_A", "EFF_TA", "eff_tle_a"], horaire: 32 },
+  { keys: ["EFF_TLE_L", "EFF_TL", "eff_tle_l"], horaire: 30 },
+  { keys: ["EFF_TLE_C", "EFF_TC", "eff_tle_c"], horaire: 39 },
+  { keys: ["EFF_TLE_D", "EFF_TD", "eff_tle_d"], horaire: 37 },
+  { keys: ["EFF_TLE_S", "EFF_TS", "eff_tle_s"], horaire: 30 },
+  { keys: ["EFF_TLE_OSE", "EFF_TOSE", "eff_tle_ose"], horaire: 30 },
+];
+
+const computeRequisLycee = (row: any, effTotal: number): number => {
+  const MIN = 30, NORMAL = 50, VOL = 20;
+  let found = false;
+  let sumHours = 0;
+  for (const cls of LYCEE_CLASSES) {
+    const eff = pickNumRaw(row, cls.keys);
+    if (eff == null) continue;
+    found = true;
+    let sect = 0;
+    if (eff >= NORMAL) {
+      const base = Math.floor(eff / NORMAL);
+      const reste = eff % NORMAL;
+      sect = reste >= MIN ? base + 1 : base;
+    } else if (eff >= MIN) {
+      sect = 1;
+    }
+    sumHours += cls.horaire * sect;
+  }
+  if (!found) {
+    return Math.ceil((effTotal || 0) / RATIOS.lycee.elevesParEns);
+  }
+  return Math.ceil(sumHours / VOL);
 };
 
 const CATEGORIES: CategorieDef[] = [
@@ -65,7 +185,10 @@ const CATEGORIES: CategorieDef[] = [
     existantKeys: ["ENS_EXISTANT", "ENSEIGNANTS", "TOTAL_ENS", "EXISTANT_ENS"],
     besoinKeys: ["BESOIN_ENS", "ENS_BESOIN"],
     excedentKeys: ["EXCEDENT_ENS", "ENS_EXCEDENT"],
-    computeRequis: (eff, niv) => Math.ceil(eff / RATIOS[niv].elevesParEns),
+    computeRequis: (eff, niv, row) =>
+      niv === "primaire" ? computeRequisPrimaire(row, eff)
+      : niv === "college" ? computeRequisCollege(row, eff)
+      : computeRequisLycee(row, eff),
   },
   {
     id: "tb", label: "Besoins en tables-bancs", shortLabel: "Tables-bancs",
@@ -87,15 +210,7 @@ const CATEGORIES: CategorieDef[] = [
   },
 ];
 
-const pickNum = (row: any, keys: string[]): number | null => {
-  for (const k of keys) {
-    if (row && row[k] != null && row[k] !== "") {
-      const n = Number(row[k]);
-      if (Number.isFinite(n)) return n;
-    }
-  }
-  return null;
-};
+const pickNum = (row: any, keys: string[]): number | null => pickNumRaw(row, keys);
 
 const getEffectifs = (row: any): number =>
   pickNum(row, ["EFFECTIFS", "EFFECTIFS_TOTAL", "EFFECTIF"]) ?? 0;
@@ -103,15 +218,22 @@ const getEffectifs = (row: any): number =>
 const computeRow = (row: any, cat: CategorieDef, niveau: Niveau) => {
   const eff = getEffectifs(row);
   let requis = pickNum(row, cat.requisKeys);
-  if (requis == null && cat.computeRequis) requis = cat.computeRequis(eff, niveau);
+  // Recalcule toujours les enseignants à partir des effectifs détaillés
+  // (les colonnes pré-remplies peuvent contenir 0 si jamais initialisées)
+  if (cat.id === "enseignants" && cat.computeRequis) {
+    const computed = cat.computeRequis(eff, niveau, row);
+    if (computed > 0) requis = computed;
+  }
+  if (requis == null && cat.computeRequis) requis = cat.computeRequis(eff, niveau, row);
   if (requis == null) requis = 0;
   const existant = pickNum(row, cat.existantKeys) ?? 0;
   let besoin = pickNum(row, cat.besoinKeys);
   let excedent = pickNum(row, cat.excedentKeys);
-  if (besoin == null) besoin = Math.max(0, requis - existant);
-  if (excedent == null) excedent = Math.max(0, existant - requis);
+  if (cat.id === "enseignants" || besoin == null) besoin = Math.max(0, requis - existant);
+  if (cat.id === "enseignants" || excedent == null) excedent = Math.max(0, existant - requis);
   return { requis, existant, besoin, excedent };
 };
+
 
 const formatNumber = (n: number) =>
   new Intl.NumberFormat("fr-FR").format(Math.round(n || 0));

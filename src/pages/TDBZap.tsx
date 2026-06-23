@@ -8,7 +8,6 @@ import { dashboardApi, tdbApi, Dren, Cisco, Zap } from '@/services/api';
 import { printTdb } from '@/utils/printTdb';
 import { generateMultiPagePdf } from '@/utils/multiPagePdf';
 import emojiHappy from '@/assets/emoji-happy.jpg';
-import SnapshotPanel from '@/components/tdb/SnapshotPanel';
 import emojiSad from '@/assets/emoji-sad.jpg';
 import { TDBShell } from '@/components/tdb/TDBShell';
 import { TDBImportDialog } from '@/components/tdb/TDBImportDialog';
@@ -241,11 +240,6 @@ const TDBZap = () => {
 
     return (
       <div ref={printRef} style={{ width: '100%', maxWidth: '1100px', margin: '0 auto', padding: '8px', font: '10px verdana', background: '#fff', userSelect: 'text' }}>
-        <SnapshotPanel
-          title={`Indicateurs précalculés (CSV) — ZAP ${tdbData.names?.ZAP || ''}`}
-          load={() => tdbApi.getTdbZapSnapshot(Number(selectedZap), Number(selectedCisco), Number(selectedDren))}
-          reloadKey={`zap-${selectedZap}-${selectedAnnee}`}
-        />
         {/* HEADER */}
         <div style={{ border: '2px solid #000', padding: '6px 10px' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', border: 'none' }}>
@@ -539,8 +533,9 @@ const TDBZap = () => {
                         const sv = Number(sup);
                         if (isNaN(sv) || sv === 0) return '-';
                         const t = Number(examData?.total_candidats) || (Number(examData?.nbr_g || 0) + Number(examData?.nbr_f || 0));
-                        if (!t || isNaN(t)) return '-';
-                        return (sv / t * 100).toFixed(1) + '%';
+                        if (t > 0) return Math.min(100, sv / t * 100).toFixed(1) + '%';
+                        if (sv > 0 && sv <= 100) return sv.toFixed(1) + '%';
+                        return '-';
                       };
                         const cepeRow = (label: string, smKey: string, noteKey: string, isSub = false) => {
                           const zSm = smFmt(z.cepe?.[smKey]), cSm = smFmt(c.cepe?.[smKey]), dSm = smFmt(d.cepe?.[smKey]);

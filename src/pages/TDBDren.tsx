@@ -8,7 +8,6 @@ import { printTdb } from '@/utils/printTdb';
 import { generateMultiPagePdf } from '@/utils/multiPagePdf';
 import { PDFViewer } from '@/components/pdf/PDFViewer';
 import { GenderLabel } from '@/components/score/GenderRow';
-import SnapshotPanel from '@/components/tdb/SnapshotPanel';
 import { ScoreY, computeScoreY } from '@/components/score/ScoreY';
 import { TDBShell } from '@/components/tdb/TDBShell';
 import { TDBImportDialog } from '@/components/tdb/TDBImportDialog';
@@ -133,11 +132,6 @@ const TDBDren = () => {
 
     return (
       <div style={{ width: '100%', maxWidth: '1191px', margin: '0 auto', font: '12px verdana', background: '#fff' }}>
-        <SnapshotPanel
-          title={`Indicateurs précalculés (CSV) — DREN ${tdbData.names?.DREN || ''}`}
-          load={() => tdbApi.getTdbDrenSnapshot(Number(selectedDren))}
-          reloadKey={`dren-${selectedDren}-${selectedAnnee}`}
-        />
         <div className="w-full space-y-3">
           {/* ===== TAB 0: INFO GÉNÉRALES ===== */}
           <div>
@@ -338,8 +332,9 @@ const TDBDren = () => {
                     const s = Number(sup);
                     if (isNaN(s) || s === 0) return '-';
                     const t = Number(examData?.total_candidats) || (Number(examData?.nbr_g || 0) + Number(examData?.nbr_f || 0));
-                    if (!t || isNaN(t)) return '-';
-                    return (s/t*100).toFixed(1)+'%';
+                    if (t > 0) return Math.min(100, s / t * 100).toFixed(1) + '%';
+                    if (s > 0 && s <= 100) return s.toFixed(1) + '%';
+                    return '-';
                   };
                   const row = (label: string, smK: string, nK: string, isSub = false) => {
                     const dSm = smFmt(d.cepe?.[smK]), mSm = smFmt(m.cepe?.[smK]);

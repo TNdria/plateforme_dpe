@@ -8,7 +8,6 @@ import { dashboardApi, tdbApi, Dren, Cisco, Zap } from '@/services/api';
 import { printTdb } from '@/utils/printTdb';
 import { generateMultiPagePdf } from '@/utils/multiPagePdf';
 import { TDBShell } from '@/components/tdb/TDBShell';
-import SnapshotPanel from '@/components/tdb/SnapshotPanel';
 import { DiagnosticPanel } from '@/components/tdb/DiagnosticPanel';
 import { TDBImportDialog } from '@/components/tdb/TDBImportDialog';
 
@@ -182,7 +181,8 @@ const TDBEcole = () => {
     }
     const e = tdbData.ecole, z = tdbData.zap, c = tdbData.cisco;
     const anneeDisplay = `${tdbData.annee - 1}-${tdbData.annee}`;
-    const labels = ['École', 'ZAP', 'CISCO'];
+    const etabLabel = selectedNiveau === 'college' ? 'CEG' : selectedNiveau === 'lycee' ? 'Lycée' : 'École';
+    const labels = [etabLabel, 'ZAP', 'CISCO'];
 
     const abCalc = (lvl: any, from: string, to: string, redFrom: string, redTo: string) => {
       const eF = Number(lvl.ressources[from] || 0), eT = Number(lvl.ressources[to] || 0);
@@ -196,11 +196,6 @@ const TDBEcole = () => {
 
     return (
       <div ref={printRef} style={{ width: '100%', maxWidth: '1100px', margin: '0 auto', padding: '8px', font: '10px verdana', background: '#fff' }}>
-        <SnapshotPanel
-          title={`Indicateurs précalculés (CSV) — ${tdbData.names?.NOM_ETAB || 'École'}`}
-          load={() => tdbApi.getTdbEcoleSnapshot(Number(selectedEcole), Number(selectedZap), Number(selectedCisco), Number(selectedDren))}
-          reloadKey={`ecole-${selectedEcole}-${selectedAnnee}`}
-        />
         {/* HEADER */}
         <div style={{ border: '2px solid #000', padding: '6px 10px' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', border: 'none' }}>
@@ -220,7 +215,7 @@ const TDBEcole = () => {
                 <div>DREN : <b>{tdbData.names.DREN}</b></div>
                 <div>CISCO : <b>{tdbData.names.CISCO}</b></div>
                 <div>ZAP : <b>{tdbData.names.ZAP}</b></div>
-                <div>École : <b>{tdbData.names.NOM_ETAB}</b></div>
+                <div>{etabLabel} : <b>{tdbData.names.NOM_ETAB}</b></div>
               </td>
               <td style={{ width: '15%', textAlign: 'right', border: 'none', padding: '4px' }}>
                 <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#e74c3c', marginBottom: '4px' }}>Par DPE/MEN</div>
@@ -383,8 +378,10 @@ const TDBEcole = () => {
                   const sv = Number(sup);
                   if (isNaN(sv) || sv === 0) return '-';
                   const t = Number(examData?.total_candidats) || (Number(examData?.nbr_g || 0) + Number(examData?.nbr_f || 0));
-                  if (!t || isNaN(t)) return '-';
-                  return (sv / t * 100).toFixed(1) + '%';
+                  if (t > 0 && sv <= t) return (sv / t * 100).toFixed(1) + '%';
+                  // Pas de total fiable ou incohérent : si la valeur est déjà un pourcentage (0-100), l'afficher tel quel.
+                  if (sv > 0 && sv <= 100) return sv.toFixed(1) + '%';
+                  return '-';
                 };
                 const gP = (lvl: any) => {
                   const x = lvl?.[examKey] || {};
@@ -460,35 +457,48 @@ const TDBEcole = () => {
                     ["Fonctionnaires", [fmt(e.personnel?.fonctionnaire), fmt(z.personnel?.fonctionnaire), fmt(c.personnel?.fonctionnaire)]],
                     ["FRAM subventionnés", [fmt(e.personnel?.sub), fmt(z.personnel?.sub), fmt(c.personnel?.sub)]],
                     ["FRAM non subventionnés", [fmt(e.personnel?.non_sub), fmt(z.personnel?.non_sub), fmt(c.personnel?.non_sub)]],
-                    ["Classes pédagogiques", [fmt(e.sections?.nbr_section), fmt(z.sections?.nbr_section), fmt(c.sections?.nbr_section)]],
+                    [selectedNiveau === 'college' ? 'Nombre de sections' : 'Classes pédagogiques', [fmt(e.sections?.nbr_section), fmt(z.sections?.nbr_section), fmt(c.sections?.nbr_section)]],
                   ].map(([label, vals]: any) => (
                     <tr key={label}><td style={s.td}>{label}</td>{vals.map((v: string, i: number) => <td key={i} style={{ ...s.td, textAlign: 'right', ...manq(v) }}>{v}</td>)}</tr>
                   ))}
                 </tbody>
               </table>
 
-              {/* Contexte */}
+              {/* Contexte / Environnements scolaires */}
               <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '3px' }} border={1} cellPadding={1} cellSpacing={0}>
-                <thead><tr style={s.gris}><th colSpan={4} style={s.th}>Contexte</th></tr></thead>
+                <thead><tr style={s.gris}><th colSpan={4} style={s.th}>{selectedNiveau === 'college' ? 'Environnements scolaires (Contexte)' : 'Contexte'}</th></tr></thead>
                 <tbody>
-                  {[
+                  {(selectedNiveau === 'college' ? [
+                    ['Salles & équipements TICE', [pct(e.ressources?.etab_tice, e.ressources?.nbr_etab, 0), pct(z.ressources?.etab_tice, z.ressources?.nbr_etab, 0), pct(c.ressources?.etab_tice, c.ressources?.nbr_etab, 0)]],
+                    ["Points d'eau fonctionnels", [pct(e.ressources?.etab_eau, e.ressources?.nbr_etab, 0), pct(z.ressources?.etab_eau, z.ressources?.nbr_etab, 0), pct(c.ressources?.etab_eau, c.ressources?.nbr_etab, 0)]],
+                    ['Électricité', [pct(e.ressources?.etab_elec, e.ressources?.nbr_etab, 0), pct(z.ressources?.etab_elec, z.ressources?.nbr_etab, 0), pct(c.ressources?.etab_elec, c.ressources?.nbr_etab, 0)]],
+                    ['Bibliothèque fonctionnelle', [pct(e.ressources?.etab_biblio, e.ressources?.nbr_etab, 0), pct(z.ressources?.etab_biblio, z.ressources?.nbr_etab, 0), pct(c.ressources?.etab_biblio, c.ressources?.nbr_etab, 0)]],
+                  ] : [
                     ['Écoles continues', [pct(e.ressources?.ecole_continue, e.ressources?.nbr_etab), pct(z.ressources?.ecole_continue, z.ressources?.nbr_etab), pct(c.ressources?.ecole_continue, c.ressources?.nbr_etab)]],
                     ['Élèves < 2km', [pct(Number(e.ressources?.nbr_eleve || 0) - Number(e.ressources?.eleve_2km || 0), e.ressources?.nbr_eleve), pct(Number(z.ressources?.nbr_eleve || 0) - Number(z.ressources?.eleve_2km || 0), z.ressources?.nbr_eleve), pct(Number(c.ressources?.nbr_eleve || 0) - Number(c.ressources?.eleve_2km || 0), c.ressources?.nbr_eleve)]],
                     ['Point d\'eau', [pct(e.ressources?.etab_eau, e.ressources?.nbr_etab, 0), pct(z.ressources?.etab_eau, z.ressources?.nbr_etab, 0), pct(c.ressources?.etab_eau, c.ressources?.nbr_etab, 0)]],
                     ['Électricité', [pct(e.ressources?.etab_elec, e.ressources?.nbr_etab, 0), pct(z.ressources?.etab_elec, z.ressources?.nbr_etab, 0), pct(c.ressources?.etab_elec, c.ressources?.nbr_etab, 0)]],
-                  ].map(([label, vals]: any) => (
+                  ]).map(([label, vals]: any) => (
                     <tr key={label}><td style={s.td}>{label}</td>{vals.map((v: string, i: number) => <td key={i} style={{ ...s.td, textAlign: 'right', ...manq(v) }}>{v}</td>)}</tr>
                   ))}
                 </tbody>
               </table>
             </td>
 
-            {/* RIGHT - Ratios */}
+            {/* RIGHT - Ratios / Conditions d'apprentissage */}
             <td style={{ width: '50%', verticalAlign: 'top', paddingLeft: '4px' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }} border={1} cellPadding={1} cellSpacing={0}>
-                <thead><tr><th style={{ ...s.th, width: '46%' }}>Indicateurs</th>{labels.map(l => <th key={l} style={{ ...s.gris, ...s.th, width: '18%' }}>{l}</th>)}</tr></thead>
+                <thead><tr><th style={{ ...s.th, width: '46%' }}>{selectedNiveau === 'college' ? "Conditions d'apprentissage" : 'Indicateurs'}</th>{labels.map(l => <th key={l} style={{ ...s.gris, ...s.th, width: '18%' }}>{l}</th>)}</tr></thead>
                 <tbody>
-                  {[
+                  {(selectedNiveau === 'college' ? [
+                    ["Nombre d'élèves par enseignant", [ratio(e.ressources?.nbr_eleve, e.personnel?.pers_en_classe), ratio(z.ressources?.nbr_eleve, z.personnel?.pers_en_classe), ratio(c.ressources?.nbr_eleve, c.personnel?.pers_en_classe)]],
+                    ['% enseignants qualifiés', [pct(Number(e.personnel?.pers_en_classe || 0) - Number(e.personnel?.sans_diplome_ped || 0), e.personnel?.pers_en_classe), pct(Number(z.personnel?.pers_en_classe || 0) - Number(z.personnel?.sans_diplome_ped || 0), z.personnel?.pers_en_classe), pct(Number(c.personnel?.pers_en_classe || 0) - Number(c.personnel?.sans_diplome_ped || 0), c.personnel?.pers_en_classe)]],
+                    ['Ratio section par salle', [ratio(e.sections?.nbr_section, e.sections?.nbr_sdc), ratio(z.sections?.nbr_section, z.sections?.nbr_sdc), ratio(c.sections?.nbr_section, c.sections?.nbr_sdc)]],
+                    ["Nombre d'élèves par place assise", [ratio(e.ressources?.nbr_eleve, e.places?.places_assises), ratio(z.ressources?.nbr_eleve, z.places?.places_assises), ratio(c.ressources?.nbr_eleve, c.places?.places_assises)]],
+                    ["Nombre d'élèves par Latrine", [ratio(e.ressources?.nbr_eleve, e.places?.latrines), ratio(z.ressources?.nbr_eleve, z.places?.latrines), ratio(c.ressources?.nbr_eleve, c.places?.latrines)]],
+                    ["Nombre d'élèves par Latrine pour filles", [ratio(e.ressources?.nbr_eleve_f, e.places?.latrines_fille), ratio(z.ressources?.nbr_eleve_f, z.places?.latrines_fille), ratio(c.ressources?.nbr_eleve_f, c.places?.latrines_fille)]],
+                    ["% Élèves vivants à plus de 5km", [pct(e.ressources?.eleve_5km, e.ressources?.nbr_eleve), pct(z.ressources?.eleve_5km, z.ressources?.nbr_eleve), pct(c.ressources?.eleve_5km, c.ressources?.nbr_eleve)]],
+                  ] : [
                     ['Élèves/maître', [ratio(e.ressources?.nbr_eleve, e.personnel?.pers_en_classe), ratio(z.ressources?.nbr_eleve, z.personnel?.pers_en_classe), ratio(c.ressources?.nbr_eleve, c.personnel?.pers_en_classe)]],
                     ['% enseignants qualifiés', [pct(Number(e.personnel?.pers_en_classe || 0) - Number(e.personnel?.sans_diplome_ped || 0), e.personnel?.pers_en_classe), pct(Number(z.personnel?.pers_en_classe || 0) - Number(z.personnel?.sans_diplome_ped || 0), z.personnel?.pers_en_classe), pct(Number(c.personnel?.pers_en_classe || 0) - Number(c.personnel?.sans_diplome_ped || 0), c.personnel?.pers_en_classe)]],
                     ['Classes/salle', [ratio(e.sections?.nbr_section, e.sections?.nbr_sdc), ratio(z.sections?.nbr_section, z.sections?.nbr_sdc), ratio(c.sections?.nbr_section, c.sections?.nbr_sdc)]],
@@ -498,7 +508,7 @@ const TDBEcole = () => {
                     ["Nombre d'élèves par manuel Malagasy", [ratio(e.ressources?.nbr_eleve, e.manuels?.malagasy), ratio(z.ressources?.nbr_eleve, z.manuels?.malagasy), ratio(c.ressources?.nbr_eleve, c.manuels?.malagasy)]],
                     ["Nombre d'élèves par manuel Mathématiques", [ratio(e.ressources?.nbr_eleve, e.manuels?.maths), ratio(z.ressources?.nbr_eleve, z.manuels?.maths), ratio(c.ressources?.nbr_eleve, c.manuels?.maths)]],
                     ["Nombre d'élèves par manuel Français", [ratio(e.ressources?.nbr_eleve, e.manuels?.francais), ratio(z.ressources?.nbr_eleve, z.manuels?.francais), ratio(c.ressources?.nbr_eleve, c.manuels?.francais)]],
-                  ].map(([label, vals]: any) => (
+                  ]).map(([label, vals]: any) => (
                     <tr key={label}><td style={s.td}>{label}</td>{vals.map((v: string, i: number) => <td key={i} style={{ ...s.td, textAlign: 'right', ...manq(v) }}>{v}</td>)}</tr>
                   ))}
                 </tbody>
@@ -508,11 +518,18 @@ const TDBEcole = () => {
               <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '3px' }} border={1} cellPadding={1} cellSpacing={0}>
                 <thead><tr style={s.gris}><th colSpan={4} style={s.th}>Ressources financières (Ariary)</th></tr></thead>
                 <tbody>
-                  <tr><td style={s.td}>Caisse écoles</td>
+                  <tr><td style={s.td}>{selectedNiveau === 'college' ? 'Caisse de soutien / Subvention' : 'Caisse écoles'}</td>
                     <td style={{ ...s.td, textAlign: 'right' }}>{fmt(e.caisse?.total_fce || 0)}</td>
                     <td style={{ ...s.td, textAlign: 'right' }}>{fmt(z.caisse?.total_fce || 0)}</td>
                     <td style={{ ...s.td, textAlign: 'right' }}>{fmt(c.caisse?.total_fce || 0)}</td>
                   </tr>
+                  {selectedNiveau === 'college' && (
+                    <tr><td style={s.td}>Autres</td>
+                      <td style={{ ...s.td, textAlign: 'right', ...manq(fmt(e.caisse?.autres)) }}>{fmt(e.caisse?.autres)}</td>
+                      <td style={{ ...s.td, textAlign: 'right', ...manq(fmt(z.caisse?.autres)) }}>{fmt(z.caisse?.autres)}</td>
+                      <td style={{ ...s.td, textAlign: 'right', ...manq(fmt(c.caisse?.autres)) }}>{fmt(c.caisse?.autres)}</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </td>
@@ -566,7 +583,7 @@ const TDBEcole = () => {
       <TDBShell
         level="ÉCOLE"
         cycle="PRIMAIRE"
-        title="Tableau de Bord — École"
+        title={`Tableau de Bord — ${selectedNiveau === 'college' ? 'CEG' : selectedNiveau === 'lycee' ? 'Lycée' : 'École'}`}
         entityName={ecoleName}
         entityCode={selectedEcole !== '0' ? selectedEcole : undefined}
         annee={anneeLabel}
