@@ -70,6 +70,20 @@ async function resolveExamenYear(client: any, requested: number): Promise<number
       `SELECT 1 FROM examen_cepe WHERE "id_annee_scolaire" = ${requested} LIMIT 1`
     );
     if (r1.rows.length > 0) return requested;
+    try {
+      const rExamCandidates = await client.queryObject(
+        `SELECT 1 FROM examen_cepe_candidates WHERE "ANNEE_SCOLAIRE" = $1 LIMIT 1`,
+        [requested],
+      );
+      if (rExamCandidates.rows.length > 0) return requested;
+    } catch (_) { /* table may not exist */ }
+    try {
+      const rBepcCandidates = await client.queryObject(
+        `SELECT 1 FROM examen_bepc_candidates WHERE "ANNEE_SCOLAIRE" = $1 LIMIT 1`,
+        [requested],
+      );
+      if (rBepcCandidates.rows.length > 0) return requested;
+    } catch (_) { /* table may not exist */ }
     const r2 = await client.queryObject(
       `SELECT MAX("id_annee_scolaire")::int AS y FROM examen_cepe WHERE "id_annee_scolaire" <= ${requested}`
     );
@@ -290,7 +304,7 @@ async function aggregateCandidatesCepe(
       } catch (_) { /* fall back to all */ }
       if (etabs.length === 0) return null;
       params.push(etabs);
-      etabFilter = `AND "CODE_ETAB" = ANY($${params.length}::int[])`;
+      etabFilter = `AND "CODE_ETAB" = ANY($${params.length}::bigint[])`;
     }
 
     const sql = `
@@ -302,17 +316,17 @@ async function aggregateCandidatesCepe(
           COUNT(*) FILTER (WHERE upper("GENRE")='F') AS nbr_f,
           COUNT(*) FILTER (WHERE upper("GENRE")='G' AND upper("CEPE")='A') AS admis_g,
           COUNT(*) FILTER (WHERE upper("GENRE")='F' AND upper("CEPE")='A') AS admis_f,
-          ROUND((SUM("MALAGASY") * 0.25 / COUNT(*))::numeric, 1) AS sm_mlg,
-          ROUND((SUM("FRANCAIS") * 0.5 / COUNT(*))::numeric, 1) AS sm_frs,
-          ROUND((SUM("OP") * 0.5 / COUNT(*))::numeric, 1) AS sm_op,
-          ROUND((SUM("PROBLEME") * 0.25 / COUNT(*))::numeric, 1) AS sm_prob,
-          ROUND((SUM("SVT") * 0.25 / COUNT(*))::numeric, 1) AS sm_svt,
-          ROUND((SUM("TFM") * 0.25 / COUNT(*))::numeric, 1) AS sm_histoire,
-          ROUND((SUM("GEOGRAPHIE") * 0.5 / COUNT(*))::numeric, 1) AS sm_geographie,
+          ROUND(AVG("MALAGASY")::numeric, 1) AS sm_mlg,
+          ROUND(AVG("FRANCAIS")::numeric, 1) AS sm_frs,
+          ROUND(AVG("OP")::numeric, 1) AS sm_op,
+          ROUND(AVG("PROBLEME")::numeric, 1) AS sm_prob,
+          ROUND(AVG("SVT")::numeric, 1) AS sm_svt,
+          ROUND(AVG("TFM")::numeric, 1) AS sm_histoire,
+          ROUND(AVG("GEOGRAPHIE")::numeric, 1) AS sm_geographie,
           COUNT(*) FILTER (WHERE "MALAGASY" >= 20) AS mlg_sup10,
           COUNT(*) FILTER (WHERE "FRANCAIS" >= 10) AS frs_sup10,
           COUNT(*) FILTER (WHERE "OP" >= 10) AS op_sup10,
-          COUNT(*) FILTER (WHERE "OP" >= 20) AS prob_sup10,
+          COUNT(*) FILTER (WHERE "PROBLEME" >= 20) AS prob_sup10,
           COUNT(*) FILTER (WHERE "SVT" >= 20) AS svt_sup10,
           COUNT(*) FILTER (WHERE "TFM" >= 20) AS histoire_sup10,
           COUNT(*) FILTER (WHERE "GEOGRAPHIE" >= 10) AS geographie_sup10
@@ -409,7 +423,7 @@ async function aggregateCandidatesBepc(
       } catch (_) { /* fall back */ }
       if (etabs.length === 0) return null;
       params.push(etabs);
-      etabFilter = `AND "CODE_ETAB" = ANY($${params.length}::int[])`;
+      etabFilter = `AND "CODE_ETAB" = ANY($${params.length}::bigint[])`;
     }
 
     const sql = `
@@ -482,130 +496,6 @@ async function aggregateCandidatesBepc(
   }
 }
 
-// Fetch configuration from Supabase table sig_config and return as JSON
-async function getConfig(client: any) {
-  const result = await client.queryObject(`
-    SELECT *
-    FROM sig_config
-    ORDER BY cle_fonction
-  `);
-
-  return {
-    success: true,
-    data: result.rows,
-  };
-}
-
-async function updateConfig(
-  client: any,
-  payload: any,
-) {
-  const {
-    adminUsername,
-    cle_fonction,
-    est_active,
-  } = payload;
-
-  // Vérification superadmin
-  const adminCheck = await client.queryObject(
-    `
-      SELECT is_superuser
-      FROM login_customuser
-      WHERE username = $1
-    `,
-    [adminUsername],
-  );
-
-  if (
-    adminCheck.rows.length === 0 ||
-    !(adminCheck.rows[0] as any).is_superuser
-  ) {
-    return {
-      success: false,
-      error: "Accès refusé",
-    };
-  }
-
-  // ancienne valeur
-  const oldConfig = await client.queryObject(
-    `
-      SELECT est_active
-      FROM sig_config
-      WHERE cle_fonction = $1
-    `,
-    [cle_fonction],
-  );
-
-  const ancienneValeur =
-    oldConfig.rows.length > 0
-      ? oldConfig.rows[0].est_active
-      : null;
-
-  // update
-  await client.queryObject(
-    `
-      UPDATE sig_config
-      SET est_active = $1
-      WHERE cle_fonction = $2
-    `,
-    [est_active, cle_fonction],
-  );
-
-  // audit
-  await client.queryObject(
-    `
-      INSERT INTO sig_config_audit
-      (
-        cle_fonction,
-        ancienne_valeur,
-        nouvelle_valeur,
-        modifie_par
-      )
-      VALUES
-      (
-        $1,
-        $2,
-        $3,
-        $4
-      )
-    `,
-    [
-      cle_fonction,
-      ancienneValeur,
-      est_active,
-      adminUsername,
-    ],
-  );
-
-  return {
-    success: true,
-  };
-}
-
-async function checkFeature(
-  client: any,
-  payload: any,
-) {
-  const { cle_fonction } = payload;
-
-  const result = await client.queryObject(
-    `
-      SELECT est_active
-      FROM sig_config
-      WHERE cle_fonction = $1
-    `,
-    [cle_fonction],
-  );
-
-  return {
-    success: true,
-    est_active:
-      result.rows.length > 0
-        ? result.rows[0].est_active
-        : false,
-  };
-}
-
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -657,6 +547,7 @@ serve(async (req: Request) => {
       case "getDrens":
         result = await client.queryObject('SELECT DISTINCT "CODE_DREN", "DREN" FROM v_dren WHERE "CODE_DREN" IS NOT NULL ORDER BY "DREN"');
         break;
+
       case "getCiscos":
         if (!codeDren || codeDren === 0) {
           result = await client.queryObject('SELECT DISTINCT "CODE_CISCO", "CISCO", "CODE_DREN" FROM v_cisco WHERE "CODE_DREN" > 0 ORDER BY "CISCO"');
@@ -664,6 +555,7 @@ serve(async (req: Request) => {
           result = await client.queryObject(`SELECT DISTINCT "CODE_CISCO", "CISCO", "CODE_DREN" FROM v_cisco WHERE "CODE_DREN" = ${codeDren} ORDER BY "CISCO"`);
         }
         break;
+
       case "getLayerEtabN0":
         result = await executeLayerEtab(client, codeDren, codeCisco, 'v_fiche_ecole_n0');
         break;
@@ -1037,7 +929,7 @@ serve(async (req: Request) => {
         const codeZapParam = parseInt(url.searchParams.get("code_zap") || "0");
         const niveau = (url.searchParams.get("niveau") || "primaire").toLowerCase();
         try {
-          const rawData = await executeTdbEcoleData(client, codeEtab, codeZapParam, codeCisco, codeDren, annee);
+          const rawData = await executeTdbEcoleData(client, codeEtab, codeZapParam, codeCisco, codeDren, annee, niveau);
           const [csvEcole, csvZap, csvCisco, candEcole, candZap, candCisco] = await Promise.all([
             getLatestImportedTdbRow('tdb_ecole', { CODE_ETAB: codeEtab, CODE_ZAP: codeZapParam, CODE_CISCO: codeCisco, CODE_DREN: codeDren }),
             getLatestImportedTdbRow('tdb_zap', { CODE_ZAP: codeZapParam, CODE_CISCO: codeCisco, CODE_DREN: codeDren }),
@@ -1075,21 +967,6 @@ serve(async (req: Request) => {
       }
 
       // ============ SIG actions ============
-      case "getConfig": {
-        result = await getConfig(client);
-        break;
-      }
-      case "checkFeature": {
-        const body = await req.json();
-        result = await checkFeature(client, body);
-        break;
-      }
-      case "setConfig": {
-        const body = await req.json();
-        result = await updateConfig(client, body);
-        break;
-      }
-
       case "getSigVillages": {
         const q = `SELECT id, name, dren as code_dren, cisco as code_cisco, longitude, latitude, population, is_airtel, is_orange, is_telma, is_elec, is_eau FROM sig_village ${codeDren > 0 && codeCisco === 0 ? `WHERE dren = ${codeDren}` : codeCisco > 0 ? `WHERE cisco = ${codeCisco}` : 'WHERE dren > 0'} ORDER BY name`;
         result = await client.queryObject(q);
@@ -1379,6 +1256,42 @@ serve(async (req: Request) => {
                 CREATE INDEX IF NOT EXISTS idx_examen_bepc_candidates_etab ON public.examen_bepc_candidates ("CODE_ETAB");
                 CREATE INDEX IF NOT EXISTS idx_examen_bepc_candidates_annee_etab ON public.examen_bepc_candidates ("ANNEE_SCOLAIRE","CODE_ETAB");
               `);
+              await client.queryObject(`
+                ALTER TABLE public.examen_bepc_candidates ADD COLUMN IF NOT EXISTS "DREN" TEXT;
+                ALTER TABLE public.examen_bepc_candidates ADD COLUMN IF NOT EXISTS "CISCO" TEXT;
+                ALTER TABLE public.examen_bepc_candidates ADD COLUMN IF NOT EXISTS "MATRICULE" TEXT;
+                ALTER TABLE public.examen_bepc_candidates ADD COLUMN IF NOT EXISTS "ECOLE_ORIGINE" TEXT;
+                ALTER TABLE public.examen_bepc_candidates ADD COLUMN IF NOT EXISTS "CODE_CENTRE" TEXT;
+                ALTER TABLE public.examen_bepc_candidates ADD COLUMN IF NOT EXISTS "GENRE" TEXT;
+                ALTER TABLE public.examen_bepc_candidates ADD COLUMN IF NOT EXISTS "OPTION" TEXT;
+                ALTER TABLE public.examen_bepc_candidates ADD COLUMN IF NOT EXISTS "MALAGASY" NUMERIC;
+                ALTER TABLE public.examen_bepc_candidates ADD COLUMN IF NOT EXISTS "FRANCAIS" NUMERIC;
+                ALTER TABLE public.examen_bepc_candidates ADD COLUMN IF NOT EXISTS "ANGLAIS" NUMERIC;
+                ALTER TABLE public.examen_bepc_candidates ADD COLUMN IF NOT EXISTS "MATHEMATIQUE" NUMERIC;
+                ALTER TABLE public.examen_bepc_candidates ADD COLUMN IF NOT EXISTS "PHYSIQUE" NUMERIC;
+                ALTER TABLE public.examen_bepc_candidates ADD COLUMN IF NOT EXISTS "BONUS" NUMERIC;
+                ALTER TABLE public.examen_bepc_candidates ADD COLUMN IF NOT EXISTS "SVT" NUMERIC;
+                ALTER TABLE public.examen_bepc_candidates ADD COLUMN IF NOT EXISTS "HISTO_GEO" NUMERIC;
+                ALTER TABLE public.examen_bepc_candidates ADD COLUMN IF NOT EXISTS "TOTAL" NUMERIC;
+                ALTER TABLE public.examen_bepc_candidates ADD COLUMN IF NOT EXISTS "MOYENNE" NUMERIC;
+                ALTER TABLE public.examen_bepc_candidates ADD COLUMN IF NOT EXISTS "BEPC" TEXT;
+                ALTER TABLE public.examen_bepc_candidates ADD COLUMN IF NOT EXISTS data JSONB NOT NULL DEFAULT '{}'::jsonb;
+                ALTER TABLE public.examen_bepc_candidates ADD COLUMN IF NOT EXISTS imported_at TIMESTAMPTZ NOT NULL DEFAULT now();
+                ALTER TABLE public.examen_bepc_candidates ALTER COLUMN "CODE_ETAB" TYPE BIGINT USING CASE WHEN "CODE_ETAB"::text ~ '^[[:space:]]*[0-9]+[[:space:]]*$' THEN trim("CODE_ETAB"::text)::bigint ELSE NULL END;
+                DO $do$
+                DECLARE col text;
+                BEGIN
+                  FOREACH col IN ARRAY ARRAY['MALAGASY','FRANCAIS','ANGLAIS','MATHEMATIQUE','PHYSIQUE','BONUS','SVT','HISTO_GEO','TOTAL','MOYENNE'] LOOP
+                    IF EXISTS (
+                      SELECT 1 FROM information_schema.columns
+                      WHERE table_schema='public' AND table_name='examen_bepc_candidates'
+                        AND column_name=col AND data_type <> 'numeric'
+                    ) THEN
+                      EXECUTE format($fmt$ALTER TABLE public.examen_bepc_candidates ALTER COLUMN %I TYPE NUMERIC USING CASE WHEN replace(%I::text, ',', '.') ~ '^[[:space:]]*-?[0-9]+([.][0-9]+)?[[:space:]]*$' THEN replace(trim(%I::text), ',', '.')::numeric ELSE NULL END$fmt$, col, col, col);
+                    END IF;
+                  END LOOP;
+                END $do$;
+              `);
             } else {
               await client.queryObject(`
                 CREATE TABLE IF NOT EXISTS public.examen_cepe_candidates (
@@ -1409,7 +1322,33 @@ serve(async (req: Request) => {
                 ALTER TABLE public.examen_cepe_candidates ADD COLUMN IF NOT EXISTS "OPTION" TEXT;
                 ALTER TABLE public.examen_cepe_candidates ADD COLUMN IF NOT EXISTS "CODE_CENTRE" TEXT;
                 ALTER TABLE public.examen_cepe_candidates ADD COLUMN IF NOT EXISTS "ECOLE_ORIGINE" TEXT;
-                ALTER TABLE public.examen_cepe_candidates ALTER COLUMN "CODE_ETAB" TYPE BIGINT USING "CODE_ETAB"::bigint;
+                ALTER TABLE public.examen_cepe_candidates ADD COLUMN IF NOT EXISTS "GENRE" TEXT;
+                ALTER TABLE public.examen_cepe_candidates ADD COLUMN IF NOT EXISTS "OP" NUMERIC;
+                ALTER TABLE public.examen_cepe_candidates ADD COLUMN IF NOT EXISTS "PROBLEME" NUMERIC;
+                ALTER TABLE public.examen_cepe_candidates ADD COLUMN IF NOT EXISTS "SVT" NUMERIC;
+                ALTER TABLE public.examen_cepe_candidates ADD COLUMN IF NOT EXISTS "TFM" NUMERIC;
+                ALTER TABLE public.examen_cepe_candidates ADD COLUMN IF NOT EXISTS "MALAGASY" NUMERIC;
+                ALTER TABLE public.examen_cepe_candidates ADD COLUMN IF NOT EXISTS "FRANCAIS" NUMERIC;
+                ALTER TABLE public.examen_cepe_candidates ADD COLUMN IF NOT EXISTS "GEOGRAPHIE" NUMERIC;
+                ALTER TABLE public.examen_cepe_candidates ADD COLUMN IF NOT EXISTS "TOTAL" NUMERIC;
+                ALTER TABLE public.examen_cepe_candidates ADD COLUMN IF NOT EXISTS "MOYENNE" NUMERIC;
+                ALTER TABLE public.examen_cepe_candidates ADD COLUMN IF NOT EXISTS "CEPE" TEXT;
+                ALTER TABLE public.examen_cepe_candidates ADD COLUMN IF NOT EXISTS data JSONB NOT NULL DEFAULT '{}'::jsonb;
+                ALTER TABLE public.examen_cepe_candidates ADD COLUMN IF NOT EXISTS imported_at TIMESTAMPTZ NOT NULL DEFAULT now();
+                ALTER TABLE public.examen_cepe_candidates ALTER COLUMN "CODE_ETAB" TYPE BIGINT USING CASE WHEN "CODE_ETAB"::text ~ '^[[:space:]]*[0-9]+[[:space:]]*$' THEN trim("CODE_ETAB"::text)::bigint ELSE NULL END;
+                DO $do$
+                DECLARE col text;
+                BEGIN
+                  FOREACH col IN ARRAY ARRAY['OP','PROBLEME','SVT','TFM','MALAGASY','FRANCAIS','GEOGRAPHIE','TOTAL','MOYENNE'] LOOP
+                    IF EXISTS (
+                      SELECT 1 FROM information_schema.columns
+                      WHERE table_schema='public' AND table_name='examen_cepe_candidates'
+                        AND column_name=col AND data_type <> 'numeric'
+                    ) THEN
+                      EXECUTE format($fmt$ALTER TABLE public.examen_cepe_candidates ALTER COLUMN %I TYPE NUMERIC USING CASE WHEN replace(%I::text, ',', '.') ~ '^[[:space:]]*-?[0-9]+([.][0-9]+)?[[:space:]]*$' THEN replace(trim(%I::text), ',', '.')::numeric ELSE NULL END$fmt$, col, col, col);
+                    END IF;
+                  END LOOP;
+                END $do$;
                 CREATE INDEX IF NOT EXISTS idx_examen_cepe_candidates_annee ON public.examen_cepe_candidates ("ANNEE_SCOLAIRE");
                 CREATE INDEX IF NOT EXISTS idx_examen_cepe_candidates_etab ON public.examen_cepe_candidates ("CODE_ETAB");
                 CREATE INDEX IF NOT EXISTS idx_examen_cepe_candidates_annee_etab ON public.examen_cepe_candidates ("ANNEE_SCOLAIRE","CODE_ETAB");
@@ -1423,6 +1362,7 @@ serve(async (req: Request) => {
             ? ['ANNEE_SCOLAIRE','DREN','CISCO','MATRICULE','CODE_ETAB','ECOLE_ORIGINE','CODE_CENTRE','GENRE','OPTION','MALAGASY','FRANCAIS','ANGLAIS','MATHEMATIQUE','PHYSIQUE','BONUS','SVT','HISTO_GEO','TOTAL','MOYENNE','BEPC']
             : ['ANNEE_SCOLAIRE','DREN','CISCO','OPTION','CODE_CENTRE','CODE_ETAB','ECOLE_ORIGINE','GENRE','OP','PROBLEME','SVT','TFM','MALAGASY','FRANCAIS','GEOGRAPHIE','TOTAL','MOYENNE','CEPE'];
           const intCols = ['ANNEE_SCOLAIRE','CODE_ETAB'];
+          const numericCols = new Set(structural.filter((s) => !intCols.includes(s) && !['DREN','CISCO','MATRICULE','ECOLE_ORIGINE','CODE_CENTRE','GENRE','OPTION','CEPE','BEPC'].includes(s)));
           // Normalize file header → strip accents/spaces/punct and resolve common aliases
           const normHdr = (s: string) => String(s ?? '')
             .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -1466,8 +1406,28 @@ serve(async (req: Request) => {
           const coerce = (v: any) => {
             if (v === null || v === undefined || v === '') return null;
             if (typeof v === 'number') return v;
-            const s = String(v).trim();
-            if (/^-?\d+(\.\d+)?$/.test(s)) return Number(s);
+            const s = String(v).trim().replace(/\s/g, '');
+            if (/^-?\d+([\.,]\d+)?$/.test(s)) return Number(s.replace(',', '.'));
+            return s;
+          };
+          const coerceNumeric = (v: any) => {
+            const coerced = coerce(v);
+            if (coerced === null) return null;
+            const n = typeof coerced === 'number' ? coerced : Number(String(coerced).replace(',', '.'));
+            return Number.isFinite(n) ? n : null;
+          };
+          const coerceGenre = (v: any) => {
+            if (v === null || v === undefined || v === '') return null;
+            const s = String(v).trim().toUpperCase();
+            if (['G', 'GARCON', 'GARCONS', 'M', 'MASCULIN', 'H'].includes(s.normalize('NFD').replace(/[\u0300-\u036f]/g, ''))) return 'G';
+            if (['F', 'FILLE', 'FILLES', 'FEMININ'].includes(s.normalize('NFD').replace(/[\u0300-\u036f]/g, ''))) return 'F';
+            return s.slice(0, 1);
+          };
+          const coerceDecision = (v: any) => {
+            if (v === null || v === undefined || v === '') return null;
+            const s = String(v).trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            if (['A', 'ADMIS', 'ADMISE', 'RECU', 'RECUE', 'OUI', '1', 'TRUE'].includes(s)) return 'A';
+            if (['NA', 'N', 'NONADMIS', 'NON ADMIS', 'REFUSE', 'REFUSEE', 'NON', '0', 'FALSE'].includes(s)) return 'N';
             return s;
           };
 
@@ -1484,7 +1444,7 @@ serve(async (req: Request) => {
               if (Number.isFinite(n)) yr = Math.trunc(n);
             }
             const batchIdProbe = body.importBatchId;
-            let isFirstChunk = true;
+            let isFirstChunk = body.isFirstChunk === true || !batchIdProbe;
             if (batchIdProbe) {
               const sbUrlProbe = Deno.env.get("SUPABASE_DB_URL");
               if (sbUrlProbe) {
@@ -1495,7 +1455,7 @@ serve(async (req: Request) => {
                     `SELECT COUNT(*)::int AS c FROM tdb_import_batches WHERE id = $1`,
                     [batchIdProbe],
                   );
-                  isFirstChunk = ((ex.rows[0] as any)?.c ?? 0) === 0;
+                  isFirstChunk = body.isFirstChunk === true || ((ex.rows[0] as any)?.c ?? 0) === 0;
                   await sbp.end();
                 } catch (_) { try { await sbp.end(); } catch(_2) {} }
               }
@@ -1527,6 +1487,9 @@ serve(async (req: Request) => {
                 if (intCols.includes(s) && v !== null) {
                   const n = Number(v); return Number.isFinite(n) ? Math.trunc(n) : null;
                 }
+                if (numericCols.has(s)) return coerceNumeric(row[idx]);
+                if (s === 'GENRE') return coerceGenre(row[idx]);
+                if (s === 'CEPE' || s === 'BEPC') return coerceDecision(row[idx]);
                 return v;
               });
               tuples.push([JSON.stringify(dataObj), batchTs, ...structVals]);
@@ -3258,10 +3221,78 @@ async function executeTdbZapData(client: Client, codeZap: number, codeCisco: num
 }
 
 // ============ TDB ECOLE ============
-async function executeTdbEcoleData(client: Client, codeEtab: number, codeZap: number, codeCisco: number, codeDren: number, annee: number) {
+
+async function executeTdbEcoleCollegeData(client: Client, codeEtab: number, codeZap: number, codeCisco: number, annee: number) {
   const whereEcole = `AND a1."CODE_ETAB" = ${codeEtab}`;
   const whereZap = `AND a1."CODE_ZAP" = ${codeZap}`;
   const whereCisco = `AND a1."CODE_CISCO" = ${codeCisco}`;
+
+  async function getRessources(where: string) {
+    try {
+      const q = `SELECT
+        COUNT(DISTINCT a1."CODE_ETAB") AS nbr_etab,
+        SUM(${si('e4."T6_G"')}+${si('e4."T6_F"')}+${si('e4."T7_G"')}+${si('e4."T7_F"')}+${si('e4."T8_G"')}+${si('e4."T8_F"')}+${si('e4."T9_G"')}+${si('e4."T9_F"')}) AS nbr_eleve,
+        SUM(${si('e4."T6_G"')}+${si('e4."T7_G"')}+${si('e4."T8_G"')}+${si('e4."T9_G"')}) AS nbr_eleve_g,
+        SUM(${si('e4."T6_F"')}+${si('e4."T7_F"')}+${si('e4."T8_F"')}+${si('e4."T9_F"')}) AS nbr_eleve_f,
+        SUM(${si('e4."T6_G_REDOUBLANT"')}+${si('e4."T6_F_REDOUBLANT"')}) AS red_t1,
+        SUM(${si('e4."T7_G_REDOUBLANT"')}+${si('e4."T7_F_REDOUBLANT"')}) AS red_t2,
+        SUM(${si('e4."T8_G_REDOUBLANT"')}+${si('e4."T8_F_REDOUBLANT"')}) AS red_t3,
+        SUM(${si('e4."T9_G_REDOUBLANT"')}+${si('e4."T9_F_REDOUBLANT"')}) AS red_t4,
+        SUM(${si('e4."T6_G_REDOUBLANT"')}+${si('e4."T7_G_REDOUBLANT"')}+${si('e4."T8_G_REDOUBLANT"')}+${si('e4."T9_G_REDOUBLANT"')}) AS red_g,
+        SUM(${si('e4."T6_F_REDOUBLANT"')}+${si('e4."T7_F_REDOUBLANT"')}+${si('e4."T8_F_REDOUBLANT"')}+${si('e4."T9_F_REDOUBLANT"')}) AS red_f,
+        SUM(${si('e4."T6_G"')}+${si('e4."T6_F"')}) AS eff_t1,
+        SUM(${si('e4."T7_G"')}+${si('e4."T7_F"')}) AS eff_t2,
+        SUM(${si('e4."T8_G"')}+${si('e4."T8_F"')}) AS eff_t3,
+        SUM(${si('e4."T9_G"')}+${si('e4."T9_F"')}) AS eff_t4,
+        SUM(${si('e4."T6_G"')}) AS eff_t1_g, SUM(${si('e4."T6_F"')}) AS eff_t1_f,
+        SUM(${si('e4."T9_G"')}) AS eff_t4_g, SUM(${si('e4."T9_F"')}) AS eff_t4_f,
+        COUNT(DISTINCT CASE WHEN a1."EST_ALIMENTE_EAU"='1' THEN a1."CODE_ETAB" END) AS etab_eau,
+        COUNT(DISTINCT CASE WHEN a1."EST_ELECTRIFIE"='1' THEN a1."CODE_ETAB" END) AS etab_elec,
+        0 AS etab_tice, 0 AS etab_biblio, 0 AS eleve_5km
+      FROM fpe_a1 a1
+      LEFT JOIN fpe_e4 e4 ON e4."CODE_ETAB"=a1."CODE_ETAB" AND e4."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND e4."SECTEUR"=a1."SECTEUR"
+      WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."SECTEUR"=0 AND a1."EXISTE_COLLEGE"=1 ${where}`;
+      return (await client.queryObject(q)).rows[0] || {};
+    } catch (e) { console.error('college getRessources error', e); return {}; }
+  }
+  async function getPersonnel(where: string) {
+    try { const q = `SELECT SUM(CASE WHEN p1."CODE_STATUT" IN ('1','2','3','4') THEN 1 ELSE 0 END) AS nbr_pers,
+      SUM(CASE WHEN p1."CODE_STATUT" IN ('1','2','3','4') AND ${si('p1."EN_SALLE"')}=1 THEN 1 ELSE 0 END) AS pers_en_classe,
+      SUM(CASE WHEN p1."CODE_STATUT" IN ('1','2') THEN 1 ELSE 0 END) AS fonctionnaire,
+      SUM(CASE WHEN p1."CODE_STATUT"='3' THEN 1 ELSE 0 END) AS sub,
+      SUM(CASE WHEN p1."CODE_STATUT"='4' THEN 1 ELSE 0 END) AS non_sub,
+      SUM(CASE WHEN COALESCE(p1."DIPLOME_PEDAGOGIQUE",'')='' THEN 1 ELSE 0 END) AS sans_diplome_ped
+      FROM fpe_p1 p1 INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=p1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=p1."ANNEE_SCOLAIRE"
+      WHERE p1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_COLLEGE"=1 AND a1."SECTEUR"=0 AND p1."NIVEAU_TENU_COLLEGE"='1' ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
+  }
+  async function getSections(where: string) {
+    try { const q = `SELECT SUM(${si('g1."T6_SECTION"')}+${si('g1."T7_SECTION"')}+${si('g1."T8_SECTION"')}+${si('g1."T9_SECTION"')}) AS nbr_section, SUM(${si('j1."SDC_COLLEGE_BON_ETAT"')}+${si('j1."SDC_COLLEGE_MAUVAIS_ETAT"')}) AS nbr_sdc FROM fpe_a1 a1 LEFT JOIN fpe_g1 g1 ON g1."CODE_ETAB"=a1."CODE_ETAB" AND g1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" LEFT JOIN fpe_j1 j1 ON j1."CODE_ETAB"=a1."CODE_ETAB" AND j1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_COLLEGE"=1 AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return { nbr_section: 0, nbr_sdc: 0 }; }
+  }
+  async function getPlaces(where: string) {
+    try { const q = `SELECT SUM((${si('k1."COLLEGE_TABLES_BANCS_1PL_BON_ETAT"')}+${si('k1."COLLEGE_TABLES_BANCS_1PL_MAUVAIS_ETAT"')})+(${si('k1."COLLEGE_TABLES_BANCS_2PL_BON_ETAT"')}+${si('k1."COLLEGE_TABLES_BANCS_2PL_MAUVAIS_ETAT"')})*2+(${si('k1."COLLEGE_TABLES_BANCS_3PL_BON_ETAT"')}+${si('k1."COLLEGE_TABLES_BANCS_3PL_MAUVAIS_ETAT"')})*3+(${si('k1."COLLEGE_TABLES_BANCS_4PL_BON_ETAT"')}+${si('k1."COLLEGE_TABLES_BANCS_4PL_MAUVAIS_ETAT"')})*4+(${si('k1."COLLEGE_TABLES_BANCS_5PL_PLUS_BON_ETAT"')}+${si('k1."COLLEGE_TABLES_BANCS_5PL_PLUS_MAUVAIS_ETAT"')})*5) AS places_assises, SUM(${si('j2."WC_LATRINES_COMMUNES_BON_ETAT"')}+${si('j2."WC_LATRINES_COMMUNES_MAUVAIS_ETAT"')}+${si('j2."WC_LATRINES_FILLES_BON_ETAT"')}+${si('j2."WC_LATRINES_FILLES_MAUVAIS_ETAT"')}+${si('j2."WC_LATRINES_GARCONS_BON_ETAT"')}+${si('j2."WC_LATRINES_GARCONS_MAUVAIS_ETAT"')}) AS latrines, SUM(${si('j2."WC_LATRINES_FILLES_BON_ETAT"')}+${si('j2."WC_LATRINES_FILLES_MAUVAIS_ETAT"')}) AS latrines_fille FROM fpe_a1 a1 LEFT JOIN fpe_k1 k1 ON k1."CODE_ETAB"=a1."CODE_ETAB" AND k1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" LEFT JOIN fpe_j2 j2 ON j2."CODE_ETAB"=a1."CODE_ETAB" AND j2."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_COLLEGE"=1 AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
+  }
+  async function getCaisse(where: string) {
+    try { const q = `SELECT SUM(${si('m1."SUBVENTION_ENS_COLLEGE"')}+${si('m1."PARTICIPATION_FRAM_COLLEGE"')}) AS total_fce, SUM(${si('m1."DONS_COLLEGE"')}+${si('m1."ALLEGEMENT_COLLEGE"')}) AS autres FROM fpe_m1 m1 INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=m1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=m1."ANNEE_SCOLAIRE" WHERE m1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_COLLEGE"=1 AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
+  }
+
+  const [resEcole,resZap,resCisco,persEcole,persZap,persCisco,secEcole,secZap,secCisco,plEcole,plZap,plCisco,ceEcole,ceZap,ceCisco] = await Promise.all([
+    getRessources(whereEcole), getRessources(whereZap), getRessources(whereCisco), getPersonnel(whereEcole), getPersonnel(whereZap), getPersonnel(whereCisco), getSections(whereEcole), getSections(whereZap), getSections(whereCisco), getPlaces(whereEcole), getPlaces(whereZap), getPlaces(whereCisco), getCaisse(whereEcole), getCaisse(whereZap), getCaisse(whereCisco)
+  ]);
+  const namesResult = await client.queryObject(`SELECT a1."NOM_ETAB", a1."CODE_ETAB", a1."SECTEUR", z."ZAP", z."CODE_ZAP", c."CISCO", d."DREN" FROM fpe_a1 a1 INNER JOIN v_zap z ON z."CODE_ZAP"=a1."CODE_ZAP" INNER JOIN v_cisco c ON c."CODE_CISCO"=z."CODE_CISCO" INNER JOIN v_dren d ON d."CODE_DREN"=c."CODE_DREN" WHERE a1."CODE_ETAB"=${codeEtab} AND a1."ANNEE_SCOLAIRE"=${annee} LIMIT 1`);
+  const names = namesResult.rows[0] || { NOM_ETAB: '', CODE_ETAB: codeEtab, ZAP: '', CISCO: '', DREN: '', SECTEUR: 0 };
+  const empty = {};
+  return { version: VERSION, names, annee,
+    ecole: { ressources: resEcole, personnel: persEcole, sections: secEcole, places: plEcole, cepe: empty, caisse: ceEcole, manuels: empty, finances: ceEcole },
+    zap: { ressources: resZap, personnel: persZap, sections: secZap, places: plZap, cepe: empty, caisse: ceZap, manuels: empty, finances: ceZap },
+    cisco: { ressources: resCisco, personnel: persCisco, sections: secCisco, places: plCisco, cepe: empty, caisse: ceCisco, manuels: empty, finances: ceCisco },
+  };
+}
+
+async function executeTdbEcoleData(client: Client, codeEtab: number, codeZap: number, codeCisco: number, codeDren: number, annee: number, niveau: string = 'primaire') {
+  const whereEcole = `AND a1."CODE_ETAB" = ${codeEtab}`;
+  const whereZap = `AND a1."CODE_ZAP" = ${codeZap}`;
+  const whereCisco = `AND a1."CODE_CISCO" = ${codeCisco}`;
+  if (niveau === 'college') return executeTdbEcoleCollegeData(client, codeEtab, codeZap, codeCisco, annee);
 
   async function getRessources(where: string) {
     const q = `SELECT 

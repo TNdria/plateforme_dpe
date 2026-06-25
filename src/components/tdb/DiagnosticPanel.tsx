@@ -73,6 +73,75 @@ export function diagnosticEfficience(x: number, y: number) {
   };
 }
 
+/**
+ * Grille 3×3 de smileys (Ressources × Résultats) avec un sticker moto
+ * positionné sur la case de l'établissement courant — fidèle au canevas
+ * officiel DPE (CEG).
+ */
+function SmileyEfficienceGrid({ scoreX, scoreY }: { scoreX: number; scoreY: number }) {
+  // Lignes (haut→bas) = Résultats maxim/moyen/minim
+  // Colonnes (gauche→droite) = Ressources minim/moyen/maxim
+  const xIdx = scoreX < 33.33 ? 0 : scoreX < 66.66 ? 1 : 2;
+  const yIdx = scoreY < 33.33 ? 2 : scoreY < 66.66 ? 1 : 0;
+  // Matrice de smileys : 😄 😊 😐 / 😊 😐 ☹️ / 😐 ☹️ 😢
+  const FACES: string[][] = [
+    ['😄', '🙂', '😐'],
+    ['🙂', '😐', '🙁'],
+    ['😐', '🙁', '😢'],
+  ];
+  return (
+    <div style={{ marginTop: 8, border: '1px solid #555', background: '#fff', padding: 6 }}>
+      <div style={{ fontSize: 10, fontWeight: 'bold', textAlign: 'center', marginBottom: 4 }}>
+        Efficience — position de l'établissement
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 2 }}>
+        {FACES.map((row, r) =>
+          row.map((face, c) => {
+            const current = r === yIdx && c === xIdx;
+            return (
+              <div
+                key={`${r}-${c}`}
+                style={{
+                  position: 'relative',
+                  border: '1px solid #bbb',
+                  background: current ? '#fff8e1' : '#fafafa',
+                  height: 44,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 24,
+                  lineHeight: 1,
+                }}
+                title={`Ressources ${['minim', 'moyen', 'maxim'][c]} · Résultats ${['maxim', 'moyen', 'minim'][r]}`}
+              >
+                {face}
+                {current && (
+                  <span
+                    style={{
+                      position: 'absolute',
+                      right: 2,
+                      bottom: 0,
+                      fontSize: 18,
+                      filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.3))',
+                    }}
+                    title="Position actuelle"
+                  >
+                    🏍️
+                  </span>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: '#666', marginTop: 4 }}>
+        <span>← Ressources faibles</span>
+        <span>Ressources élevées →</span>
+      </div>
+    </div>
+  );
+}
+
 export function interpretationAbandon(ecole: number, zap: number) {
   let niveau: string;
   if (ecole < 5) niveau = "Très faible taux d'abandon : excellente rétention des élèves.";
@@ -160,13 +229,9 @@ export function DiagnosticPanel({
 
   return (
     <div style={{ marginTop: 8 }}>
-      <div style={titreStyle}>{title}</div>
-
-      <table style={{ width: '100%', borderCollapse: 'collapse' }} cellSpacing={0}>
-        <tbody>
-          <tr>
-            {/* === Scatter plot === */}
-            <td style={{ width: '45%', verticalAlign: 'top', paddingRight: 4 }}>
+      {/* === EFFICIENCE (au-dessus, pleine largeur) === */}
+      <div style={{ ...titreStyle, background: '#1565c0' }}>EFFICIENCE — Position Ressources vs Résultats</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 4 }}>
               <div
                 style={{
                   border: '1px solid #555',
@@ -244,11 +309,35 @@ export function DiagnosticPanel({
                   L'étoile rouge ★ représente l'école courante.
                 </div>
               </div>
-            </td>
+        {/* Comparaison visuelle Établissement / ZAP / CISCO */}
+        <div style={{ border: '1px solid #555', background: '#fafafa', padding: 8, display: 'flex', flexDirection: 'column', justifyContent: 'space-around' }}>
+          <div style={{ fontSize: 10, fontWeight: 'bold', textAlign: 'center', marginBottom: 6 }}>Score d'efficience (0–100)</div>
+          {[
+            { label: '🏫 Établissement', value: Math.round((scoreX + scoreY) / 2), color: '#d32f2f', bold: true },
+            { label: '🌐 Moyenne ZAP', value: 50, color: '#1976d2', bold: false },
+            { label: '🏛️ Moyenne CISCO', value: 50, color: '#7b1fa2', bold: false },
+          ].map((row) => (
+            <div key={row.label} style={{ marginBottom: 6 }}>
+              <div style={{ fontSize: 10, display: 'flex', justifyContent: 'space-between', fontWeight: row.bold ? 'bold' : 'normal' }}>
+                <span>{row.label}</span><span>{row.value}/100</span>
+              </div>
+              <div style={{ background: '#eee', height: 10, borderRadius: 5, overflow: 'hidden', marginTop: 2 }}>
+                <div style={{ width: `${Math.max(0, Math.min(100, row.value))}%`, background: row.color, height: '100%' }} />
+              </div>
+            </div>
+          ))}
+          <div style={{ fontSize: 9, color: '#666', marginTop: 4, lineHeight: 1.4 }}>
+            📊 Ressources (X) : {scoreX.toFixed(1)} &nbsp;·&nbsp; 🎯 Résultats (Y) : {scoreY.toFixed(1)}
+          </div>
 
-            {/* === Diagnostic textuel === */}
-            <td style={{ width: '55%', verticalAlign: 'top', paddingLeft: 4 }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }} cellSpacing={0}>
+          {/* Grille 3x3 de smileys + sticker moto sur la position courante */}
+          <SmileyEfficienceGrid scoreX={scoreX} scoreY={scoreY} />
+        </div>
+      </div>
+
+      {/* === DIAGNOSTIC & INTERPRÉTATIONS (en dessous, pleine largeur) === */}
+      <div style={titreStyle}>{title}</div>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }} cellSpacing={0}>
                 <tbody>
                   <tr>
                     <td style={{ ...cellStyle, background: '#f1f8e9', fontWeight: 'bold', textAlign: 'center' }}>
@@ -303,10 +392,6 @@ export function DiagnosticPanel({
                   </tr>
                 </tbody>
               </table>
-            </td>
-          </tr>
-        </tbody>
-      </table>
     </div>
   );
 }

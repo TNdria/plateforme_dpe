@@ -1,6 +1,11 @@
 export const EXAMEN_CEPE_COLUMNS = [
   "ANNEE_SCOLAIRE",
+  "DREN",
+  "CISCO",
+  "OPTION",
+  "CODE_CENTRE",
   "CODE_ETAB",
+  "ECOLE_ORIGINE",
   "GENRE",
   "OP",
   "PROBLEME",
@@ -50,12 +55,22 @@ const CEPE_ALIASES: Record<string, string> = {
   anneescolaire: "ANNEE_SCOLAIRE",
   annee: "ANNEE_SCOLAIRE",
   anneeexamen: "ANNEE_SCOLAIRE",
+  dren: "DREN",
+  cisco: "CISCO",
+  option: "OPTION",
+  codecentre: "CODE_CENTRE",
+  codecentreexamen: "CODE_CENTRE",
+  centre: "CODE_CENTRE",
   codeetab: "CODE_ETAB",
   codeetablissement: "CODE_ETAB",
   codeecole: "CODE_ETAB",
   etabcode: "CODE_ETAB",
+  ecoledorigine: "ECOLE_ORIGINE",
+  ecoleorigine: "ECOLE_ORIGINE",
+  etablissementorigine: "ECOLE_ORIGINE",
   sexe: "GENRE",
   genre: "GENRE",
+  op: "OP",
   operation: "OP",
   ops: "OP",
   probleme: "PROBLEME",
@@ -149,7 +164,7 @@ export function getExamTableColumns(table: ExamImportTable) {
       column_name,
       data_type: ["ANNEE_SCOLAIRE", "CODE_ETAB"].includes(column_name)
         ? "integer"
-        : ["GENRE", "CEPE"].includes(column_name)
+        : ["DREN", "CISCO", "OPTION", "CODE_CENTRE", "ECOLE_ORIGINE", "GENRE", "CEPE"].includes(column_name)
           ? "text"
           : "numeric",
     }));
@@ -159,7 +174,7 @@ export function getExamTableColumns(table: ExamImportTable) {
     column_name,
     data_type: ["ANNEE_SCOLAIRE", "CODE_ETAB"].includes(column_name)
       ? "integer"
-      : ["DREN", "CISCO", "MATRICULE", "ECOLE_ORIGINE", "CODE_CENTRE", "GENRE", "OPTION", "HISTO_GEO", "BEPC"].includes(column_name)
+      : ["DREN", "CISCO", "MATRICULE", "ECOLE_ORIGINE", "CODE_CENTRE", "GENRE", "OPTION", "BEPC"].includes(column_name)
         ? "text"
         : "numeric",
   }));

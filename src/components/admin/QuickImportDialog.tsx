@@ -21,6 +21,38 @@ const HEADERS = {
 const FLEXIBLE_TDB_TABLES = new Set(["tdb_ecole", "tdb_zap", "tdb_cisco", "tdb_dren", "tdb_mada", "tdb_ref", "examen_cepe_candidates", "examen_bepc_candidates"]);
 const EXAM_TABLES = new Set(["examen_cepe_candidates", "examen_bepc_candidates"]);
 
+const normalizeHeader = (value: unknown) => String(value ?? "")
+  .normalize("NFD")
+  .replace(/[\u0300-\u036f]/g, "")
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, "");
+
+const KNOWN_EXAM_HEADERS = new Set([
+  "anneescolaire", "annee", "dren", "cisco", "matricule", "codeetab", "codeetablissement", "codeecole", "codecentre",
+  "ecoleorigine", "ecoledorigine", "sexe", "genre", "option", "op", "operation", "probleme", "problemes", "svt", "tfm",
+  "malagasy", "mlg", "francais", "frs", "anglais", "mathematique", "mathematiques", "maths", "physique", "bonus",
+  "histogeo", "histoiregeographie", "geographie", "geo", "total", "moyenne", "resultat", "decision", "statut", "cepe", "bepc",
+]);
+
+function extractTabularRows(workbook: any, XLSX: any): any[][] {
+  for (const sheetName of workbook.SheetNames) {
+    const ws = workbook.Sheets[sheetName];
+    const all: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false, defval: null });
+    const filtered = all.filter((row) => Array.isArray(row) && row.some((cell) => cell !== null && cell !== undefined && cell !== ""));
+    if (filtered.length < 2) continue;
+    let bestIndex = 0;
+    let bestScore = -1;
+    filtered.slice(0, 40).forEach((row, index) => {
+      const known = row.filter((cell) => KNOWN_EXAM_HEADERS.has(normalizeHeader(cell))).length;
+      const nonEmpty = row.filter((cell) => cell !== null && cell !== undefined && String(cell).trim() !== "").length;
+      const score = known * 3 + Math.min(nonEmpty, 8);
+      if (score > bestScore) { bestScore = score; bestIndex = index; }
+    });
+    return filtered.slice(bestScore >= 4 ? bestIndex : 0);
+  }
+  return [];
+}
+
 
 async function call(action: string, body: Record<string, any>) {
   const r = await fetch(`${API_BASE}/functions/v1/db-query?action=${action}`, {
@@ -117,9 +149,8 @@ const QuickImportDialog = ({ open, onOpenChange, table, tableLabel, adminUsernam
         const buf = await f.arrayBuffer();
         await new Promise((r) => setTimeout(r, 0));
         const wb = XLSX.read(buf, { type: "array", dense: true } as any);
-        const ws = wb.Sheets[wb.SheetNames[0]];
+        const json = extractTabularRows(wb, XLSX);
         await new Promise((r) => setTimeout(r, 0));
-        const json: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false, defval: null });
         if (json.length < 2) { toast.error("Fichier vide"); return; }
         headers = (json[0] as any[]).map((h: any) => String(h ?? "").trim());
         rows = json.slice(1).filter((r: any[]) => Array.isArray(r) && r.some((c: any) => c !== null && c !== undefined && c !== ""));
@@ -155,14 +186,16 @@ const QuickImportDialog = ({ open, onOpenChange, table, tableLabel, adminUsernam
         : data.headers.map((h, i) => ({ index: i, dbCol: mapping[h] })).filter((x) => x.dbCol);
       let cols = idx.map((x) => x.dbCol);
       let allRows = data.rows.map((r) => idx.map((x) => r[x.index] ?? null));
-      // Inject ANNEE_SCOLAIRE (from filename/input) when not present in the file headers
+      // Toujours forcer ANNEE_SCOLAIRE depuis le sélecteur pour CEPE/BEPC.
       if (isExamImport) {
-        const hasAnnee = cols.some((c) => String(c).toUpperCase().replace(/[^A-Z]/g, '') === 'ANNEESCOLAIRE');
-        if (!hasAnnee) {
-          cols = ['ANNEE_SCOLAIRE', ...cols];
-          const yr = parseInt(anneeScolaire, 10);
-          allRows = allRows.map((r) => [yr, ...r]);
+        const anneeIndex = cols.findIndex((c) => String(c).toUpperCase().replace(/[^A-Z]/g, '') === 'ANNEESCOLAIRE');
+        if (anneeIndex >= 0) {
+          cols = cols.filter((_, index) => index !== anneeIndex);
+          allRows = allRows.map((row) => row.filter((_, index) => index !== anneeIndex));
         }
+        const yr = parseInt(anneeScolaire, 10);
+        cols = ['ANNEE_SCOLAIRE', ...cols];
+        allRows = allRows.map((r) => [yr, ...r]);
       }
 
       // Lots plus petits + pause entre lots → évite de surchauffer la machine

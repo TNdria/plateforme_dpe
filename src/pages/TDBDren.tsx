@@ -160,7 +160,8 @@ const TDBDren = () => {
               })()}
             </td>
             <td style={{ width: '15%', verticalAlign: 'top', textAlign: 'center' }}>
-              <img src="/img/analyse.png" width="80" height="80" alt="Analyse" style={{ maxWidth: '80px' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+              <img src="/img/logoDpe.jpg" width="80" height="80" alt="DPE" style={{ maxWidth: '80px', borderRadius: 4 }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+              <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#e74c3c', marginTop: '4px' }}>DPE</div>
             </td>
           </tr></tbody></table>
           <div style={{ textAlign: 'center', marginTop: '5px', fontSize: '10px' }}>

@@ -11,6 +11,7 @@ import emojiHappy from '@/assets/emoji-happy.jpg';
 import emojiSad from '@/assets/emoji-sad.jpg';
 import { TDBShell } from '@/components/tdb/TDBShell';
 import { TDBImportDialog } from '@/components/tdb/TDBImportDialog';
+import { DisparityIcon } from '@/components/score/DisparityIcon';
 import DataActionsBar from '@/components/admin/DataActionsBar';
 import {
   ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -262,7 +263,7 @@ const TDBZap = () => {
                 </td>
                 <td style={{ width: '15%', verticalAlign: 'top', textAlign: 'right', border: 'none', padding: '4px' }}>
                   <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#e74c3c', marginBottom: '4px' }}>Par DPE/MEN</div>
-                  <img src="/img/analyse.png" width="65" height="65" alt="Analyse" style={{ maxWidth: '65px', display: 'block', marginLeft: 'auto' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                  <img src="/img/logoDpe.jpg" width="70" height="70" alt="DPE" style={{ maxWidth: '70px', display: 'block', marginLeft: 'auto', borderRadius: 4 }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                 </td>
               </tr>
             </tbody>
@@ -410,10 +411,19 @@ const TDBZap = () => {
                           const rGz = retG(z), rGc = retG(c), rGd = retG(d);
                           const rFz = retF(z), rFc = retF(c), rFd = retF(d);
                           const rEz = retE(z), rEc = retE(c), rEd = retE(d);
+                          const dispRet = (lvl: any): 'f' | 'g' | null => {
+                            const t5g = Number(lvl.ressources?.eff_t5_g||0), t1g = Number(lvl.ressources?.eff_t1_g||0);
+                            const t5f = Number(lvl.ressources?.eff_t5_f||0), t1f = Number(lvl.ressources?.eff_t1_f||0);
+                            const g = t1g > 0 ? t5g / t1g * 100 : 0;
+                            const f = t1f > 0 ? t5f / t1f * 100 : 0;
+                            if (!g || !f || Math.abs(g - f) < 0.1) return null;
+                            return f < g ? 'f' : 'g';
+                          };
                           return (<>
                             <tr><td style={{ ...s.td, width: '34%' }}>Garçons</td><td style={{ ...s.td, textAlign: 'right', ...manq(rGz) }}>{rGz}</td><td style={{ ...s.td, textAlign: 'right', ...manq(rGc) }}>{rGc}</td><td style={{ ...s.td, textAlign: 'right', ...manq(rGd) }}>{rGd}</td></tr>
                             <tr><td style={s.td}>Filles</td><td style={{ ...s.td, textAlign: 'right', ...manq(rFz) }}>{rFz}</td><td style={{ ...s.td, textAlign: 'right', ...manq(rFc) }}>{rFc}</td><td style={{ ...s.td, textAlign: 'right', ...manq(rFd) }}>{rFd}</td></tr>
                             <tr><td style={s.td}>Ensemble</td><td style={{ ...s.td, textAlign: 'right', ...manq(rEz) }}>{rEz}</td><td style={{ ...s.td, textAlign: 'right', ...manq(rEc) }}>{rEc}</td><td style={{ ...s.td, textAlign: 'right', ...manq(rEd) }}>{rEd}</td></tr>
+                            <tr><td style={s.td}>Disparité aux dépens des</td>{[z, c, d].map((lvl, i) => <td key={i} style={{ ...s.td, textAlign: 'center', padding: 2 }}><DisparityIcon kind={dispRet(lvl)} /></td>)}</tr>
                           </>);
                         })()}
                       </tbody>
@@ -433,10 +443,17 @@ const TDBZap = () => {
                           const gZ = rG(z), gC = rG(c), gD = rG(d);
                           const fZ = rF(z), fC = rF(c), fD = rF(d);
                           const eZ = rE(z), eC = rE(c), eD = rE(d);
+                          const dispRed = (lvl: any): 'f' | 'g' | null => {
+                            const g = pctVal(lvl.ressources?.red_g, lvl.ressources?.nbr_eleve_g);
+                            const f = pctVal(lvl.ressources?.red_f, lvl.ressources?.nbr_eleve_f);
+                            if (!g || !f || Math.abs(g - f) < 0.1) return null;
+                            return f > g ? 'f' : 'g';
+                          };
                           return (<>
                             <tr><td style={{ ...s.td, width: '34%' }}>Garçons</td><td style={{ ...s.td, textAlign: 'right', ...manq(gZ), ...(isMenaG ? s.mena : {}) }}>{gZ}</td><td style={{ ...s.td, textAlign: 'right', ...manq(gC) }}>{gC}</td><td style={{ ...s.td, textAlign: 'right', ...manq(gD) }}>{gD}</td></tr>
                             <tr><td style={s.td}>Filles</td><td style={{ ...s.td, textAlign: 'right', ...manq(fZ), ...(isMenaF ? s.mena : {}) }}>{fZ}</td><td style={{ ...s.td, textAlign: 'right', ...manq(fC) }}>{fC}</td><td style={{ ...s.td, textAlign: 'right', ...manq(fD) }}>{fD}</td></tr>
                             <tr><td style={s.td}>Ensemble</td><td style={{ ...s.td, textAlign: 'right', ...manq(eZ), ...(isMenaE ? s.mena : {}) }}>{eZ}</td><td style={{ ...s.td, textAlign: 'right', ...manq(eC) }}>{eC}</td><td style={{ ...s.td, textAlign: 'right', ...manq(eD) }}>{eD}</td></tr>
+                            <tr><td style={s.td}>Disparité aux dépens des</td>{[z, c, d].map((lvl, i) => <td key={i} style={{ ...s.td, textAlign: 'center', padding: 2 }}><DisparityIcon kind={dispRed(lvl)} /></td>)}</tr>
                           </>);
                         })()}
                       </tbody>
@@ -585,11 +602,17 @@ const TDBZap = () => {
                       const gZ = pctDirect(z, 'tx_admis_g', 'admis_g', 'nbr_g'), gC = pctDirect(c, 'tx_admis_g', 'admis_g', 'nbr_g'), gD = pctDirect(d, 'tx_admis_g', 'admis_g', 'nbr_g');
                       const fZ = pctDirect(z, 'tx_admis_f', 'admis_f', 'nbr_f'), fC = pctDirect(c, 'tx_admis_f', 'admis_f', 'nbr_f'), fD = pctDirect(d, 'tx_admis_f', 'admis_f', 'nbr_f');
                       const eZ = pctEns(z), eC = pctEns(c), eD = pctEns(d);
+                      const disp = (lvl: any): 'f' | 'g' | null => {
+                        const g = pctVal(lvl.cepe?.admis_g, lvl.cepe?.nbr_g);
+                        const f = pctVal(lvl.cepe?.admis_f, lvl.cepe?.nbr_f);
+                        if (!g || !f || Math.abs(g - f) < 0.1) return null;
+                        return f < g ? 'f' : 'g';
+                      };
                       return (<>
                         <tr><td style={s.td}>Garçons</td><td style={{ ...s.td, textAlign: 'center', ...manq(gZ) }}>{gZ}</td><td style={{ ...s.td, textAlign: 'center', ...manq(gC) }}>{gC}</td><td style={{ ...s.td, textAlign: 'center', ...manq(gD) }}>{gD}</td></tr>
                         <tr><td style={s.td}>Filles</td><td style={{ ...s.td, textAlign: 'center', ...manq(fZ) }}>{fZ}</td><td style={{ ...s.td, textAlign: 'center', ...manq(fC) }}>{fC}</td><td style={{ ...s.td, textAlign: 'center', ...manq(fD) }}>{fD}</td></tr>
                         <tr><td style={s.td}>Ensemble</td><td style={{ ...s.td, textAlign: 'center', ...manq(eZ) }}>{eZ}</td><td style={{ ...s.td, textAlign: 'center', ...manq(eC) }}>{eC}</td><td style={{ ...s.td, textAlign: 'center', ...manq(eD) }}>{eD}</td></tr>
-                        <tr><td style={s.td}>Disparité au dépens des</td><td style={{ ...s.td, textAlign: 'center', ...manq('-') }}>-</td><td style={{ ...s.td, textAlign: 'center', ...manq('-') }}>-</td><td style={{ ...s.td, textAlign: 'center', ...manq('-') }}>-</td></tr>
+                        <tr><td style={s.td}>Disparité aux dépens des</td>{[z, c, d].map((lvl, i) => <td key={i} style={{ ...s.td, textAlign: 'center', padding: 2 }}><DisparityIcon kind={disp(lvl)} /></td>)}</tr>
                       </>);
                     })()}
                   </tbody>

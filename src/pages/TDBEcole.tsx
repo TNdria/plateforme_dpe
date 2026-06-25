@@ -8,8 +8,10 @@ import { dashboardApi, tdbApi, Dren, Cisco, Zap } from '@/services/api';
 import { printTdb } from '@/utils/printTdb';
 import { generateMultiPagePdf } from '@/utils/multiPagePdf';
 import { TDBShell } from '@/components/tdb/TDBShell';
-import { DiagnosticPanel } from '@/components/tdb/DiagnosticPanel';
 import { TDBImportDialog } from '@/components/tdb/TDBImportDialog';
+import { DisparityIcon } from '@/components/score/DisparityIcon';
+
+
 
 /**
  * Adaptateur : mappe les colonnes "ressources" de l'API (eff_t1_g, red_t1_g, ...)
@@ -55,8 +57,8 @@ const manq = (val: string | number) => val === '-' || val === '' || val === null
 interface Ecole { CODE_ETAB: number; NOM_ETAB: string; SECTEUR: number; }
 
 const s = {
-  titre: { letterSpacing: '0.15em', textTransform: 'uppercase' as const, width: '100%', background: '#2e7d32', color: '#fff', padding: '5px 10px', marginTop: '6px', marginBottom: '4px', fontWeight: 'bold', fontSize: '11px', textAlign: 'center' as const },
-  gris: { background: '#bbbbcc', textAlign: 'center' as const, fontWeight: 'bold' as const },
+  titre: { letterSpacing: '0.05em', textTransform: 'uppercase' as const, width: '100%', background: '#d9d9d9', color: '#000', padding: '4px 10px', marginTop: '8px', marginBottom: '4px', fontWeight: 'bold' as const, fontSize: '11px', textAlign: 'center' as const, border: '1px solid #555' },
+  gris: { background: '#e5e5e5', textAlign: 'center' as const, fontWeight: 'bold' as const },
   td: { padding: '2px 4px', verticalAlign: 'middle' as const, fontSize: '10px', border: '1px solid #555' },
   th: { textAlign: 'center' as const, fontWeight: 'bold' as const, fontSize: '10px', padding: '2px 4px', border: '1px solid #555' },
   mena: { background: 'rgba(255, 0, 0, 0.75)', fontWeight: 700 as const, color: '#fff' },
@@ -195,40 +197,63 @@ const TDBEcole = () => {
     };
 
     return (
-      <div ref={printRef} style={{ width: '100%', maxWidth: '1100px', margin: '0 auto', padding: '8px', font: '10px verdana', background: '#fff' }}>
-        {/* HEADER */}
-        <div style={{ border: '2px solid #000', padding: '6px 10px' }}>
+      <div ref={printRef} style={{ width: '100%', maxWidth: '1100px', margin: '0 auto', padding: '8px', font: '10px verdana', background: '#fff', color: '#000' }}>
+        {/* HEADER — style PDF CEG */}
+        <div style={{ border: '1.5px solid #000' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', border: 'none' }}>
-            <tbody><tr>
-              <td style={{ width: '12%', textAlign: 'center', border: 'none', padding: '4px' }}>
-                <img src="/img/logoMen.jpg" width="70" height="70" alt="MEN" style={{ maxWidth: '70px', display: 'block', margin: '0 auto' }} onError={(ev) => { (ev.target as HTMLImageElement).style.display = 'none'; }} />
-              </td>
-              <td style={{ width: '18%', textAlign: 'center', border: 'none', padding: '4px', fontSize: '9px', lineHeight: '1.3' }}>
-                Ministère de l'Éducation<br />Nationale
-              </td>
-              <td style={{ width: '30%', textAlign: 'center', border: 'none', padding: '4px' }}>
-                <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#2e7d32', letterSpacing: '0.05em' }}>TABLEAU DE BORD {selectedNiveau === 'college' ? 'COLLÈGE' : selectedNiveau === 'lycee' ? 'LYCÉE' : 'ÉCOLE'}</div>
-                <div style={{ fontSize: '15px', fontWeight: 'bold', color: '#2e7d32' }}>{anneeDisplay}</div>
-                <div style={{ fontSize: '11px', fontWeight: 'bold', marginTop: '4px' }}>CODE : {tdbData.names.CODE_ETAB}</div>
-              </td>
-              <td style={{ width: '25%', border: 'none', padding: '4px', fontSize: '11px', lineHeight: '1.6' }}>
-                <div>DREN : <b>{tdbData.names.DREN}</b></div>
-                <div>CISCO : <b>{tdbData.names.CISCO}</b></div>
-                <div>ZAP : <b>{tdbData.names.ZAP}</b></div>
-                <div>{etabLabel} : <b>{tdbData.names.NOM_ETAB}</b></div>
-              </td>
-              <td style={{ width: '15%', textAlign: 'right', border: 'none', padding: '4px' }}>
-                <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#e74c3c', marginBottom: '4px' }}>Par DPE/MEN</div>
-                <img src="/img/analyse.png" width="65" height="65" alt="Analyse" style={{ maxWidth: '65px', display: 'block', marginLeft: 'auto' }} onError={(ev) => { (ev.target as HTMLImageElement).style.display = 'none'; }} />
-              </td>
-            </tr></tbody>
+            <tbody>
+              <tr>
+                <td style={{ width: '14%', textAlign: 'center', border: 'none', padding: '6px 4px 0 4px', verticalAlign: 'top' }}>
+                  <img src="/img/logoMen.jpg" width="46" height="46" alt="MEN" style={{ display: 'block', margin: '0 auto' }} onError={(ev) => { (ev.target as HTMLImageElement).style.display = 'none'; }} />
+                </td>
+                <td style={{ width: '20%', textAlign: 'center', border: 'none', padding: '6px 4px 0 4px', fontSize: '10px', fontWeight: 'bold', verticalAlign: 'middle' }}>
+                  Ministère de l'Éducation Nationale
+                </td>
+                <td style={{ width: '32%', textAlign: 'center', border: 'none', padding: '6px 4px 0 4px', verticalAlign: 'middle' }}>
+                  <div style={{ fontSize: '13px', fontWeight: 'bold' }}>TABLEAU DU BORD {anneeDisplay}</div>
+                </td>
+                <td style={{ width: '22%', border: 'none', padding: '6px 4px 0 8px', fontSize: '10px', lineHeight: '1.5', verticalAlign: 'top' }}>
+                  <div>DREN : <b>{tdbData.names.DREN || ''}</b></div>
+                  <div>CISCO : <b>{tdbData.names.CISCO || ''}</b></div>
+                  <div>ZAP : <b>{tdbData.names.ZAP || ''}</b></div>
+                </td>
+                <td style={{ width: '12%', textAlign: 'center', border: 'none', padding: '6px 4px 0 4px', verticalAlign: 'top' }}>
+                  <img src="/img/logoDpe.jpg" width="56" height="46" alt="DPE" style={{ display: 'block', margin: '0 auto' }} onError={(ev) => { (ev.target as HTMLImageElement).style.display = 'none'; }} />
+                </td>
+              </tr>
+              <tr>
+                <td colSpan={2} style={{ border: 'none', padding: '2px 8px 6px 8px', fontSize: '10px', fontWeight: 'bold' }}>
+                  Etablissement : <span style={{ fontWeight: 'normal' }}>{tdbData.names.NOM_ETAB || ''}</span>
+                </td>
+                <td style={{ border: 'none', padding: '2px 4px 6px 4px', fontSize: '10px', fontWeight: 'bold', textAlign: 'center' }}>
+                  Code : <span style={{ fontWeight: 'normal' }}>{tdbData.names.CODE_ETAB || ''}</span>
+                </td>
+                <td colSpan={2} style={{ border: 'none', padding: '2px 4px 6px 8px', fontSize: '10px', fontWeight: 'bold' }}>
+                  Statut : <span style={{ fontWeight: 'normal' }}>{tdbData.names.STATUT || (Number(tdbData.names.SECTEUR) === 2 ? 'Privé' : 'Public')}</span>
+                </td>
+              </tr>
+            </tbody>
           </table>
-          <div style={{ textAlign: 'center', marginTop: '4px', fontSize: '9px', borderTop: '1px solid #ccc', paddingTop: '3px' }}>
-            <span style={{ display: 'inline-block', marginRight: '15px' }}><span style={{ display: 'inline-block', width: '12px', height: '12px', background: '#7CB5EC', verticalAlign: 'middle', marginRight: '3px', border: '1px solid #999' }}></span> Données manquante(s)</span>
-            <span style={{ display: 'inline-block', marginRight: '15px' }}><span style={{ display: 'inline-block', width: '12px', height: '12px', background: '#ffff00', verticalAlign: 'middle', marginRight: '3px', border: '1px solid #999' }}></span> Données à vérifier</span>
-            <span style={{ display: 'inline-block' }}><span style={{ display: 'inline-block', width: '12px', height: '12px', background: 'rgba(255,0,0,0.75)', verticalAlign: 'middle', marginRight: '3px', border: '1px solid #999' }}></span> Attention !</span>
-          </div>
         </div>
+
+        {/* LÉGENDE — bandes pleine largeur style PDF CEG */}
+        <div style={{ marginTop: '4px' }}>
+          {[
+            { color: '#7CB5EC', label: 'Données non disponible' },
+            { color: '#ffff00', label: 'Données à vérifier' },
+            { color: 'rgba(255,0,0,0.75)', label: 'Attention !' },
+          ].map((it) => (
+            <table key={it.label} style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '1px' }}>
+              <tbody>
+                <tr>
+                  <td style={{ width: '14%', border: '1px solid #555', background: it.color, height: '14px' }}></td>
+                  <td style={{ border: '1px solid #555', textAlign: 'center', fontSize: '10px', padding: '2px' }}>{it.label}</td>
+                </tr>
+              </tbody>
+            </table>
+          ))}
+        </div>
+
 
         {/* RÉSULTATS SCOLAIRES */}
         <div style={s.titre}>RÉSULTATS SCOLAIRES</div>
@@ -271,7 +296,7 @@ const TDBEcole = () => {
                 <td style={{ width: '50%', verticalAlign: 'top', paddingLeft: '2px' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }} border={1} cellPadding={1} cellSpacing={0}>
                     <thead>
-                      <tr style={s.gris}><th colSpan={4} style={s.th}>% Redoublants</th></tr>
+                      <tr style={s.gris}><th colSpan={4} style={s.th}>Pourcentage des redoublants</th></tr>
                       <tr><th style={{ ...s.th, width: '34%' }}>Classe</th>{labels.map(l => <th key={l} style={{ ...s.th, width: '22%', fontSize: '9px' }}>{l}</th>)}</tr>
                     </thead>
                     <tbody>
@@ -303,16 +328,26 @@ const TDBEcole = () => {
               <table style={{ width: '100%', marginTop: '4px' }}><tbody><tr>
                 <td style={{ width: '50%', verticalAlign: 'top', paddingRight: '2px' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }} border={1} cellPadding={1} cellSpacing={0}>
-                    <thead><tr style={s.gris}><th colSpan={4} style={s.th}>Taux de rétention</th></tr></thead>
+                    <thead>
+                      <tr style={s.gris}><th colSpan={4} style={s.th}>Taux de rétention</th></tr>
+                      <tr><th style={{ ...s.th, width: '34%' }}>Niveau</th>{labels.map(l => <th key={l} style={{ ...s.th, width: '22%', fontSize: '9px' }}>{l}</th>)}</tr>
+                    </thead>
                     <tbody>
-                      {[e, z, c].map(() => null)}
                       {(() => {
                         const lastT = selectedNiveau === 'primaire' ? 't5' : selectedNiveau === 'college' ? 't4' : 't3';
+                        const retVal = (lvl: any, numKey: string, denKey: string) => pctVal(lvl.ressources?.[numKey], lvl.ressources?.[denKey]);
                         const ret = (lvl: any, numKey: string, denKey: string) => pct(lvl.ressources?.[numKey], lvl.ressources?.[denKey]);
+                        const depens = (lvl: any): 'f' | 'g' | null => {
+                          const g = retVal(lvl, `eff_${lastT}_g`, 'eff_t1_g');
+                          const f = retVal(lvl, `eff_${lastT}_f`, 'eff_t1_f');
+                          if (!g || !f || Math.abs(g - f) < 0.1) return null;
+                          return f < g ? 'f' : 'g';
+                        };
                         return (<>
                           <tr><td style={s.td}>Garçons</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'right' }}>{ret(l, `eff_${lastT}_g`, 'eff_t1_g')}</td>)}</tr>
                           <tr><td style={s.td}>Filles</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'right' }}>{ret(l, `eff_${lastT}_f`, 'eff_t1_f')}</td>)}</tr>
                           <tr><td style={s.td}>Ensemble</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'right' }}>{pct(l.ressources?.[`eff_${lastT}`], l.ressources?.eff_t1)}</td>)}</tr>
+                          <tr><td style={s.td}>Disparité aux dépens des</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'center', padding: 2 }}><DisparityIcon kind={depens(l)} /></td>)}</tr>
                         </>);
                       })()}
                     </tbody>
@@ -320,16 +355,24 @@ const TDBEcole = () => {
                 </td>
                 <td style={{ width: '50%', verticalAlign: 'top', paddingLeft: '2px' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }} border={1} cellPadding={1} cellSpacing={0}>
-                    <thead><tr style={s.gris}><th colSpan={4} style={s.th}>Redoublants par genre</th></tr></thead>
+                    <thead><tr style={s.gris}><th colSpan={4} style={s.th}>Pourcentage de Redoublants par genre</th></tr></thead>
                     <tbody>
                       {(() => {
+                        const rValG = (lvl: any) => pctVal(lvl.ressources?.red_g, lvl.ressources?.nbr_eleve_g);
+                        const rValF = (lvl: any) => pctVal(lvl.ressources?.red_f, lvl.ressources?.nbr_eleve_f);
                         const rG = (lvl: any) => pct(lvl.ressources?.red_g, lvl.ressources?.nbr_eleve_g);
                         const rF = (lvl: any) => pct(lvl.ressources?.red_f, lvl.ressources?.nbr_eleve_f);
                         const rE = (lvl: any) => pct(Number(lvl.ressources?.red_g || 0) + Number(lvl.ressources?.red_f || 0), lvl.ressources?.nbr_eleve);
+                        const depensRed = (lvl: any): 'f' | 'g' | null => {
+                          const g = rValG(lvl), f = rValF(lvl);
+                          if (!g || !f || Math.abs(g - f) < 0.1) return null;
+                          return f > g ? 'f' : 'g';
+                        };
                         return (<>
                           <tr><td style={s.td}>Garçons</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'right' }}>{rG(l)}</td>)}</tr>
                           <tr><td style={s.td}>Filles</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'right' }}>{rF(l)}</td>)}</tr>
                           <tr><td style={s.td}>Ensemble</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'right' }}>{rE(l)}</td>)}</tr>
+                          <tr><td style={s.td}>Disparité aux dépens des</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'center', padding: 2 }}><DisparityIcon kind={depensRed(l)} /></td>)}</tr>
                         </>);
                       })()}
                     </tbody>
@@ -348,11 +391,10 @@ const TDBEcole = () => {
                     ? [
                         ['Malagasy', 'sm_mlg', 'mlg_sup10'],
                         ['Français', 'sm_frs', 'frs_sup10'],
-                        ['Anglais', 'sm_ang', 'ang_sup10'],
-                        ['Mathématique', 'sm_math', 'math_sup10'],
-                        ['Physique-Chimie', 'sm_phys', 'phys_sup10'],
+                        ['Mathématiques', 'sm_math', 'math_sup10'],
+                        ['Physique - chimie', 'sm_phys', 'phys_sup10'],
                         ['SVT', 'sm_svt', 'svt_sup10'],
-                        ['Histoire-Géographie', 'sm_hg', 'hg_sup10'],
+                        ['HG', 'sm_hg', 'hg_sup10'],
                       ]
                     : selectedNiveau === 'lycee'
                       ? [
@@ -383,6 +425,14 @@ const TDBEcole = () => {
                   if (sv > 0 && sv <= 100) return sv.toFixed(1) + '%';
                   return '-';
                 };
+                const admVal = (lvl: any, key: 'tx_admis_g' | 'tx_admis_f' | 'tx_admis') => {
+                  const x = lvl?.[examKey] || {};
+                  const direct = Number(x[key]);
+                  if (!isNaN(direct) && direct > 0) return direct;
+                  if (key === 'tx_admis_g') return pctVal(x.admis_g, x.nbr_g);
+                  if (key === 'tx_admis_f') return pctVal(x.admis_f, x.nbr_f);
+                  return pctVal(Number(x.admis_g || 0) + Number(x.admis_f || 0), Number(x.nbr_g || 0) + Number(x.nbr_f || 0));
+                };
                 const gP = (lvl: any) => {
                   const x = lvl?.[examKey] || {};
                   const direct = Number(x.tx_admis_g);
@@ -398,15 +448,21 @@ const TDBEcole = () => {
                   const direct = Number(x.tx_admis);
                   return !isNaN(direct) && direct > 0 ? `${direct.toFixed(1)}%` : pct(Number(x.admis_g || 0) + Number(x.admis_f || 0), Number(x.nbr_g || 0) + Number(x.nbr_f || 0));
                 };
+                const depensAdmis = (lvl: any): 'f' | 'g' | null => {
+                  const g = admVal(lvl, 'tx_admis_g');
+                  const f = admVal(lvl, 'tx_admis_f');
+                  if (!g || !f || Math.abs(g - f) < 0.1) return null;
+                  return f < g ? 'f' : 'g';
+                };
                 return (<>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }} border={1} cellPadding={1} cellSpacing={0}>
                     <thead>
-                      <tr style={s.gris}><th colSpan={8} style={{ ...s.th, fontSize: '9px' }}>Score moyen (SM) sur 20 et % ≥ 10/20 — {examLabel} {anneeDisplay}</th></tr>
+                      <tr style={s.gris}><th colSpan={8} style={{ ...s.th, fontSize: '9px' }}>Score moyen (SM) sur 20 et pourcentage d'élèves ayant obtenu une note supérieure ou égale à 10/20 (Note &gt;= 10) Résultats {examLabel} : {anneeDisplay}</th></tr>
                       <tr>
                         <th style={{ ...s.th, width: '22%' }} rowSpan={2} colSpan={2}>Matières</th>
                         {labels.map(l => <th key={l} style={s.th} colSpan={2}>{l}</th>)}
                       </tr>
-                      <tr>{labels.map(l => (<>{<td key={`${l}sm`} style={{ ...s.td, textAlign: 'center' }}><b>SM</b></td>}{<td key={`${l}n`} style={{ ...s.td, textAlign: 'center' }}><b>≥10</b></td>}</>))}</tr>
+                      <tr>{labels.flatMap(l => ([<td key={`${l}sm`} style={{ ...s.td, textAlign: 'center' }}><b>SM</b></td>, <td key={`${l}n`} style={{ ...s.td, textAlign: 'center' }}><b>&gt;= 10</b></td>]))}</tr>
                     </thead>
                     <tbody>
                       {subjects.map(([label, smKey, noteKey, isSub]) => (
@@ -414,10 +470,10 @@ const TDBEcole = () => {
                           {isSub ? <td colSpan={2} style={{ ...s.td, paddingLeft: '10px' }}>{label}</td> : <th colSpan={2} style={{ ...s.td, textAlign: 'left', fontWeight: 'bold' }}>{label}</th>}
                           {[e, z, c].map((lvl, i) => {
                             const x = lvl?.[examKey] || {};
-                            return (<>
-                              <td key={`${i}sm`} style={{ ...s.td, textAlign: 'center', ...manq(smFmt(x[smKey])) }}>{smFmt(x[smKey])}</td>
-                              <td key={`${i}n`} style={{ ...s.td, textAlign: 'center', ...manq(noteFmt(x[noteKey], x)) }}>{noteFmt(x[noteKey], x)}</td>
-                            </>);
+                            return [
+                              <td key={`${i}sm`} style={{ ...s.td, textAlign: 'center', ...manq(smFmt(x[smKey])) }}>{smFmt(x[smKey])}</td>,
+                              <td key={`${i}n`} style={{ ...s.td, textAlign: 'center', ...manq(noteFmt(x[noteKey], x)) }}>{noteFmt(x[noteKey], x)}</td>,
+                            ];
                           })}
                         </tr>
                       ))}
@@ -425,11 +481,15 @@ const TDBEcole = () => {
                   </table>
 
                   <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '4px' }} border={1} cellPadding={1} cellSpacing={0}>
-                    <thead><tr style={s.gris}><th colSpan={4} style={s.th}>% admis au {examLabel}</th></tr></thead>
+                    <thead>
+                      <tr style={s.gris}><th colSpan={4} style={s.th}>Pourcentage des admis au {examLabel}</th></tr>
+                      <tr><th style={{ ...s.th, width: '34%' }}>Genre</th>{labels.map(l => <th key={l} style={{ ...s.th, width: '22%', fontSize: '9px' }}>{l}</th>)}</tr>
+                    </thead>
                     <tbody>
                       <tr><td style={s.td}>Garçons</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'center' }}>{gP(l)}</td>)}</tr>
                       <tr><td style={s.td}>Filles</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'center' }}>{fP(l)}</td>)}</tr>
                       <tr><td style={s.td}>Ensemble</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'center' }}>{eP(l)}</td>)}</tr>
+                      <tr><td style={s.td}>Disparité aux dépens des</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'center', padding: 2 }}><DisparityIcon kind={depensAdmis(l)} /></td>)}</tr>
                     </tbody>
                   </table>
                   {selectedNiveau === 'lycee' && (
@@ -536,44 +596,103 @@ const TDBEcole = () => {
           </tr></tbody>
         </table>
 
-        {/* === DIAGNOSTIC & INTERPRÉTATIONS (port de tdb_pdf.py) === */}
+        {/* === EFFICIENCE — grille smileys 3x3 style PDF CEG === */}
         {(() => {
-          // Y = résultats : moyenne (100 - red%, rétention, CEPE admis)
-          const redEns = pctVal(
-            Number(e.ressources?.red_g || 0) + Number(e.ressources?.red_f || 0),
-            e.ressources?.nbr_eleve,
-          );
-          const retEns = pctVal(e.ressources?.eff_t5, e.ressources?.eff_t1);
-          const cepeEns = pctVal(
-            Number(e.cepe?.admis_g || 0) + Number(e.cepe?.admis_f || 0),
-            Number(e.cepe?.nbr_g || 0) + Number(e.cepe?.nbr_f || 0),
-          );
-          const scoreY = Math.round(((100 - Math.min(redEns, 100)) + retEns + cepeEns) / 3 * 10) / 10;
-
-          // X = ressources : moyenne normalisée (élèves/maître, eau, élec)
+          const etabLbl = selectedNiveau === 'college' ? 'CEG' : selectedNiveau === 'lycee' ? 'Lycée' : 'École';
+          const redEns = pctVal(Number(e.ressources?.red_g || 0) + Number(e.ressources?.red_f || 0), e.ressources?.nbr_eleve);
+          const lastK = selectedNiveau === 'primaire' ? 't5' : selectedNiveau === 'college' ? 't4' : 't3';
+          const retEns = pctVal(e.ressources?.[`eff_${lastK}`], e.ressources?.eff_t1);
+          const examKey = selectedNiveau === 'college' ? 'bepc' : selectedNiveau === 'lycee' ? 'bac' : 'cepe';
+          const admisEns = pctVal(Number(e?.[examKey]?.admis_g || 0) + Number(e?.[examKey]?.admis_f || 0), Number(e?.[examKey]?.nbr_g || 0) + Number(e?.[examKey]?.nbr_f || 0));
+          const scoreY = Math.round((((100 - Math.min(redEns, 100)) + retEns + admisEns) / 3) * 10) / 10;
           const rem = norm(Number(e.ressources?.nbr_eleve || 0) / Math.max(Number(e.personnel?.pers_en_classe || 1), 1), 45, 60);
           const eau = e.ressources?.etab_eau ? 100 : 0;
           const elec = e.ressources?.etab_elec ? 100 : 0;
-          const scoreX = Math.round(((rem + eau + elec) / 3) * 10) / 10;
-
-          // Abandon ensemble (T1→T5) — école et ZAP
-          const abEcole = abCalc(e, 'eff_t1', 'eff_t5', 'red_t1', 'red_t5');
-          const abZap = abCalc(z, 'eff_t1', 'eff_t5', 'red_t1', 'red_t5');
-
+          const scoreX = Math.round((((rem + eau + elec) / 3)) * 10) / 10;
+          // Bin scores into 3 buckets (Bon ≥66, Moyen 33–66, Faible <33)
+          const binX = scoreX >= 66 ? 2 : scoreX >= 33 ? 1 : 0; // 0 col = faible ress, 2 = bonne
+          const binY = scoreY >= 66 ? 2 : scoreY >= 33 ? 1 : 0;
+          // grid coord: row 0 = top (good results), row 2 = bottom (low results)
+          const row = 2 - binY;
+          const col = binX; // col 0 left = poor resources
+          const FACES = [
+            // ligne 0 (haut) — bons résultats
+            ['😊', '😊', '😊'],
+            // ligne 1 — moyen
+            ['😐', '😐', '😐'],
+            // ligne 2 (bas) — faibles
+            ['☹️', '☹️', '😢'],
+          ];
           return (
-            <DiagnosticPanel
-              scoreX={scoreX}
-              scoreY={scoreY}
-              abandonEcole={abEcole}
-              abandonZap={abZap}
-              scatterData={[]}
-            />
+            <>
+              <div style={s.titre}>Efficience</div>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <tbody>
+                  {[0, 1, 2].map((r) => (
+                    <tr key={r}>
+                      {[0, 1, 2].map((c) => {
+                        const active = r === row && c === col;
+                        return (
+                          <td key={c} style={{ border: '1px solid #888', width: '33.33%', height: '70px', textAlign: 'center', fontSize: '38px', position: 'relative', background: active ? '#fff8b0' : '#fff' }}>
+                            <span style={{ opacity: active ? 1 : 0.35 }}>{FACES[r][c]}</span>
+                            {active && (
+                              <>
+                                <span style={{ position: 'absolute', top: '4px', right: '6px', fontSize: '9px', fontWeight: 'bold', color: '#2e7d32' }}>{etabLbl}</span>
+                                <span style={{ position: 'absolute', right: '4px', bottom: '2px', fontSize: '22px', filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.3))' }} title="Position actuelle">🏍️</span>
+                              </>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+
+                </tbody>
+              </table>
+              <table style={{ width: '100%', fontSize: '9px', marginTop: '2px' }}>
+                <tbody>
+                  <tr>
+                    <td style={{ textAlign: 'left' }}>← Ressources faibles</td>
+                    <td style={{ textAlign: 'center' }}>Ressources moyennes</td>
+                    <td style={{ textAlign: 'right' }}>Ressources élevées →</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              {/* === DIAGNOSTIC ET REMARQUES (auto) === */}
+              <div style={{ marginTop: '10px', borderTop: '1px solid #000', paddingTop: '6px' }}>
+                <div style={{ fontSize: '10px', fontWeight: 'bold', fontStyle: 'italic', textDecoration: 'underline', marginBottom: '4px' }}>
+                  Diagnostic et Remarques sur les résultats de votre {etabLbl} :
+                </div>
+                <div style={{ minHeight: '60px', border: '1px solid #888', padding: '6px', background: '#fff', fontSize: '10px', lineHeight: '1.45' }}>
+                  {(() => {
+                    const niveauX = binX === 2 ? 'élevées' : binX === 1 ? 'moyennes' : 'faibles';
+                    const niveauY = binY === 2 ? 'bons' : binY === 1 ? 'moyens' : 'faibles';
+                    const reco = binY < binX
+                      ? `Les ressources sont ${niveauX} mais les résultats restent ${niveauY} : un travail d'accompagnement pédagogique et de suivi des élèves est recommandé.`
+                      : binY > binX
+                        ? `Avec des ressources ${niveauX}, votre ${etabLbl} obtient des résultats ${niveauY} : performance remarquable, à pérenniser.`
+                        : `Vos ressources (${niveauX}) et vos résultats (${niveauY}) sont alignés. Pour progresser, ciblez en priorité ${binX < 2 ? 'le renforcement des ressources' : 'la qualité pédagogique'}.`;
+                    return (
+                      <div>
+                        <div><b>Position :</b> Ressources <i>{niveauX}</i> · Résultats <i>{niveauY}</i> (score X = {scoreX.toFixed(1)} / Y = {scoreY.toFixed(1)})</div>
+                        <div style={{ marginTop: 4 }}>{reco}</div>
+                        <div style={{ marginTop: 4, color: '#555' }}>Taux d'abandon, redoublement et admission au {examKey.toUpperCase()} doivent être analysés conjointement avec les disparités filles / garçons ci-dessus.</div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            </>
           );
         })()}
 
       </div>
+
     );
   };
+
+
 
   const ecoleName = tdbData?.names?.NOM_ETAB ?? (ecoles.find(e => String(e.CODE_ETAB) === selectedEcole)?.NOM_ETAB ?? '');
   const anneeLabel = selectedAnnee ? `${Number(selectedAnnee) - 1} – ${selectedAnnee}` : '';
@@ -589,6 +708,7 @@ const TDBEcole = () => {
         annee={anneeLabel}
         loading={loading}
         hasData={!!tdbData}
+        
         generatingPdf={generatingPdf}
         generatingPreview={generatingPreview}
         onDownloadPdf={tdbData ? generatePdf : undefined}
@@ -666,7 +786,10 @@ const TDBEcole = () => {
             {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}Appliquer
           </Button>
         }
-        tabs={[{ value: 'tdb', label: 'Tableau de bord', content: renderTdb() }]}
+        tabs={[
+          { value: 'tdb', label: 'Tableau de bord', content: renderTdb() },
+        ]}
+
       />
       {previewUrl && (
         <PDFViewer

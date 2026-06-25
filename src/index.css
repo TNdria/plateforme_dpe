@@ -387,9 +387,8 @@
 .leaflet-control-layers-list label {
   display: flex !important;
   align-items: center !important;
-  gap: 4px !important;                    /* Réduit de 6px → 4px */
-  margin: 0 !important;          /* Très compact */
-  padding: 1px 3px !important;
+  gap: 6px !important;
+  margin-bottom: 3px !important;
   cursor: pointer !important;
   font-weight: 500 !important;
   color: #333 !important;
@@ -404,9 +403,9 @@
 .leaflet-control-layers-overlays label {
   display: flex !important;
   align-items: center !important;
-  gap: 4px !important;
-  margin-bottom: 1px !important;
-  padding: 2px 4px !important;
+  gap: 6px !important;
+  margin-bottom: 2px !important;
+  padding: 2px 0 !important;
 }
 
 .leaflet-control-layers-overlays input[type="checkbox"] {
@@ -436,7 +435,7 @@
 
 .leaflet-control-layers-separator {
   border-top: 1px solid #ccc !important;
-  margin: 4px 0 !important;
+  margin: 6px 0 !important;
 }
 
 /* Ensure leaflet-control-layers-selector is visible */
@@ -456,16 +455,16 @@
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15) !important;
 }
 
-/* SIG Aire Control - Version Compacte */
+/* SIG Aire Control */
 .control-aire {
-  padding: 6px 10px !important;           /* Réduit */
+  padding: 8px 10px !important;
   background: rgba(255, 255, 255, 0.95) !important;
   font-size: 12px !important;
   box-shadow: 0 0 15px rgba(0, 0, 0, 0.2) !important;
   border: 2px solid #999 !important;
-  border-radius: 6px !important;
-  line-height: 1.65 !important;           /* Réduit pour plus de compacité */
-  min-width: 135px !important;
+  border-radius: 5px !important;
+  line-height: 2.2 !important;
+  min-width: 120px !important;
 }
 
 .control-aire label {
@@ -473,15 +472,8 @@
   align-items: center !important;
   gap: 4px !important;
   cursor: pointer !important;
-  margin: 0 !important;               /* Réduit (était 0, maintenant léger) */
-  padding: 1px 3px !important;            /* Ajout pour meilleur hover */
-  border-radius: 3px !important;
+  margin: 0 !important;
   white-space: nowrap !important;
-  transition: background-color 0.1s ease;
-}
-
-.control-aire label:hover {
-  background-color: rgba(0, 0, 0, 0.05) !important;
 }
 
 .control-aire input[type="checkbox"] {
@@ -490,15 +482,19 @@
   min-width: 15px !important;
   cursor: pointer !important;
   accent-color: #e09c35 !important;
-  margin: 0 2px 0 0 !important;           /* Petit espacement à droite */
+  margin: 0 !important;
 }
 
 /* SIG Move Control */
 .control-move {
   background: rgba(255, 255, 255, 0.95) !important;
-  border: 1px solid #e5e7eb !important;
+  padding: 6px 10px !important;
   border-radius: 6px !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) !important;
+  font-size: 12px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12) !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
 }
 
 .control-move input[type="checkbox"] {
@@ -522,163 +518,4 @@
   padding: 4px 0;
   min-width: 240px;
   z-index: 2000;
-}
-/* Glass recap styling */
-.glass-recap {
-    background: rgba(255, 255, 255, 0.07);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-    border-radius: 14px;
-    overflow: hidden;
-}
-
-.glass-recap .card-header {
-    padding: 12px 14px 8px;
-}
-
-.glass-recap .card-content {
-    padding: 8px 12px 14px;
-}
-
-.recap-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.recap-item {
-    display: grid;
-    grid-template-columns: 36px 1fr auto auto;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 12px;
-    border-radius: 10px;
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    transition: all 0.2s ease;
-}
-
-.recap-item:hover {
-    background: rgba(255, 255, 255, 0.07);
-    border-color: rgba(255, 255, 255, 0.12);
-}
-
-.recap-total   { border-left: 4px solid #a7a4a4; }
-.recap-low     { border-left: 4px solid #fff; }
-.recap-medium  { border-left: 4px solid #22c55e; }
-.recap-high    { border-left: 4px solid #ef4444; }
-
-/* Icônes */
-.recap-icon {
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 8px;
-}
-
-/* Badge pour la valeur */
-.recap-value-badge {
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    padding: 4px 10px;
-    border-radius: 999px;
-    font-size: 0.85rem;
-    font-weight: 700;
-    min-width: 46px;
-    text-align: center;
-}
-
-.recap-label {
-    font-size: 0.73rem;
-    font-weight: 500;
-    opacity: 0.9;
-    line-height: 1.3;
-}
-
-.recap-percent {
-    font-size: 0.7rem;
-    opacity: 0.7;
-    font-weight: 500;
-    min-width: 50px;
-    text-align: right;
-}
-
-/* Badge zone */
-.zone-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    height: 24px;
-    padding: 0 10px;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    font-size: 0.7rem;
-    font-weight: 600;
-}
-/* tab */
-.tabs-list {
-  display: flex;
-  gap: 6px;
-  padding: 6px;
-  background: rgba(255,255,255,.04);
-  border: 1px solid rgba(255,255,255,.08);
-  border-radius: 14px;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-
-.tabs-trigger {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: .5rem;
-
-  padding: .75rem 1rem;
-
-  border: none;
-  border-radius: 10px;
-
-  background: transparent;
-
-  color: rgba(255,255,255,.65);
-  font-size: .92rem;
-  font-weight: 600;
-  letter-spacing: .2px;
-
-  cursor: pointer;
-
-  transition:
-    background .25s ease,
-    color .25s ease,
-    transform .2s ease,
-    box-shadow .25s ease;
-}
-
-.tabs-trigger:hover {
-  color: white;
-  background: rgba(255,255,255,.06);
-}
-
-.tabs-trigger:active {
-  transform: scale(.98);
-}
-
-.tabs-trigger[data-state="active"] {
-  color: white;
-
-  background:
-    linear-gradient(
-      135deg,
-      rgba(59,130,246,.22),
-      rgba(37,99,235,.18)
-    );
-
-  border: 1px solid rgba(59,130,246,.25);
-
-  box-shadow:
-    0 4px 16px rgba(37,99,235,.15),
-    inset 0 1px 0 rgba(255,255,255,.08);
 }

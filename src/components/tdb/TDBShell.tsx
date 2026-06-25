@@ -46,6 +46,8 @@ interface TDBShellProps {
   generatingPreview?: boolean;
   /** Score Y optionnel à afficher dans l'en-tête */
   scoreSlot?: ReactNode;
+  /** Masquer la barre d'identification + légende (utile si le contenu inclut déjà son propre en-tête) */
+  hideIdentificationBar?: boolean;
 }
 
 const COLOR_LEGEND = [
@@ -74,6 +76,7 @@ export function TDBShell({
   generatingPdf = false,
   generatingPreview = false,
   scoreSlot,
+  hideIdentificationBar = false,
 }: TDBShellProps) {
   const { user } = useAuth();
   const isAdmin = !!user?.is_superuser || !!user?.is_staff;
@@ -132,6 +135,7 @@ export function TDBShell({
             </div>
 
             {/* Identification (gauche) + légende (droite) — étirés sur toute la largeur */}
+            {!hideIdentificationBar && (
             <div className="mt-2 flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t pt-2 text-xs">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 font-medium text-primary">
@@ -166,6 +170,7 @@ export function TDBShell({
                 </Tooltip>
               </div>
             </div>
+            )}
           </div>
         </div>
 

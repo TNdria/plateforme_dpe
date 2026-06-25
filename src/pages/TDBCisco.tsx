@@ -11,6 +11,7 @@ import { GenderLabel } from '@/components/score/GenderRow';
 import { ScoreY, computeScoreY } from '@/components/score/ScoreY';
 import { TDBShell } from '@/components/tdb/TDBShell';
 import { TDBImportDialog } from '@/components/tdb/TDBImportDialog';
+import { DisparityIcon } from '@/components/score/DisparityIcon';
 import DataActionsBar from '@/components/admin/DataActionsBar';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -235,7 +236,8 @@ const TDBCisco = () => {
                   })()}
                 </td>
                 <td style={{ width: '15%', verticalAlign: 'top', textAlign: 'center' }}>
-                  <img src="/img/analyse.png" width="80" height="80" alt="Analyse" style={{ maxWidth: '80px' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                  <img src="/img/logoDpe.jpg" width="80" height="80" alt="DPE" style={{ maxWidth: '80px', borderRadius: 4 }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                  <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#e74c3c', marginTop: '4px' }}>DPE</div>
                 </td>
               </tr>
             </tbody>
@@ -404,7 +406,8 @@ const TDBCisco = () => {
                                     {[c, d, m].map((lvl, i) => {
                                       const rg = Number(lvl.ressources?.eff_t1_g||0) > 0 ? Number(lvl.ressources?.eff_t5_g||0) / Number(lvl.ressources?.eff_t1_g||1) * 100 : 0;
                                       const rf = Number(lvl.ressources?.eff_t1_f||0) > 0 ? Number(lvl.ressources?.eff_t5_f||0) / Number(lvl.ressources?.eff_t1_f||1) * 100 : 0;
-                                      return <td key={i} style={{ ...styles.td, textAlign: 'center' }}>{rg < rf ? 'Garçon' : rg > rf ? 'Fille' : '-'}</td>;
+                                      const kind: 'f' | 'g' | null = Math.abs(rg - rf) < 0.1 ? null : rg < rf ? 'g' : 'f';
+                                      return <td key={i} style={{ ...styles.td, textAlign: 'center', padding: 2 }}><DisparityIcon kind={kind} /></td>;
                                     })}
                                   </tr>
                                 </>
@@ -451,7 +454,8 @@ const TDBCisco = () => {
                                     {[c, d, m].map((lvl, i) => {
                                       const rg = pctVal(lvl.ressources.red_g, lvl.ressources.nbr_eleve_g);
                                       const rf = pctVal(lvl.ressources.red_f, lvl.ressources.nbr_eleve_f);
-                                      return <td key={i} style={{ ...styles.td, textAlign: 'center' }}>{rg > rf ? 'Garçon' : rg < rf ? 'Fille' : '-'}</td>;
+                                      const kind: 'f' | 'g' | null = Math.abs(rg - rf) < 0.1 ? null : rg > rf ? 'g' : 'f';
+                                      return <td key={i} style={{ ...styles.td, textAlign: 'center', padding: 2 }}><DisparityIcon kind={kind} /></td>;
                                     })}
                                   </tr>
                                 </>
@@ -560,7 +564,8 @@ const TDBCisco = () => {
                       {[c, d, m].map((lvl, i) => {
                         const txG = pctVal(lvl.cepe?.admis_g, lvl.cepe?.nbr_g);
                         const txF = pctVal(lvl.cepe?.admis_f, lvl.cepe?.nbr_f);
-                        return <td key={i} style={{ ...styles.td, textAlign: 'center' }}>{txG < txF ? 'Garçon' : txG > txF ? 'Fille' : '-'}</td>;
+                        const kind: 'f' | 'g' | null = Math.abs(txG - txF) < 0.1 ? null : txG < txF ? 'g' : 'f';
+                        return <td key={i} style={{ ...styles.td, textAlign: 'center', padding: 2 }}><DisparityIcon kind={kind} /></td>;
                       })}
                     </tr>
                   </tbody>

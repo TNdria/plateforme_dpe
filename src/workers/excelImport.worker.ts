@@ -2,6 +2,43 @@ import * as XLSX from "xlsx";
 
 let cachedRows: any[][] = [];
 
+const normHeader = (value: unknown) => String(value ?? "")
+  .normalize("NFD")
+  .replace(/[\u0300-\u036f]/g, "")
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, "");
+
+const KNOWN_HEADERS = new Set([
+  "anneescolaire", "annee", "anneeexamen", "codedren", "dren", "codecisco", "cisco", "codezap", "zap",
+  "codeetab", "codeetablissement", "codeecole", "matricule", "codecentre", "codecentreexamen", "ecoleorigine", "ecoledorigine",
+  "sexe", "genre", "option", "op", "operation", "probleme", "problemes", "svt", "tfm", "histoire", "histoiregeographie",
+  "histogeo", "malagasy", "mlg", "francais", "frs", "anglais", "mathematique", "mathematiques", "maths", "physique",
+  "bonus", "geographie", "geo", "total", "totalgeneral", "totalbepc", "moyenne", "moyennebepc", "resultat", "decision",
+  "statut", "cepe", "bepc", "nometab",
+]);
+
+function trimTable(rows: any[][]) {
+  let first = Infinity;
+  let last = -1;
+  rows.forEach((row) => {
+    row.forEach((cell, index) => {
+      if (cell !== null && cell !== undefined && String(cell).trim() !== "") {
+        first = Math.min(first, index);
+        last = Math.max(last, index);
+      }
+    });
+  });
+  if (!Number.isFinite(first) || last < first) return rows;
+  return rows.map((row) => row.slice(first, last + 1));
+}
+
+function headerScore(row: any[]) {
+  const nonEmpty = row.filter((cell) => cell !== null && cell !== undefined && String(cell).trim() !== "");
+  const known = nonEmpty.filter((cell) => KNOWN_HEADERS.has(normHeader(cell))).length;
+  const text = nonEmpty.filter((cell) => typeof cell === "string" || Number.isNaN(Number(cell))).length;
+  return known * 3 + Math.min(text, 4);
+}
+
 function extractFirstTabularSheet(workbook: XLSX.WorkBook) {
   for (const sheetName of workbook.SheetNames) {
     const worksheet = workbook.Sheets[sheetName];
@@ -16,7 +53,18 @@ function extractFirstTabularSheet(workbook: XLSX.WorkBook) {
     );
 
     if (filtered.length >= 2) {
-      return { sheetName, rows: filtered };
+      const scanLimit = Math.min(filtered.length - 1, 40);
+      let bestIndex = 0;
+      let bestScore = -1;
+      for (let i = 0; i < scanLimit; i++) {
+        const score = headerScore(filtered[i]);
+        if (score > bestScore) {
+          bestScore = score;
+          bestIndex = i;
+        }
+      }
+      const rows = trimTable(filtered.slice(bestScore >= 4 ? bestIndex : 0));
+      if (rows.length >= 2) return { sheetName, rows };
     }
   }
 
