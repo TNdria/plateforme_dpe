@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import * as turf from '@turf/turf';
@@ -30,7 +30,7 @@ import {
   MapPin,
   ZoomIn,
 } from 'lucide-react';
-import { useMemo } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import {
   LineChart,
@@ -44,14 +44,12 @@ import {
 import DataActionsBar from '@/components/admin/DataActionsBar';
 import { sumFields, BE_FIELDS, ME_FIELDS } from '../utils/sig';
 
-// ─── Django API helpers ────────────────────────────────────────────────────────
-// Adaptez DJANGO_BASE_URL selon votre configuration (vide = même domaine)
-const DJANGO_BASE_URL = 'http://127.0.0.1:8000';
+// ====================== CONFIG ======================
+const DJANGO_BASE_URL = 'https://dpe-men.mg';
 
 async function djangoGet<T = any>(path: string): Promise<T> {
-  const res = await fetch(`${DJANGO_BASE_URL}${path}`, {
-    credentials: 'include',
-  });
+  const url = `${DJANGO_BASE_URL}${path.startsWith('/') ? path : '/' + path}`;
+  const res = await fetch(url, { credentials: 'include' });
   if (!res.ok) throw new Error(`Django GET ${path} → ${res.status}`);
   return res.json();
 }
@@ -60,9 +58,10 @@ async function djangoPost<T = any>(
   path: string,
   data: Record<string, any>
 ): Promise<T> {
+  const url = `${DJANGO_BASE_URL}${path.startsWith('/') ? path : '/' + path}`;
   const formData = new FormData();
   Object.entries(data).forEach(([k, v]) => formData.append(k, String(v)));
-  const res = await fetch(`${DJANGO_BASE_URL}${path}`, {
+  const res = await fetch(url, {
     method: 'POST',
     credentials: 'include',
     body: formData,
@@ -71,7 +70,23 @@ async function djangoPost<T = any>(
   return res.json();
 }
 
-// Interfaces
+// Pour les endpoints qui attendent json.loads(request.body) côté Django
+async function djangoPostJSON<T = any>(
+  path: string,
+  data: Record<string, any>
+): Promise<T> {
+  const url = `${DJANGO_BASE_URL}${path.startsWith('/') ? path : '/' + path}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Django POST JSON ${path} → ${res.status}`);
+  return res.json();
+}
+
+// ====================== INTERFACES ======================
 interface Dren {
   CODE_DREN: number;
   DREN: string;
@@ -86,7 +101,21 @@ interface SearchItem {
   name: string;
 }
 
-// ─── Fix default markers ───────────────────────────────────────────────────────
+type SigConfig = {
+  modules: {
+    pointage: boolean;
+    deplacement: boolean;
+    validationDeplacement: boolean;
+  };
+  permissions: {
+    valider: boolean;
+    rejeter: boolean;
+    supprimer: boolean;
+    verifier: boolean;
+  };
+};
+
+// ====================== FIX DEFAULT MARKERS ======================
 delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })
   ._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -98,7 +127,7 @@ L.Icon.Default.mergeOptions({
     'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
-// ─── Styles couches géographiques ─────────────────────────────────────────────
+// ====================== STYLES COUCHES ======================
 const STYLE_DREN = {
   fillColor: '#4e73df',
   color: '#4e73df',
@@ -147,6 +176,7 @@ const NIVEAU_CONFIG: Record<
   n2: { fa: 'fas fa-school', label: 'COLLEGE', aireColor: 'blue', rayon: 5 },
   n3: { fa: 'fas fa-building', label: 'LYCEE', aireColor: 'yellow', rayon: 20 },
 };
+
 const VILLAGE_CONFIG = {
   fa: 'fas fa-home',
   label: 'Village',
@@ -154,8 +184,9 @@ const VILLAGE_CONFIG = {
   rayon: 5,
 };
 
-// ─── Composant principal ───────────────────────────────────────────────────────
+// ====================== COMPOSANT PRINCIPAL ======================
 const SIG = () => {
+  const { user } = useAuth();
   const mapRef = useRef<L.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const layerControlRef = useRef<L.Control.Layers | null>(null);
@@ -173,9 +204,11 @@ const SIG = () => {
   const moveCtrlRef = useRef<L.Control | null>(null);
   const searchMarkerRef = useRef<L.Circle | null>(null);
   const positionAvantDeplacementRef = useRef<L.LatLng | null>(null);
+  const verificationMarkersRef = useRef<L.LayerGroup>(new L.LayerGroup());
+  const markersRef = useRef<any[]>([]);
+  const tempMarkersRef = useRef<any[]>([]);
 
-  // State
-
+  // ====================== STATE ======================
   const [drens, setDrens] = useState<Dren[]>([]);
   const [ciscos, setCiscos] = useState<Cisco[]>([]);
   const [selectedDren, setSelectedDren] = useState<number>(0);
@@ -183,10 +216,27 @@ const SIG = () => {
   const [loading, setLoading] = useState(false);
   const [showFilters, setShowFilters] = useState(true);
   const [zoomLevel, setZoomLevel] = useState(6);
+  const [sigMoveEnabled, setSigMoveEnabled] = useState(false);
   const [searchItems, setSearchItems] = useState<SearchItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<SearchItem[]>([]);
-  const [sigMoveEnabled, setSigMoveEnabled] = useState(false);
+  const [sigConfig, setSigConfig] = useState<SigConfig>({
+    modules: {
+      pointage: true,
+      deplacement: false,
+      validationDeplacement: false,
+    },
+    permissions: {
+      valider: false,
+      rejeter: false,
+      supprimer: false,
+      verifier: true,
+    },
+  });
+  const [showDeplacementsModal, setShowDeplacementsModal] = useState(false);
+  const [verifyMode, setVerifyMode] = useState(false);
+  const [verifyItem, setVerifyItem] = useState<any>(null);
+  const [deplacements, setDeplacements] = useState<any[]>([]);
   const [selectedSchool, setSelectedSchool] = useState<any | null>(null);
   const [niveau, setNiveau] = useState<number>(0);
   const [tablesBancs, setTablesBancs] = useState<any[]>([]);
@@ -215,7 +265,6 @@ const SIG = () => {
     elec: false,
     eau: false,
   });
-
   const [stats, setStats] = useState({
     total: 0,
     publicCount: 0,
@@ -223,32 +272,7 @@ const SIG = () => {
     villages: 0,
   });
 
-  // ─── Helpers niveau ─────────────────────────────────────────────────────────
-  const isPrimaire = (school: any): boolean => {
-    if (!school) return false;
-    const n = (school.niveau || school.NIVEAU || school.NIVEAU_ETAB || '')
-      .toString()
-      .toLowerCase();
-    return n.includes('primaire') || n === 'n1' || n === '1';
-  };
-  const isPresco = (school: any): boolean => {
-    if (!school) return false;
-    const n = (school.niveau || school.NIVEAU || school.NIVEAU_ETAB || '')
-      .toString()
-      .toLowerCase();
-    return (
-      n.includes('presco') || n.includes('présco') || n === 'n0' || n === '0'
-    );
-  };
-  const getNiveauLabel = (school: any): string => {
-    if (!school) return '—';
-    const raw = school.NIVEAU || school.niveau || school.NIVEAU_ETAB || '';
-    if (raw.toString().toLowerCase().includes('primaire')) return 'PRIMAIRE';
-    if (raw.toString().toLowerCase().includes('presco')) return 'PRESCO';
-    return raw || '—';
-  };
-
-  // ─── Init carte ─────────────────────────────────────────────────────────────
+  // ====================== INIT MAP ======================
   useEffect(() => {
     if (mapRef.current || !mapContainerRef.current) return;
 
@@ -502,7 +526,7 @@ const SIG = () => {
 
     mapRef.current = map;
 
-    // Charger les DREN directement depuis Django
+    // Charger les DREN — route kebab-case conforme à urls.py
     djangoGet<Dren[]>('/sig/dren/').then(setDrens).catch(console.error);
 
     return () => {
@@ -511,67 +535,120 @@ const SIG = () => {
     };
   }, []);
 
-  // ─── Charger les tables bancs ─────────────────────────────────────────────
-
+  // ====================== CHARGER TABLES BANCS ======================
   useEffect(() => {
-    if (!selectedSchool) return;
-    if (!selectedSchool.CODE_ETAB) return;
-
+    if (!selectedSchool?.CODE_ETAB) return;
     let cancelled = false;
 
     const load = async () => {
-      const params = new URLSearchParams({
-        niveau: String(niveau),
-        code_etab: String(selectedSchool.CODE_ETAB),
-      });
-
-      const res = await fetch(`/sig/tables-bancs/?${params}`);
-
-      const data = await res.json();
-
-      if (!cancelled) {
-        setTablesBancs(data);
+      try {
+        const params = new URLSearchParams({
+          niveau: String(niveau),
+          code_etab: String(selectedSchool.CODE_ETAB),
+        });
+        // Utilise DJANGO_BASE_URL pour rester cohérent avec les autres appels
+        const data = await djangoGet(`/sig/tables-bancs/?${params}`);
+        if (!cancelled) setTablesBancs(data);
+      } catch (err) {
+        if (!cancelled) console.error('Erreur tables-bancs:', err);
       }
     };
 
     load();
-
     return () => {
       cancelled = true;
     };
   }, [selectedSchool, niveau]);
 
-  // ─── Charger la config SIG (mode déplacement) ─────────────────────────────
+  // ====================== CHARGER CONFIG SIG ======================
   useEffect(() => {
     const loadConfig = async () => {
       try {
-        const res = await djangoGet('/sig/config/check/deplacement/');
-        setSigMoveEnabled(Boolean(res?.est_active));
+        const res = await djangoGet('/sig/config/');
+        const modules = res?.modules || {};
+        const permissions = res?.permissions || {};
+
+        // Normalisation robuste pour gérer les différentes conventions de nommage
+        const getModule = (key: string): boolean => {
+          return Boolean(
+            modules[key] ??
+            modules[key.replace(/([A-Z])/g, '_$1').toLowerCase()] ?? // camelCase → snake_case
+            modules[key.toLowerCase()] ??
+            false
+          );
+        };
+
+        setSigConfig({
+          modules: {
+            pointage: getModule('pointage'),
+            deplacement: getModule('deplacement'),
+            validationDeplacement:
+              getModule('validationDeplacement') ||
+              getModule('validation_deplacement'),
+          },
+          permissions: {
+            valider: Boolean(permissions.valider),
+            rejeter: Boolean(permissions.rejeter),
+            supprimer: Boolean(permissions.supprimer),
+            verifier: Boolean(permissions.verifier ?? true), // fallback sécurisé
+          },
+        });
+
+        // Debug temporaire (à supprimer après vérification)
+        /*console.log('✅ Config SIG chargée :', {
+          validationDeplacement:
+            getModule('validationDeplacement') ||
+            getModule('validation_deplacement'),
+          rawModules: modules,
+        });*/
       } catch (err) {
-        setSigMoveEnabled(true); // fallback important
+        //console.warn('❌ Erreur chargement config SIG → fallback', err);
+        setSigConfig({
+          modules: {
+            pointage: true,
+            deplacement: false,
+            validationDeplacement: false,
+          },
+          permissions: {
+            valider: false,
+            rejeter: false,
+            supprimer: false,
+            verifier: true,
+          },
+        });
       }
     };
 
     loadConfig();
   }, []);
 
-  // ─── Gestion du changement de DREN ─────────────────────────────────────────
-  const handleDrenChange = async (value: number) => {
-    setSelectedDren(value);
-    setSelectedCisco(0);
-    setCiscos([]);
-
-    if (value > 0) {
-      try {
-        const data = await djangoGet<Cisco[]>(`/sig/listeCisco/${value}/`);
-        setCiscos(data);
-      } catch (err: any) {
-        toast.error('Impossible de charger les CISCO de cette DREN');
+  // ====================== GESTION CISCO PAR RAPPORT DREN SELECTIONNE======================
+  useEffect(() => {
+    const load = async () => {
+      if (selectedDren === 0) {
+        setCiscos([]);
+        setSelectedCisco(0);
+        return;
       }
-    }
-  };
 
-  // ─── Gestion des layers ───────────────────────────────────────────────────
+      try {
+        const data = await djangoGet<Cisco[]>(
+          `/sig/liste-cisco/${selectedDren}/`
+        );
+
+        setCiscos(Array.isArray(data) ? data : []);
+        setSelectedCisco(0);
+      } catch {
+        setCiscos([]);
+        setSelectedCisco(0);
+        toast.error('Erreur chargement CISCO');
+      }
+    };
+
+    load();
+  }, [selectedDren]);
+
+  // ====================== GESTION DES LAYERS ======================
   const clearEtabLayers = () => {
     for (let n = 0; n < 4; n++) {
       for (let s = 0; s < 2; s++) {
@@ -603,62 +680,87 @@ const SIG = () => {
     });
   };
 
-  // ─── Drag handlers ────────────────────────────────────────────────────────
+  const hideAllSigLayers = () => {
+    const map = mapRef.current;
+    if (!map) return;
+    for (let n = 0; n < 4; n++) {
+      for (let s = 0; s < 2; s++) {
+        const layer = etabLayersRef.current[`layer_etabN${n}S${s}`];
+        if (layer && map.hasLayer(layer)) map.removeLayer(layer);
+      }
+    }
+    if (map.hasLayer(villageLayerRef.current))
+      map.removeLayer(villageLayerRef.current);
+  };
+
+  const showAllSigLayers = () => {
+    const map = mapRef.current;
+    if (!map) return;
+    for (let n = 0; n < 4; n++) {
+      for (let s = 0; s < 2; s++) {
+        const layer = etabLayersRef.current[`layer_etabN${n}S${s}`];
+        if (layer) layer.addTo(map);
+      }
+    }
+    villageLayerRef.current.addTo(map);
+  };
+
+  const clearVerificationMarkers = () => {
+    verificationMarkersRef.current.clearLayers();
+  };
+
+  const clearTemporaryMarkers = () => {
+    const map = mapRef.current;
+    if (!map) return;
+    tempMarkersRef.current.forEach((m) => {
+      try {
+        map.removeLayer(m);
+      } catch {}
+    });
+    tempMarkersRef.current = [];
+  };
+
+  // ====================== DRAG HANDLERS ======================
   const onDragMarkerStart = (event: any) => {
     positionAvantDeplacementRef.current = event.target.getLatLng();
   };
 
-  const onDragEtabEnd = (event: any) => {
-    const moveCheckbox = document.getElementById(
-      'check-move'
-    ) as HTMLInputElement;
-    const map = mapRef.current;
-    if (moveCheckbox?.checked && map && map.getZoom() >= 13) {
-      const props = event.target.options.properties;
-      const code_etab = props.CODE_ETAB;
-      const lng = event.target.getLatLng().lng;
-      const lat = event.target.getLatLng().lat;
-      djangoPost('/sig/updatePositionEtablissement/', {
-        code_etab,
-        longitude: lng,
-        latitude: lat,
-      })
-        .then(() =>
-          toast.success("Déplacement de l'établissement effectué avec succès !")
-        )
-        .catch(() => toast.error('Erreur lors du déplacement'));
-    } else {
-      if (positionAvantDeplacementRef.current)
-        event.target.setLatLng(positionAvantDeplacementRef.current);
+  // updatePositionEtablissement attend json.loads(request.body) côté Django
+  const onDragEtabEnd = async (e: any, etab: any) => {
+    if (!sigConfig.modules.deplacement) return;
+    const { lat, lng } = e.target.getLatLng();
+    try {
+      await djangoPostJSON('/sig/deplacements/update-position-etablissement/', {
+        code_etab: etab.CODE_ETAB,
+        nouveau_lat: lat,
+        nouveau_lng: lng,
+        demande_par: user?.username || 'system',
+      });
+      toast.info('Demande de déplacement envoyée');
+    } catch {
+      toast.error('Erreur lors du déplacement');
     }
   };
 
-  const onDragVillageEnd = (event: any) => {
-    const moveCheckbox = document.getElementById(
-      'check-move'
-    ) as HTMLInputElement;
-    const map = mapRef.current;
-    if (moveCheckbox?.checked && map && map.getZoom() >= 13) {
-      const props = event.target.options.properties;
-      const id = props.id;
-      const lng = event.target.getLatLng().lng;
-      const lat = event.target.getLatLng().lat;
-      djangoPost('/sig/updatePositionVillage/', {
-        id,
-        longitude: lng,
-        latitude: lat,
-      })
-        .then(() =>
-          toast.success('Déplacement du village effectué avec succès !')
-        )
-        .catch(() => toast.error('Erreur lors du déplacement'));
-    } else {
-      if (positionAvantDeplacementRef.current)
-        event.target.setLatLng(positionAvantDeplacementRef.current);
+  // updatePositionVillage attend json.loads(request.body) côté Django
+  const onDragVillageEnd = async (e: L.LeafletEvent) => {
+    if (!sigConfig.modules.deplacement) return;
+    const marker = e.target as any;
+    const village = marker.properties;
+    const { lat, lng } = (marker as L.Marker).getLatLng();
+    try {
+      await djangoPostJSON('/sig/deplacements/update-position-village/', {
+        id_village: village.id,
+        nouveau_lat: lat,
+        nouveau_lng: lng,
+        demande_par: user?.username || 'system',
+      });
+    } catch {
+      toast.error('Erreur lors du déplacement du village');
     }
   };
 
-  // ─── Context menu ────────────────────────────────────────────────────────
+  // ====================== CONTEXT MENU ======================
   const handleContextMenu = (e: any) => {
     const map = mapRef.current;
     if (!map) return;
@@ -673,12 +775,12 @@ const SIG = () => {
     });
   };
 
-  // ─── Création des markers établissements ─────────────────────────────────
-  const createLayerEtab = (data: any[], niveau: string) => {
+  // ====================== CRÉATION DES MARKERS ÉTABLISSEMENTS ======================
+  const createLayerEtab = (data: any[], niveauKey: string) => {
     const map = mapRef.current;
     if (!map) return [];
-    const config = NIVEAU_CONFIG[niveau];
-    const nIdx = niveau.replace('n', '');
+    const config = NIVEAU_CONFIG[niveauKey];
+    const nIdx = niveauKey.replace('n', '');
     const items: SearchItem[] = [];
 
     data.forEach((dataEtab) => {
@@ -716,16 +818,22 @@ const SIG = () => {
 
       marker.bindTooltip(
         `<div class="custom-tooltip">${dataEtab.NOM_ETAB}</div>`,
-        { permanent: false, opacity: 1, direction: 'top' }
+        {
+          permanent: false,
+          opacity: 1,
+          direction: 'top',
+        }
       );
       marker.on('mouseover', () => setHoveredEtab(dataEtab));
       marker.on('mouseout', () => setHoveredEtab(null));
-      marker.on('click', async () => {
-        setNiveau(Number(niveau.replace('n', '')));
+      marker.on('click', () => {
+        setNiveau(Number(niveauKey.replace('n', '')));
         setSelectedSchool(dataEtab);
       });
       marker.on('dragstart', onDragMarkerStart);
-      marker.on('dragend', onDragEtabEnd);
+      marker.on('dragend', (e) => {
+        void onDragEtabEnd(e, dataEtab);
+      });
 
       try {
         const buffer = turf.buffer(turf.point([lng, lat]), config.rayon, {
@@ -773,7 +881,7 @@ const SIG = () => {
     return items;
   };
 
-  // ─── Appliquer les filtres — chargement principal ────────────────────────
+  // ====================== APPLIQUER LES FILTRES ======================
   const handleApplyFilters = useCallback(async () => {
     const map = mapRef.current;
     const lc = layerControlRef.current;
@@ -806,7 +914,7 @@ const SIG = () => {
       const codeDren = selectedDren;
       const codeCisco = selectedCisco;
 
-      // Chargement parallèle des données depuis Django
+      // Routes conformes à urls.py (kebab-case)
       const [
         drenRes,
         ciscoRes,
@@ -819,21 +927,20 @@ const SIG = () => {
         n3Res,
         nonGeoRes,
       ] = await Promise.allSettled([
-        djangoGet(`/sig/layerDren/${codeDren}/`),
-        djangoGet(`/sig/layerCisco/${codeDren}/${codeCisco}/`),
-        djangoGet(`/sig/layerCommune/${codeDren}/${codeCisco}/`),
-        djangoGet(`/sig/layerFokontany/${codeDren}/${codeCisco}/`),
-        djangoGet(`/sig/layerVillages/${codeDren}/${codeCisco}/`),
-        djangoGet(`/sig/layerEtabN0/${codeDren}/${codeCisco}/`),
-        djangoGet(`/sig/layerEtabN1/${codeDren}/${codeCisco}/`),
-        djangoGet(`/sig/layerEtabN2/${codeDren}/${codeCisco}/`),
-        djangoGet(`/sig/layerEtabN3/${codeDren}/${codeCisco}/`),
+        djangoGet(`/sig/layer-dren/${codeDren}/`),
+        djangoGet(`/sig/layer-cisco/${codeDren}/${codeCisco}/`),
+        djangoGet(`/sig/layer-commune/${codeDren}/${codeCisco}/`),
+        djangoGet(`/sig/layer-fokontany/${codeDren}/${codeCisco}/`),
+        djangoGet(`/sig/layer-villages/${codeDren}/${codeCisco}/`),
+        djangoGet(`/sig/layer-etab-n0/${codeDren}/${codeCisco}/`),
+        djangoGet(`/sig/layer-etab-n1/${codeDren}/${codeCisco}/`),
+        djangoGet(`/sig/layer-etab-n2/${codeDren}/${codeCisco}/`),
+        djangoGet(`/sig/layer-etab-n3/${codeDren}/${codeCisco}/`),
         djangoGet(
-          `/sig/listeEtablissementNonGeolocalise/${codeDren}/${codeCisco}/`
+          `/sig/etablissements-non-geolocalises/${codeDren}/${codeCisco}/`
         ),
       ]);
 
-      // Extraction sécurisée des résultats
       const drenData = drenRes.status === 'fulfilled' ? drenRes.value : [];
       const ciscoData = ciscoRes.status === 'fulfilled' ? ciscoRes.value : [];
       const communeData =
@@ -849,7 +956,8 @@ const SIG = () => {
 
       setEtabNonPointe(nonGeoRes.status === 'fulfilled' ? nonGeoRes.value : []);
 
-      // ==================== TRAITEMENT DES SHAPES ====================
+      // ── SHAPES GÉOGRAPHIQUES ──
+      // get_layer_dren retourne [{shape: FeatureCollection}]
       if (drenData?.[0]?.shape) {
         shpRef.current.dren = L.geoJSON(drenData[0].shape, {
           style: STYLE_DREN,
@@ -883,33 +991,30 @@ const SIG = () => {
         });
       }
 
-      // Ajout des shapes sur la carte
       if (shpRef.current.dren) shpRef.current.dren.addTo(map);
       if (shpRef.current.cisco) shpRef.current.cisco.addTo(map);
       if (shpRef.current.commune) shpRef.current.commune.addTo(map);
       if (shpRef.current.fokontany) shpRef.current.fokontany.addTo(map);
 
-      // Zoom sur la zone sélectionnée
       if (codeCisco > 0 && shpRef.current.cisco) {
         map.fitBounds(shpRef.current.cisco.getBounds());
       } else if (shpRef.current.dren) {
         map.fitBounds(shpRef.current.dren.getBounds());
       }
 
-      // ==================== CRÉATION DES MARQUEURS ÉTABLISSEMENTS ====================
+      // ── MARQUEURS ÉTABLISSEMENTS ──
       const allSearchItems: SearchItem[] = [];
       allSearchItems.push(...(createLayerEtab(n0Data, 'n0') || []));
       allSearchItems.push(...(createLayerEtab(n1Data, 'n1') || []));
       allSearchItems.push(...(createLayerEtab(n2Data, 'n2') || []));
       allSearchItems.push(...(createLayerEtab(n3Data, 'n3') || []));
 
-      setSearchItems(allSearchItems);
-
-      // ==================== VILLAGES ====================
+      // ── VILLAGES ──
+      // get_layer_village retourne [{id, name, code_dren, code_cisco, longitude, latitude}]
       villageLayerRef.current.clearLayers();
       const villageItems: SearchItem[] = [];
 
-      villagesData.forEach((v: any) => {
+      (villagesData as any[]).forEach((v: any) => {
         const lat = parseFloat(v.latitude);
         const lng = parseFloat(v.longitude);
         if (isNaN(lat) || isNaN(lng)) return;
@@ -920,36 +1025,40 @@ const SIG = () => {
           html: `<i class="${VILLAGE_CONFIG.fa}" style="color:${VILLAGE_CONFIG.aireColor}; font-size:18px;"></i>`,
         });
 
-        const marker = L.marker([lat, lng], {
-          icon,
-          draggable: true,
-          properties: v,
-        });
+        const marker = L.marker([lat, lng], { icon, draggable: true });
+        (marker as any).properties = v;
 
         marker.bindTooltip(`Village: ${v.name}`, {
           permanent: false,
           direction: 'top',
         });
-
         marker.on('mouseover', () => setHoveredEtab(v));
         marker.on('mouseout', () => setHoveredEtab(null));
         marker.on('dragstart', onDragMarkerStart);
         marker.on('dragend', onDragVillageEnd);
 
         villageLayerRef.current.addLayer(marker);
-
-        villageItems.push({
-          latLng: [lat, lng],
-          id: v.id,
-          name: v.name,
-        });
+        villageItems.push({ latLng: [lat, lng], id: v.id, name: v.name });
       });
 
-      
-      // Ajouter les villages à la recherche globale
       allSearchItems.push(...villageItems);
-      
-      // Ajout des overlays établissements dans le Layer Control
+      setSearchItems(allSearchItems);
+
+      // Statistiques
+      const publicCount =
+        n0Data.length + n1Data.length + n2Data.length + n3Data.length;
+      setStats({
+        total: publicCount + villageItems.length,
+        publicCount: [...n0Data, ...n1Data, ...n2Data, ...n3Data].filter(
+          (e: any) => e.SECTEUR === 0
+        ).length,
+        privateCount: [...n0Data, ...n1Data, ...n2Data, ...n3Data].filter(
+          (e: any) => e.SECTEUR !== 0
+        ).length,
+        villages: villageItems.length,
+      });
+
+      // ── OVERLAYS DANS LE LAYER CONTROL ──
       lc.addOverlay(etabLayersRef.current['layer_etabN0S0'], 'PRESCO PUBLIC');
       lc.addOverlay(etabLayersRef.current['layer_etabN0S1'], 'PRESCO PRIVÉ');
       lc.addOverlay(etabLayersRef.current['layer_etabN1S0'], 'PRIMAIRE PUBLIC');
@@ -958,51 +1067,38 @@ const SIG = () => {
       lc.addOverlay(etabLayersRef.current['layer_etabN2S1'], 'COLLEGE PRIVÉ');
       lc.addOverlay(etabLayersRef.current['layer_etabN3S0'], 'LYCEE PUBLIC');
       lc.addOverlay(etabLayersRef.current['layer_etabN3S1'], 'LYCEE PRIVÉ');
-      // Ajout des villages dans le Layer Control
       lc.addOverlay(villageLayerRef.current, 'VILLAGES');
-      // ======================================================================
-      // CONTRÔLE AIRES
-      // ======================================================================
 
+      // ── CONTRÔLE AIRES ──
       const aireCtrl = new (L.Control.extend({
-        options: { position: "topright" },
+        options: { position: 'topright' },
       }))();
-
       aireCtrl.onAdd = () => {
-        const div = L.DomUtil.create("div", "control-aire");
-
+        const div = L.DomUtil.create('div', 'control-aire');
         div.style.cssText =
-          "padding:6px 8px;background:rgba(255,255,255,0.8);font-size:12px;box-shadow:0 0 15px rgba(0,0,0,0.2);border:2px solid #999;border-radius:5px;line-height:2.2;";
-
+          'padding:6px 8px;background:rgba(255,255,255,0.8);font-size:12px;box-shadow:0 0 15px rgba(0,0,0,0.2);border:2px solid #999;border-radius:5px;line-height:2.2;';
         div.innerHTML = `
           <label style="display:flex;align-items:center;gap:4px;cursor:pointer;margin:0;">
             <input id="N1S0" class="ctrl_aire_etab" type="checkbox" style="width:15px;height:15px;" />
             &nbsp;Aire EPP
           </label>
-
           <label style="display:flex;align-items:center;gap:4px;cursor:pointer;margin:0;">
             <input id="N2S0" class="ctrl_aire_etab" type="checkbox" style="width:15px;height:15px;" />
             &nbsp;Aire CEG
           </label>
-
           <label style="display:flex;align-items:center;gap:4px;cursor:pointer;margin:0;">
             <input id="N3S0" class="ctrl_aire_etab" type="checkbox" style="width:15px;height:15px;" />
             &nbsp;Aire LYCEE
           </label>
         `;
-
         L.DomEvent.disableClickPropagation(div);
-
         setTimeout(() => {
-          ["N1S0", "N2S0", "N3S0"].forEach((id) => {
+          ['N1S0', 'N2S0', 'N3S0'].forEach((id) => {
             const cb = document.getElementById(id) as HTMLInputElement;
-
             if (!cb) return;
-
-            cb.addEventListener("change", () => {
+            cb.addEventListener('change', () => {
               const aireLayer = aireLayersRef.current[`aire_etab${id}`];
               const etabLayer = etabLayersRef.current[`layer_etab${id}`];
-
               if (cb.checked && etabLayer && map.hasLayer(etabLayer)) {
                 aireLayer?.addTo(map);
               } else if (!cb.checked) {
@@ -1016,10 +1112,8 @@ const SIG = () => {
             });
           });
         }, 100);
-
         return div;
       };
-
       aireCtrl.addTo(map);
       ctrlAireRef.current = aireCtrl;
 
@@ -1034,7 +1128,7 @@ const SIG = () => {
     }
   }, [selectedDren, selectedCisco]);
 
-  // ─── Recherche ────────────────────────────────────────────────────────────
+  // ====================== RECHERCHE ======================
   useEffect(() => {
     if (searchTerm.length < 2) {
       setSearchResults([]);
@@ -1070,7 +1164,7 @@ const SIG = () => {
     setSearchResults([]);
   };
 
-  // ─── Géolocaliser établissement ──────────────────────────────────────────
+  // ====================== GÉOLOCALISER ÉTABLISSEMENT ======================
   const handleSaveGeoEtab = async () => {
     if (!selectedEtabGeo) {
       toast.warning('Sélectionnez un établissement');
@@ -1081,7 +1175,8 @@ const SIG = () => {
       return;
     }
     try {
-      await djangoPost('/sig/geolocaliserEtablissement/', {
+      // Route conforme à urls.py : /sig/geolocaliser-etablissement/
+      await djangoPost('/sig/geolocaliser-etablissement/', {
         code_etab: selectedEtabGeo.CODE_ETAB,
         longitude: geoCoords.lng,
         latitude: geoCoords.lat,
@@ -1099,7 +1194,7 @@ const SIG = () => {
     }
   };
 
-  // ─── Géolocaliser village ────────────────────────────────────────────────
+  // ====================== GÉOLOCALISER VILLAGE ======================
   const handleSaveGeoVillage = async () => {
     if (villageForm.name.length < 4) {
       toast.warning('Nom du village invalide (min 4 caractères)');
@@ -1115,7 +1210,8 @@ const SIG = () => {
       return;
     }
     try {
-      await djangoPost('/sig/geolocaliserVillage/', {
+      // Route conforme à urls.py : /sig/geolocaliser-village/
+      await djangoPost('/sig/geolocaliser-village/', {
         name: villageForm.name,
         dren: selectedDren,
         cisco: selectedCisco,
@@ -1130,6 +1226,15 @@ const SIG = () => {
       });
       toast.success(`Village ${villageForm.name} géolocalisé avec succès`);
       setShowGeoVillage(false);
+      setVillageForm({
+        name: '',
+        population: '',
+        airtel: false,
+        orange: false,
+        telma: false,
+        elec: false,
+        eau: false,
+      });
       const map = mapRef.current;
       if (map)
         L.marker([geoCoords.lat, geoCoords.lng])
@@ -1141,7 +1246,120 @@ const SIG = () => {
     }
   };
 
-  // ─── Données graphique élèves ─────────────────────────────────────────────
+  // ====================== DÉPLACEMENTS ======================
+  const loadDeplacements = async () => {
+  try {
+    if (!selectedDren) {
+      toast.error("DREN obligatoire");
+      return;
+    }
+
+    const url =
+      selectedCisco > 0
+        ? `/sig/deplacements/non-valides/?dren=${selectedDren}&cisco=${selectedCisco}`
+        : `/sig/deplacements/non-valides/?dren=${selectedDren}`;
+
+    const response = await djangoGet(url);
+
+    setDeplacements(
+      Array.isArray(response?.data) ? response.data : []
+    );
+  } catch (e) {
+    console.error(e);
+    toast.error("Impossible de charger les déplacements");
+    setDeplacements([]);
+  }
+};
+
+  // valider_deplacement attend json.loads(request.body) avec {type_objet, id}
+  const handleValider = async (item: any) => {
+    try {
+      await djangoPostJSON('/sig/deplacements/valider/', {
+        type_objet: item.type_objet,
+        id: item.id,
+      });
+      toast.success('Déplacement validé');
+      await loadDeplacements();
+    } catch {
+      toast.error('Erreur lors de la validation');
+    }
+  };
+
+  // rejeter_deplacement attend json.loads(request.body) avec {type_objet, id}
+  const handleRejeter = async (item: any) => {
+    try {
+      await djangoPostJSON('/sig/deplacements/rejeter/', {
+        type_objet: item.type_objet,
+        id: item.id,
+      });
+      toast.success('Déplacement rejeté');
+      await loadDeplacements();
+    } catch {
+      toast.error('Erreur lors du rejet');
+    }
+  };
+
+  // supprimer_deplacement attend json.loads(request.body) avec {type_objet, id}
+  const handleSupprimer = async (item: any) => {
+    if (!confirm('Supprimer définitivement ?')) return;
+    try {
+      await djangoPostJSON('/sig/deplacements/supprimer/', {
+        type_objet: item.type_objet,
+        id: item.id,
+      });
+      toast.success('Déplacement supprimé');
+      await loadDeplacements();
+    } catch {
+      toast.error('Erreur lors de la suppression');
+    }
+  };
+
+  // ====================== VÉRIFICATION DÉPLACEMENT ======================
+  const handleVerifier = (item: any) => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    setShowDeplacementsModal(false);
+    setVerifyMode(true);
+    setVerifyItem(item);
+    hideAllSigLayers();
+    clearVerificationMarkers();
+
+    const oldMarker = L.circleMarker([item.ancien_lat, item.ancien_lng], {
+      radius: 10,
+      color: 'green',
+      fillColor: 'green',
+      fillOpacity: 1,
+      weight: 2,
+    }).bindTooltip('Ancienne position', { permanent: true, direction: 'top' });
+
+    const newMarker = L.circleMarker([item.nouveau_lat, item.nouveau_lng], {
+      radius: 10,
+      color: 'red',
+      fillColor: 'red',
+      fillOpacity: 1,
+      weight: 2,
+    }).bindTooltip('Nouvelle position', { permanent: true, direction: 'top' });
+
+    verificationMarkersRef.current.addLayer(oldMarker);
+    verificationMarkersRef.current.addLayer(newMarker);
+    verificationMarkersRef.current.addTo(map);
+
+    map.fitBounds([
+      [item.ancien_lat, item.ancien_lng],
+      [item.nouveau_lat, item.nouveau_lng],
+    ]);
+  };
+
+  const stopVerification = () => {
+    setVerifyMode(false);
+    setVerifyItem(null);
+    clearVerificationMarkers();
+    clearTemporaryMarkers();
+    showAllSigLayers();
+  };
+
+  // ====================== DONNÉES GRAPHIQUES ======================
   const getElevesChartData = (school: any) => {
     if (!school) return [];
     return [
@@ -1158,12 +1376,10 @@ const SIG = () => {
       e.NOM_ETAB?.toLowerCase().includes(filterEtabName.toLowerCase())
   );
 
-  // ─── Données enseignants ───────────────────────────────────────────────────────────────
+  // ====================== STATS ENSEIGNANTS ======================
   const teacherStats = useMemo(() => {
     if (!selectedSchool) return null;
-
     const niveaux = ['PRÉSCOLAIRE', 'PRIMAIRE', 'COLLÈGE', 'LYCÉE'];
-
     return {
       niveau: niveaux[niveau] ?? 'INCONNU',
       total: Number(selectedSchool.pers_total ?? 0),
@@ -1175,32 +1391,18 @@ const SIG = () => {
     };
   }, [selectedSchool, niveau]);
 
-  // ─── Données infrastructures ───────────────────────────────────────────────────────────────
+  // ====================== INFRA ======================
   const infraStats = (good: any, bad: any, totalOverride?: any) => {
     const bon = Number(good) || 0;
     const mauvais = Number(bad) || 0;
-
-    return {
-      total: Number(totalOverride ?? bon + mauvais),
-      bon,
-      mauvais,
-    };
+    return { total: Number(totalOverride ?? bon + mauvais), bon, mauvais };
   };
 
   const isPositive = (v: any) => Number(v || 0) > 0;
-  // ─── Table Bancs ─────────────────────
-  useEffect(() => {
-    console.log('DEBUG tablesBancs:', tablesBancs);
 
-    if (!tablesBancs?.length) return;
-
-    const row = tablesBancs[3];
-    console.log('tableau entier : ', row);
-  }, [tablesBancs]);
-
+  // ── Tables-bancs ──
   const latest = useMemo(() => {
     if (!tablesBancs?.length) return null;
-
     return [...tablesBancs].sort(
       (a, b) => b.ANNEE_SCOLAIRE - a.ANNEE_SCOLAIRE
     )[0];
@@ -1208,28 +1410,18 @@ const SIG = () => {
 
   const tbc = useMemo(() => {
     if (!latest) return { total: 0, bon: 0, mauvais: 0 };
-
     const bon = sumFields(latest, BE_FIELDS);
     const mauvais = sumFields(latest, ME_FIELDS);
-
-    return {
-      bon,
-      mauvais,
-      total: bon + mauvais,
-    };
+    return { bon, mauvais, total: bon + mauvais };
   }, [latest]);
 
-  // ─── SDC ─────────────────────
   const sdc = infraStats(
     selectedSchool?.sdc_be,
     selectedSchool?.sdc_me,
     selectedSchool?.sdc_total
   );
-
-  // ─── EAH ─────────────────────
   const elec = isPositive(selectedSchool?.elec);
   const eau = isPositive(selectedSchool?.point_eau);
-
   const latrineG = isPositive(
     selectedSchool?.latrine_g || selectedSchool?.latrince_g
   );
@@ -1238,38 +1430,93 @@ const SIG = () => {
   );
   const latrineC = isPositive(selectedSchool?.latrine);
 
-  // ─── Rendu ───────────────────────────────────────────────────────────────
+  // ====================== RENDU ======================
   return (
     <div className="h-[calc(100vh-4rem)] relative">
-      {/* Barre supérieure */}
-      <div className="absolute top-3 left-14 z-[1000] flex gap-2 flex-wrap">
-        <Button
-          onClick={() => setShowFilters(true)}
-          size="sm"
-          className="shadow-lg"
-        >
-          <Filter className="h-4 w-4 mr-2" /> Filtres
-        </Button>
-        {stats.total > 0 && (
-          <Badge variant="secondary" className="shadow-lg text-xs py-1.5">
-            {stats.publicCount} publics, {stats.privateCount} privés,{' '}
-            {stats.villages} villages — Total: {stats.total}
-          </Badge>
-        )}
-        <div className="bg-background/90 backdrop-blur rounded-md shadow-lg px-1.5 py-0.5">
-          <DataActionsBar
-            table="sig_etablissement"
-            tableLabel="SIG Établissement"
-            compact
-          />
-        </div>
-      </div>
+      {/* ── Barre supérieure ── */}
+      <div className="absolute top-3 left-14 z-[1000] flex flex-col gap-2">
+        {/* ==================== Ligne 1 ==================== */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            onClick={() => setShowFilters(true)}
+            size="sm"
+            className="shadow-lg"
+          >
+            <Filter className="h-4 w-4 mr-2" />
+            Filtres
+          </Button>
 
-      {/* Barre de recherche */}
-      {searchItems.length > 0 && (
-        <div className="absolute top-14 left-14 z-[1000] w-80">
+          {stats.total > 0 && (
+            <Badge variant="secondary" className="shadow-lg text-xs py-1.5">
+              {stats.publicCount} publics, {stats.privateCount} privés,{' '}
+              {stats.villages} villages — Total : {stats.total}
+            </Badge>
+          )}
+
+          <div className="bg-background/90 backdrop-blur rounded-md shadow-lg px-1.5 py-0.5">
+            <DataActionsBar
+              table="sig_etablissement"
+              tableLabel="SIG Établissement"
+              compact
+            />
+          </div>
+        </div>
+
+        {/* ==================== Ligne 2 ==================== */}
+        <div className="flex items-center gap-3 flex-wrap">
+          {sigConfig.modules.validationDeplacement && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={async () => {
+                if (!selectedDren) {
+                  toast.error('Veuillez sélectionner un DREN');
+                  return;
+                }
+
+                await loadDeplacements();
+                setShowDeplacementsModal(true);
+              }}
+            >
+              Liste des déplacements
+            </Button>
+          )}
+
+          {sigConfig.modules.deplacement && (
+            <div className="flex items-center gap-2 bg-background/90 backdrop-blur rounded-md shadow-lg px-3 py-1.5 border border-border">
+              <input
+                id="check-move"
+                type="checkbox"
+                className="w-5 h-5 accent-orange-500 cursor-pointer"
+                checked={sigMoveEnabled}
+                onChange={(e) => {
+                  const zoom = mapRef.current?.getZoom() || 0;
+
+                  if (e.target.checked && zoom <= 13) {
+                    toast.warning('Zoom minimum 14 requis pour déplacer');
+                    return;
+                  }
+
+                  setSigMoveEnabled(e.target.checked);
+                }}
+              />
+
+              <label
+                htmlFor="check-move"
+                className="flex items-center gap-1.5 text-sm font-medium cursor-pointer select-none"
+              >
+                <i className="fas fa-arrows-alt text-orange-600"></i>
+                Déplacer
+              </label>
+            </div>
+          )}
+        </div>
+
+        {/* ==================== Ligne 3 ==================== */}
+        <div className="w-80">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+
             <Input
               placeholder="Rechercher écoles ou villages..."
               value={searchTerm}
@@ -1292,31 +1539,177 @@ const SIG = () => {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Bouton arrêt vérification */}
+      {verifyMode && (
+        <Button
+          className="absolute top-20 right-4 z-[2000]"
+          onClick={stopVerification}
+        >
+          Quitter la vérification
+        </Button>
       )}
 
-      {/* Contrôle déplacer */}
-      {sigMoveEnabled && (
-        <div className="control-move flex items-center gap-2 bg-background/90 backdrop-blur rounded-md shadow-lg px-3 py-1.5 border border-border">
-          <input
-            id="check-move"
-            type="checkbox"
-            className="w-5 h-5 accent-orange-500 cursor-pointer"
-            onChange={(e) => {
-              const zoom = mapRef.current?.getZoom() || 0;
-              if (e.target.checked && zoom <= 13) {
-                toast.warning(
-                  'Le niveau de zoom est trop faible pour déplacer (minimum 14)'
-                );
-                e.target.checked = false;
-              }
-            }}
-          />
-          <label
-            htmlFor="check-move"
-            className="flex items-center gap-1.5 text-sm font-medium cursor-pointer select-none"
-          >
-            <i className="fas fa-arrows-alt text-orange-600"></i> Déplacer
-          </label>
+      {/* Modal Déplacements */}
+      {showDeplacementsModal && (
+        <div className="fixed inset-0 z-[2000] bg-black/40 flex items-center justify-center">
+          <div className="bg-white w-[95%] max-w-7xl rounded-lg shadow-xl p-4 max-h-[92vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                Liste des déplacements
+                {deplacements.length > 0 && (
+                  <Badge variant="secondary" className="ml-2">
+                    {deplacements.length} en attente
+                  </Badge>
+                )}
+              </h2>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowDeplacementsModal(false)}
+              >
+                Fermer
+              </Button>
+            </div>
+
+            {/* Message contextuel */}
+            {deplacements.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <p className="text-lg">Aucun déplacement en attente</p>
+                <p className="text-sm mt-2">
+                  Pour la zone sélectionnée :{' '}
+                  <strong>
+                    {selectedDren
+                      ? drens.find((d) => d.CODE_DREN === selectedDren)?.DREN ||
+                        `DREN ${selectedDren}`
+                      : 'Toutes les DREN'}
+                    {selectedCisco > 0 && ciscos.length > 0 && (
+                      <>
+                        {' '}
+                        —{' '}
+                        {ciscos.find((c) => c.CODE_CISCO === selectedCisco)
+                          ?.CISCO || `CISCO ${selectedCisco}`}
+                      </>
+                    )}
+                  </strong>
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-auto flex-1">
+                <table className="w-full text-sm border">
+                  <thead className="sticky top-0 bg-gray-100 z-10">
+                    <tr>
+                      <th className="p-3 border">Code</th>
+                      <th className="p-3 border">Type</th>
+                      <th className="p-3 border">Demandé par</th>
+                      <th className="p-3 border">Ancienne Position</th>
+                      <th className="p-3 border">Nouvelle Position</th>
+                      <th className="p-3 border">Date</th>
+                      <th className="p-3 border text-center">Doublons</th>
+                      <th className="p-3 border text-center">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {deplacements.map((item) => {
+                      const typeLabel =
+                        item.type_objet === 'ETAB'
+                          ? 'Établissement'
+                          : item.type_objet === 'VILLAGE'
+                            ? 'Village'
+                            : item.type_objet;
+
+                      return (
+                        <tr
+                          key={`dep-${item.type_objet}-${item.id}`}
+                          className="border-t hover:bg-gray-50"
+                        >
+                          <td className="p-3 border font-medium">
+                            {item.code}
+                          </td>
+                          <td className="p-3 border">
+                            <Badge variant="outline">{typeLabel}</Badge>
+                          </td>
+                          <td className="p-3 border">
+                            {item.demande_par || '-'}
+                          </td>
+
+                          {/* Ancienne Position */}
+                          <td className="p-3 border text-xs font-mono text-muted-foreground">
+                            {item.ancien_lat?.toFixed(6)},{' '}
+                            {item.ancien_lng?.toFixed(6)}
+                          </td>
+
+                          {/* Nouvelle Position */}
+                          <td className="p-3 border text-xs font-mono text-blue-600">
+                            {item.nouveau_lat?.toFixed(6)},{' '}
+                            {item.nouveau_lng?.toFixed(6)}
+                          </td>
+
+                          <td className="p-3 border text-xs text-muted-foreground">
+                            {item.date_demande
+                              ? new Date(item.date_demande).toLocaleString(
+                                  'fr-FR'
+                                )
+                              : '-'}
+                          </td>
+
+                          <td className="p-3 border text-center">
+                            {item.is_duplicate ? (
+                              <Badge variant="destructive">Doublon</Badge>
+                            ) : (
+                              <span className="text-emerald-600">✓ Unique</span>
+                            )}
+                          </td>
+
+                          <td className="p-3 border">
+                            <div className="flex gap-2 flex-wrap justify-center">
+                              {sigConfig.modules.validationDeplacement && (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleVerifier(item)}
+                                  >
+                                    Vérifier
+                                  </Button>
+
+                                  <Button
+                                    size="sm"
+                                    className="bg-green-600 hover:bg-green-700 text-white"
+                                    onClick={() => handleValider(item)}
+                                  >
+                                    Valider
+                                  </Button>
+
+                                  <Button
+                                    size="sm"
+                                    variant="destructive"
+                                    onClick={() => handleRejeter(item)}
+                                  >
+                                    Rejeter
+                                  </Button>
+
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="text-red-600 hover:bg-red-50"
+                                    onClick={() => handleSupprimer(item)}
+                                  >
+                                    Supprimer
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -1350,8 +1743,9 @@ const SIG = () => {
               }
               setShowGeoEtab(true);
               setContextMenu(null);
+              // Rafraîchir la liste des établissements non géolocalisés
               djangoGet(
-                `/sig/listeEtablissementNonGeolocalise/${selectedDren}/${selectedCisco}`
+                `/sig/etablissements-non-geolocalises/${selectedDren}/${selectedCisco}/`
               )
                 .then((data) =>
                   setEtabNonPointe(Array.isArray(data) ? data : [])
@@ -1423,8 +1817,12 @@ const SIG = () => {
             <div className="space-y-2">
               <Label className="font-semibold">Filtres</Label>
               <Select
-                value={selectedDren.toString()}
-                onValueChange={(v) => handleDrenChange(Number(v))}
+                value={selectedDren === 0 ? '' : String(selectedDren)}
+                onValueChange={(value) => {
+                  const dren = Number(value);
+                  setSelectedDren(dren);
+                  setSelectedCisco(0); // reset obligatoire
+                }}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Toutes les DREN" />
@@ -1444,8 +1842,8 @@ const SIG = () => {
             </div>
             <div className="space-y-2">
               <Select
-                value={selectedCisco.toString()}
-                onValueChange={(v) => setSelectedCisco(Number(v))}
+                value={selectedCisco === 0 ? '' : String(selectedCisco)}
+                onValueChange={(value) => setSelectedCisco(Number(value))}
                 disabled={selectedDren === 0}
               >
                 <SelectTrigger>
@@ -1511,10 +1909,10 @@ const SIG = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Carte */}
+      {/* Carte Leaflet */}
       <div ref={mapContainerRef} className="h-full w-full" />
 
-      {/* Modal Fiche école */}
+      {/* Modal Fiche École */}
       <Dialog
         open={!!selectedSchool}
         onOpenChange={() => setSelectedSchool(null)}
@@ -1649,7 +2047,6 @@ const SIG = () => {
                     <h4 className="font-semibold text-sm uppercase mb-3 text-primary">
                       Statistiques enseignants - {teacherStats.niveau}
                     </h4>
-
                     <table className="w-full text-xs border-collapse">
                       <thead>
                         <tr className="bg-muted/50">
@@ -1661,7 +2058,6 @@ const SIG = () => {
                           <th className="border p-1.5">AUTRES</th>
                         </tr>
                       </thead>
-
                       <tbody>
                         <tr className="text-center">
                           <td className="border p-1.5 font-semibold">
@@ -1694,7 +2090,6 @@ const SIG = () => {
                   <h4 className="font-semibold text-sm uppercase mb-3 text-primary">
                     Infrastructures scolaires
                   </h4>
-
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs border-collapse">
                       <thead>
@@ -1708,7 +2103,6 @@ const SIG = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {/* ================= SDC ================= */}
                         <tr className="text-center">
                           <td className="border p-1.5 font-medium">
                             Salles de classe
@@ -1719,8 +2113,6 @@ const SIG = () => {
                           <td className="border p-1.5">{sdc.bon}</td>
                           <td className="border p-1.5">{sdc.mauvais}</td>
                         </tr>
-
-                        {/* ================= TBC ================= */}
                         <tr className="text-center">
                           <td className="border p-1.5 font-medium">
                             Tables-bancs
@@ -1731,8 +2123,6 @@ const SIG = () => {
                           <td className="border p-1.5">{tbc.bon}</td>
                           <td className="border p-1.5">{tbc.mauvais}</td>
                         </tr>
-
-                        {/* ================= Séparateur ================= */}
                         <tr>
                           <td
                             colSpan={4}
@@ -1741,8 +2131,6 @@ const SIG = () => {
                             Eau, Assainissement et Hygiène (EAH)
                           </td>
                         </tr>
-
-                        {/* Electricité */}
                         <tr>
                           <td className="border p-1.5 font-medium">
                             Électricité
@@ -1753,11 +2141,9 @@ const SIG = () => {
                               : 'NON'}
                           </td>
                         </tr>
-
-                        {/* Eau */}
                         <tr>
                           <td className="border p-1.5 font-medium">
-                            Point d’eau
+                            Point d'eau
                           </td>
                           <td className="border p-1.5 text-center" colSpan={3}>
                             {eau
@@ -1765,8 +2151,6 @@ const SIG = () => {
                               : 'NON'}
                           </td>
                         </tr>
-
-                        {/* Latrine garçons */}
                         <tr>
                           <td className="border p-1.5 font-medium">
                             Latrine garçons
@@ -1775,8 +2159,6 @@ const SIG = () => {
                             {latrineG ? 'OUI' : 'NON'}
                           </td>
                         </tr>
-
-                        {/* Latrine filles */}
                         <tr>
                           <td className="border p-1.5 font-medium">
                             Latrine filles
@@ -1785,8 +2167,6 @@ const SIG = () => {
                             {latrineF ? 'OUI' : 'NON'}
                           </td>
                         </tr>
-
-                        {/* Latrine commune */}
                         <tr>
                           <td className="border p-1.5 font-medium">
                             Latrine commune
@@ -1852,7 +2232,11 @@ const SIG = () => {
                   {filteredEtabNonPointe.map((etab, i) => (
                     <tr
                       key={`geo-${etab.CODE_ETAB}-${i}`}
-                      className={`cursor-pointer hover:bg-muted/50 ${selectedEtabGeo?.CODE_ETAB === etab.CODE_ETAB ? 'bg-green-100' : ''}`}
+                      className={`cursor-pointer hover:bg-muted/50 ${
+                        selectedEtabGeo?.CODE_ETAB === etab.CODE_ETAB
+                          ? 'bg-green-100'
+                          : ''
+                      }`}
                       onClick={() => {
                         setSelectedEtabGeo(etab);
                         setFilterEtabName(etab.NOM_ETAB);
@@ -1907,16 +2291,14 @@ const SIG = () => {
               }
             />
             <div className="grid grid-cols-3 gap-3">
-              {['airtel', 'orange', 'telma'].map((field) => (
+              {(['airtel', 'orange', 'telma'] as const).map((field) => (
                 <label
                   key={field}
                   className="flex items-center gap-2 text-sm capitalize"
                 >
                   <input
                     type="checkbox"
-                    checked={
-                      villageForm[field as keyof typeof villageForm] as boolean
-                    }
+                    checked={villageForm[field]}
                     onChange={(e) =>
                       setVillageForm((prev) => ({
                         ...prev,
@@ -1929,13 +2311,11 @@ const SIG = () => {
               ))}
             </div>
             <div className="grid grid-cols-2 gap-3">
-              {['elec', 'eau'].map((field) => (
+              {(['elec', 'eau'] as const).map((field) => (
                 <label key={field} className="flex items-center gap-2 text-sm">
                   <input
                     type="checkbox"
-                    checked={
-                      villageForm[field as keyof typeof villageForm] as boolean
-                    }
+                    checked={villageForm[field]}
                     onChange={(e) =>
                       setVillageForm((prev) => ({
                         ...prev,
@@ -1973,7 +2353,7 @@ const SIG = () => {
             <MapPin className="w-5 h-5 text-primary" />
             <div>
               <div className="font-semibold text-primary truncate max-w-[280px]">
-                {hoveredEtab.NOM_ETAB}
+                {hoveredEtab.NOM_ETAB || hoveredEtab.name}
               </div>
               <div className="text-xs text-muted-foreground font-mono">
                 {parseFloat(hoveredEtab.latitude).toFixed(6)},{' '}
@@ -1981,10 +2361,12 @@ const SIG = () => {
               </div>
             </div>
           </div>
-          <div className="text-xs text-muted-foreground border-l pl-4">
-            {hoveredEtab.SECTEUR === 0 ? 'Public' : 'Privé'} •{' '}
-            {hoveredEtab.FOKONTANY || '—'}
-          </div>
+          {hoveredEtab.SECTEUR !== undefined && (
+            <div className="text-xs text-muted-foreground border-l pl-4">
+              {hoveredEtab.SECTEUR === 0 ? 'Public' : 'Privé'} •{' '}
+              {hoveredEtab.FOKONTANY || '—'}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -79,6 +79,44 @@ const formatAdminError = (value: unknown, fallback = "Réponse invalide du serve
   }
 };
 
+<<<<<<< HEAD
+=======
+// ─── Django API Helpers ─────────────────────
+const DJANGO_BASE_URL = 'https://dpe-men.mg';
+
+async function djangoGet<T = any>(path: string): Promise<T> {
+  const res = await fetch(`${DJANGO_BASE_URL}${path}`, {
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Django GET ${path} → ${res.status} - ${text}`);
+  }
+  return res.json();
+}
+
+async function djangoPost<T = any>(
+  path: string,
+  data: Record<string, any>
+): Promise<T> {
+  const res = await fetch(`${DJANGO_BASE_URL}${path}`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Django POST ${path} → ${res.status} - ${text}`);
+  }
+
+  return res.json();
+}
+
+>>>>>>> f4c6f350 (Refonte du SIG : amélioration des déplacements, des API et de l'interface)
 // ─── Mapping fichier CSV → table TDB (clés explicites pour l'utilisateur) ───
 const EXAMEN_CEPE_COLUMNS = [
   "ANNEE_SCOLAIRE",
@@ -816,6 +854,83 @@ const Admin = () => {
     }
   }, [isAdmin, loadCrudData, loadCrudCounts]);
 
+<<<<<<< HEAD
+=======
+  // ====================== CHARGER CONFIG SIG (Admin.tsx) ======================
+  const loadSigConfig = async () => {
+    setLoadingConfig(true);
+
+    try {
+      const res = await djangoGet('/sig/config/');
+      const modules = res?.modules || {};
+
+      // Fonction helper robuste pour gérer les deux conventions (camelCase / snake_case)
+      const getModuleValue = (camelKey: string, snakeKey?: string): boolean => {
+        return Boolean(
+          modules[camelKey] ??
+          modules[
+            snakeKey || camelKey.replace(/([A-Z])/g, '_$1').toLowerCase()
+          ] ??
+          modules[camelKey.toLowerCase()] ??
+          false
+        );
+      };
+
+      setSigConfig({
+        pointage: getModuleValue('pointage'),
+        deplacement: getModuleValue('deplacement'),
+        validation_deplacement: getModuleValue(
+          'validationDeplacement',
+          'validation_deplacement'
+        ),
+      });
+
+      // Debug temporaire (à supprimer une fois que tout fonctionne)
+      /*console.log('✅ Config SIG chargée (Admin):', {
+        pointage: getModuleValue('pointage'),
+        deplacement: getModuleValue('deplacement'),
+        validation_deplacement: getModuleValue(
+          'validationDeplacement',
+          'validation_deplacement'
+        ),
+        rawModules: modules,
+      });*/
+    } catch (err) {
+      //console.warn('❌ Impossible de charger config SIG', err);
+
+      // Fallback sécurisé
+      setSigConfig({
+        pointage: true,
+        deplacement: false,
+        validation_deplacement: false,
+      });
+    } finally {
+      setLoadingConfig(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isAdmin) loadSigConfig();
+  }, [isAdmin]);
+
+  const updateSigConfig = async (cle_fonction: string, est_active: boolean) => {
+    setLoadingConfig(true);
+    try {
+      await djangoPost('/sig/config/update/', {
+        cle_fonction,
+        est_active,
+        adminUsername: user?.username,
+      });
+      toast.success(`Configuration mise à jour`);
+      loadSigConfig();
+    } catch (err: any) {
+      toast.error(`Erreur mise à jour : ${err.message || 'Inconnue'}`);
+    } finally {
+      setLoadingConfig(false);
+    }
+  };
+
+>>>>>>> f4c6f350 (Refonte du SIG : amélioration des déplacements, des API et de l'interface)
   const handleCrudDelete = async () => {
     if (!deleteRow) return;
     const res = await adminFetch("crudTdb", {
@@ -917,6 +1032,7 @@ const Admin = () => {
 
       <div className="flex-1 overflow-auto p-4">
         <Tabs defaultValue="import" className="space-y-4">
+<<<<<<< HEAD
           <TabsList className="grid w-full max-w-4xl grid-cols-5 h-11 p-1 bg-muted/60">
             <TabsTrigger value="import" className="gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
               <Upload className="w-4 h-4" />
@@ -938,6 +1054,56 @@ const Admin = () => {
               <Users className="w-4 h-4" />
               <span className="hidden sm:inline">Utilisateurs</span>
               <Badge variant="secondary" className="h-4 px-1.5 text-[10px] ml-1">{users.length}</Badge>
+=======
+          <TabsList className="flex flex-wrap w-full max-w-6xl h-auto p-1 bg-muted/60 gap-1">
+            <TabsTrigger
+              value="import"
+              className="flex items-center gap-2 px-3 py-2 whitespace-nowrap data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-md transition"
+            >
+              <Upload className="w-4 h-4" />
+              <span className="hidden sm:inline">Import</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="history"
+              className="flex items-center gap-2 px-3 py-2 whitespace-nowrap data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-md transition"
+            >
+              <History className="w-4 h-4" />
+              <span className="hidden sm:inline">Historique</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="crud-all"
+              className="flex items-center gap-2 px-3 py-2 whitespace-nowrap data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-md transition"
+            >
+              <Database className="w-4 h-4" />
+              <span className="hidden sm:inline">CRUD Universel</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="crud"
+              className="flex items-center gap-2 px-3 py-2 whitespace-nowrap data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-md transition"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span className="hidden sm:inline">Données TDB</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="users"
+              className="flex items-center gap-2 px-3 py-2 whitespace-nowrap data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-md transition"
+            >
+              <Users className="w-4 h-4" />
+              <span className="hidden sm:inline">Utilisateurs</span>
+              <Badge
+                variant="secondary"
+                className="h-4 px-1.5 text-[10px] ml-1"
+              >
+                {users.length}
+              </Badge>
+            </TabsTrigger>
+            <TabsTrigger
+              value="sig"
+              className="flex items-center gap-2 px-3 py-2 whitespace-nowrap data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-md transition"
+            >
+              <MapPin className="w-4 h-4" />
+              <span className="hidden sm:inline">SIG</span>
+>>>>>>> f4c6f350 (Refonte du SIG : amélioration des déplacements, des API et de l'interface)
             </TabsTrigger>
           </TabsList>
 
@@ -1381,6 +1547,133 @@ const Admin = () => {
               </div>
             </Card>
           </TabsContent>
+<<<<<<< HEAD
+=======
+
+          {/* ============ SIG CONFIGURATION TAB ============ */}
+          <TabsContent value="sig" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-3">
+                  <MapPin className="w-6 h-6 text-primary" />
+                  Configuration de la Carte SIG
+                </CardTitle>
+                <CardDescription>
+                  Gérez les fonctionnalités globales disponibles sur la carte
+                  SIG
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Pointage */}
+                <div className="flex items-center justify-between p-6 border rounded-xl bg-card">
+                  <div className="space-y-2">
+                    <h3 className="font-semibold text-lg">
+                      Pointage des établissements
+                    </h3>
+                    <p className="text-sm text-muted-foreground max-w-md">
+                      Autorise les utilisateurs à effectuer le pointage des
+                      établissements sur la carte SIG.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col items-end gap-3">
+                    <Switch
+                      checked={Boolean(sigConfig?.pointage)}
+                      onCheckedChange={(value) =>
+                        updateSigConfig('pointage', value)
+                      }
+                      disabled={loadingConfig}
+                      className="scale-125"
+                    />
+
+                    <span
+                      className={`text-sm font-medium px-3 py-1 rounded-full ${
+                        sigConfig.pointage
+                          ? 'bg-green-100 text-green-700'
+                          : 'bg-gray-100 text-gray-600'
+                      }`}
+                    >
+                      {sigConfig.pointage ? '✅ Activé' : '❌ Désactivé'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Déplacement */}
+                <div className="flex items-center justify-between p-6 border rounded-xl bg-card">
+                  <div className="space-y-2">
+                    <h3 className="font-semibold text-lg">
+                      Déplacement des établissements et villages
+                    </h3>
+                    <p className="text-sm text-muted-foreground max-w-md">
+                      Autorise le déplacement des établissements et villages sur
+                      la carte SIG.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col items-end gap-3">
+                    <Switch
+                      checked={Boolean(sigConfig?.deplacement)}
+                      onCheckedChange={(value) =>
+                        updateSigConfig('deplacement', value)
+                      }
+                      disabled={loadingConfig}
+                    />
+
+                    <span
+                      className={`text-sm font-medium px-3 py-1 rounded-full ${
+                        sigConfig.deplacement
+                          ? 'bg-green-100 text-green-700'
+                          : 'bg-gray-100 text-gray-600'
+                      }`}
+                    >
+                      {sigConfig.deplacement ? '✅ Activé' : '❌ Désactivé'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Validation déplacement */}
+                <div className="flex items-center justify-between p-6 border rounded-xl bg-card">
+                  <div className="space-y-2">
+                    <h3 className="font-semibold text-lg">
+                      Validation des déplacements
+                    </h3>
+                    <p className="text-sm text-muted-foreground max-w-md">
+                      Autorise la validation finale des déplacements effectués
+                      sur la carte SIG.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col items-end gap-3">
+                    <Switch
+                      checked={Boolean(sigConfig?.validation_deplacement)}
+                      onCheckedChange={(value) =>
+                        updateSigConfig('validation_deplacement', value)
+                      }
+                      disabled={loadingConfig}
+                    />
+
+                    <span
+                      className={`text-sm font-medium px-3 py-1 rounded-full ${
+                        sigConfig.validation_deplacement
+                          ? 'bg-green-100 text-green-700'
+                          : 'bg-gray-100 text-gray-600'
+                      }`}
+                    >
+                      {sigConfig.validation_deplacement
+                        ? '✅ Activé'
+                        : '❌ Désactivé'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="text-xs text-muted-foreground border-l-2 border-muted pl-4">
+                  Les modifications sont appliquées immédiatement à tous les
+                  utilisateurs de la plateforme SIG.
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+>>>>>>> f4c6f350 (Refonte du SIG : amélioration des déplacements, des API et de l'interface)
         </Tabs>
       </div>
 
