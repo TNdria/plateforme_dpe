@@ -340,7 +340,7 @@ const TDBEcole = () => {
                         const depens = (lvl: any): 'f' | 'g' | null => {
                           const g = retVal(lvl, `eff_${lastT}_g`, 'eff_t1_g');
                           const f = retVal(lvl, `eff_${lastT}_f`, 'eff_t1_f');
-                          if (!g || !f || Math.abs(g - f) < 0.1) return null;
+                          if (g == null || f == null || (isNaN(g) && isNaN(f)) || (g === 0 && f === 0)) return null; if (Math.abs(g - f) < 0.01) return null;
                           return f < g ? 'f' : 'g';
                         };
                         return (<>
@@ -365,7 +365,7 @@ const TDBEcole = () => {
                         const rE = (lvl: any) => pct(Number(lvl.ressources?.red_g || 0) + Number(lvl.ressources?.red_f || 0), lvl.ressources?.nbr_eleve);
                         const depensRed = (lvl: any): 'f' | 'g' | null => {
                           const g = rValG(lvl), f = rValF(lvl);
-                          if (!g || !f || Math.abs(g - f) < 0.1) return null;
+                          if (g == null || f == null || (isNaN(g) && isNaN(f)) || (g === 0 && f === 0)) return null; if (Math.abs(g - f) < 0.01) return null;
                           return f > g ? 'f' : 'g';
                         };
                         return (<>
@@ -451,7 +451,7 @@ const TDBEcole = () => {
                 const depensAdmis = (lvl: any): 'f' | 'g' | null => {
                   const g = admVal(lvl, 'tx_admis_g');
                   const f = admVal(lvl, 'tx_admis_f');
-                  if (!g || !f || Math.abs(g - f) < 0.1) return null;
+                  if (g == null || f == null || (isNaN(g) && isNaN(f)) || (g === 0 && f === 0)) return null; if (Math.abs(g - f) < 0.01) return null;
                   return f < g ? 'f' : 'g';
                 };
                 return (<>
