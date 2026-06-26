@@ -8,8 +8,7 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
-<<<<<<< HEAD
-=======
+
 
     // proxy les requêtes vers le backend Django,
     // on peut utiliser la configuration suivante :
@@ -20,8 +19,7 @@ export default defineConfig(({ mode }) => ({
         secure: false,
       },
     },*/
->>>>>>> f4c6f350 (Refonte du SIG : amélioration des déplacements, des API et de l'interface)
-  },
+},
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {
     alias: {
