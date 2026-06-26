@@ -519,8 +519,6 @@
   min-width: 240px;
   z-index: 2000;
 }
-<<<<<<< HEAD
-=======
 /* Glass recap styling */
 .glass-recap {
     background: rgba(255, 255, 255, 0.07);
@@ -693,4 +691,3 @@
   height: 12px;
   border-radius: 50%;
 }
->>>>>>> f4c6f350 (Refonte du SIG : amélioration des déplacements, des API et de l'interface)

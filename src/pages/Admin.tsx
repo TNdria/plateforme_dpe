@@ -79,8 +79,6 @@ const formatAdminError = (value: unknown, fallback = "Réponse invalide du serve
   }
 };
 
-<<<<<<< HEAD
-=======
 // ─── Django API Helpers ─────────────────────
 const DJANGO_BASE_URL = 'https://dpe-men.mg';
 
@@ -116,7 +114,6 @@ async function djangoPost<T = any>(
   return res.json();
 }
 
->>>>>>> f4c6f350 (Refonte du SIG : amélioration des déplacements, des API et de l'interface)
 // ─── Mapping fichier CSV → table TDB (clés explicites pour l'utilisateur) ───
 const EXAMEN_CEPE_COLUMNS = [
   "ANNEE_SCOLAIRE",
@@ -854,8 +851,6 @@ const Admin = () => {
     }
   }, [isAdmin, loadCrudData, loadCrudCounts]);
 
-<<<<<<< HEAD
-=======
   // ====================== CHARGER CONFIG SIG (Admin.tsx) ======================
   const loadSigConfig = async () => {
     setLoadingConfig(true);
@@ -929,9 +924,8 @@ const Admin = () => {
       setLoadingConfig(false);
     }
   };
-
->>>>>>> f4c6f350 (Refonte du SIG : amélioration des déplacements, des API et de l'interface)
-  const handleCrudDelete = async () => {
+  
+const handleCrudDelete = async () => {
     if (!deleteRow) return;
     const res = await adminFetch("crudTdb", {
       adminUsername: user?.username,
@@ -1032,29 +1026,6 @@ const Admin = () => {
 
       <div className="flex-1 overflow-auto p-4">
         <Tabs defaultValue="import" className="space-y-4">
-<<<<<<< HEAD
-          <TabsList className="grid w-full max-w-4xl grid-cols-5 h-11 p-1 bg-muted/60">
-            <TabsTrigger value="import" className="gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
-              <Upload className="w-4 h-4" />
-              <span className="hidden sm:inline">Import</span>
-            </TabsTrigger>
-            <TabsTrigger value="history" className="gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
-              <History className="w-4 h-4" />
-              <span className="hidden sm:inline">Historique</span>
-            </TabsTrigger>
-            <TabsTrigger value="crud-all" className="gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
-              <Database className="w-4 h-4" />
-              <span className="hidden sm:inline">CRUD Universel</span>
-            </TabsTrigger>
-            <TabsTrigger value="crud" className="gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
-              <FileSpreadsheet className="w-4 h-4" />
-              <span className="hidden sm:inline">Données TDB</span>
-            </TabsTrigger>
-            <TabsTrigger value="users" className="gap-2 data-[state=active]:bg-background data-[state=active]:shadow-sm">
-              <Users className="w-4 h-4" />
-              <span className="hidden sm:inline">Utilisateurs</span>
-              <Badge variant="secondary" className="h-4 px-1.5 text-[10px] ml-1">{users.length}</Badge>
-=======
           <TabsList className="flex flex-wrap w-full max-w-6xl h-auto p-1 bg-muted/60 gap-1">
             <TabsTrigger
               value="import"
@@ -1103,7 +1074,6 @@ const Admin = () => {
             >
               <MapPin className="w-4 h-4" />
               <span className="hidden sm:inline">SIG</span>
->>>>>>> f4c6f350 (Refonte du SIG : amélioration des déplacements, des API et de l'interface)
             </TabsTrigger>
           </TabsList>
 
@@ -1547,8 +1517,6 @@ const Admin = () => {
               </div>
             </Card>
           </TabsContent>
-<<<<<<< HEAD
-=======
 
           {/* ============ SIG CONFIGURATION TAB ============ */}
           <TabsContent value="sig" className="space-y-6">
@@ -1673,7 +1641,6 @@ const Admin = () => {
               </CardContent>
             </Card>
           </TabsContent>
->>>>>>> f4c6f350 (Refonte du SIG : amélioration des déplacements, des API et de l'interface)
         </Tabs>
       </div>
 
