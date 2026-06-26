@@ -14,7 +14,219 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      tdb_cisco: {
+        Row: {
+          CISCO: string | null
+          CODE_CISCO: number | null
+          CODE_DREN: number | null
+          data: Json
+          DREN: string | null
+          id: number
+          imported_at: string
+        }
+        Insert: {
+          CISCO?: string | null
+          CODE_CISCO?: number | null
+          CODE_DREN?: number | null
+          data?: Json
+          DREN?: string | null
+          id?: number
+          imported_at?: string
+        }
+        Update: {
+          CISCO?: string | null
+          CODE_CISCO?: number | null
+          CODE_DREN?: number | null
+          data?: Json
+          DREN?: string | null
+          id?: number
+          imported_at?: string
+        }
+        Relationships: []
+      }
+      tdb_dren: {
+        Row: {
+          CODE_DREN: number | null
+          data: Json
+          DREN: string | null
+          id: number
+          imported_at: string
+        }
+        Insert: {
+          CODE_DREN?: number | null
+          data?: Json
+          DREN?: string | null
+          id?: number
+          imported_at?: string
+        }
+        Update: {
+          CODE_DREN?: number | null
+          data?: Json
+          DREN?: string | null
+          id?: number
+          imported_at?: string
+        }
+        Relationships: []
+      }
+      tdb_ecole: {
+        Row: {
+          CISCO: string | null
+          CODE_CISCO: number | null
+          CODE_DREN: number | null
+          CODE_ETAB: number | null
+          CODE_ZAP: number | null
+          data: Json
+          DREN: string | null
+          id: number
+          imported_at: string
+          NOM_ETAB: string | null
+          ZAP: string | null
+        }
+        Insert: {
+          CISCO?: string | null
+          CODE_CISCO?: number | null
+          CODE_DREN?: number | null
+          CODE_ETAB?: number | null
+          CODE_ZAP?: number | null
+          data?: Json
+          DREN?: string | null
+          id?: number
+          imported_at?: string
+          NOM_ETAB?: string | null
+          ZAP?: string | null
+        }
+        Update: {
+          CISCO?: string | null
+          CODE_CISCO?: number | null
+          CODE_DREN?: number | null
+          CODE_ETAB?: number | null
+          CODE_ZAP?: number | null
+          data?: Json
+          DREN?: string | null
+          id?: number
+          imported_at?: string
+          NOM_ETAB?: string | null
+          ZAP?: string | null
+        }
+        Relationships: []
+      }
+      tdb_import_batches: {
+        Row: {
+          batch_ts_end: string
+          batch_ts_start: string
+          created_at: string
+          file_name: string | null
+          id: string
+          imported_by: string | null
+          notes: string | null
+          row_count: number
+          status: string
+          table_name: string
+        }
+        Insert: {
+          batch_ts_end: string
+          batch_ts_start: string
+          created_at?: string
+          file_name?: string | null
+          id?: string
+          imported_by?: string | null
+          notes?: string | null
+          row_count?: number
+          status?: string
+          table_name: string
+        }
+        Update: {
+          batch_ts_end?: string
+          batch_ts_start?: string
+          created_at?: string
+          file_name?: string | null
+          id?: string
+          imported_by?: string | null
+          notes?: string | null
+          row_count?: number
+          status?: string
+          table_name?: string
+        }
+        Relationships: []
+      }
+      tdb_mada: {
+        Row: {
+          CODE_MADA: number | null
+          data: Json
+          id: number
+          imported_at: string
+        }
+        Insert: {
+          CODE_MADA?: number | null
+          data?: Json
+          id?: number
+          imported_at?: string
+        }
+        Update: {
+          CODE_MADA?: number | null
+          data?: Json
+          id?: number
+          imported_at?: string
+        }
+        Relationships: []
+      }
+      tdb_ref: {
+        Row: {
+          CODE_ETAB: number | null
+          data: Json
+          id: number
+          imported_at: string
+        }
+        Insert: {
+          CODE_ETAB?: number | null
+          data?: Json
+          id?: number
+          imported_at?: string
+        }
+        Update: {
+          CODE_ETAB?: number | null
+          data?: Json
+          id?: number
+          imported_at?: string
+        }
+        Relationships: []
+      }
+      tdb_zap: {
+        Row: {
+          CISCO: string | null
+          CODE_CISCO: number | null
+          CODE_DREN: number | null
+          CODE_ZAP: number | null
+          data: Json
+          DREN: string | null
+          id: number
+          imported_at: string
+          ZAP: string | null
+        }
+        Insert: {
+          CISCO?: string | null
+          CODE_CISCO?: number | null
+          CODE_DREN?: number | null
+          CODE_ZAP?: number | null
+          data?: Json
+          DREN?: string | null
+          id?: number
+          imported_at?: string
+          ZAP?: string | null
+        }
+        Update: {
+          CISCO?: string | null
+          CODE_CISCO?: number | null
+          CODE_DREN?: number | null
+          CODE_ZAP?: number | null
+          data?: Json
+          DREN?: string | null
+          id?: number
+          imported_at?: string
+          ZAP?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

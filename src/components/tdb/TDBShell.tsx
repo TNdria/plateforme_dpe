@@ -86,21 +86,21 @@ export function TDBShell({
     <TooltipProvider>
       <div className="min-h-[calc(100vh-4rem)] bg-gradient-to-br from-muted/40 via-background to-muted/30">
         {/* === Hero header (sticky toolbar) === */}
-        <div className="sticky top-0 z-30 border-b shadow-md bg-gradient-to-r from-primary/90 via-primary to-primary/80 text-primary-foreground supports-[backdrop-filter]:from-primary/85 supports-[backdrop-filter]:via-primary/95 supports-[backdrop-filter]:to-primary/75 backdrop-blur">
+        <div className="sticky top-0 z-30 border-b border-border/70 bg-card/95 shadow-md ring-1 ring-border/40 backdrop-blur-md text-foreground">
           <div className="mx-auto max-w-none px-4 py-3">
             <div className="flex flex-wrap items-center gap-3">
               {/* Logos */}
               <div className="flex items-center gap-2 shrink-0">
-                <img src={logoMen} alt="MEN" className="h-10 w-10 rounded-md object-contain ring-1 ring-white/40 bg-white p-0.5 shadow-sm" />
-                <img src={logoDpe} alt="DPE" className="h-10 w-10 rounded-md object-contain ring-1 ring-white/40 bg-white p-0.5 shadow-sm" />
+                <img src={logoMen} alt="MEN" className="h-10 w-10 rounded-md object-contain ring-1 ring-border bg-white p-0.5 shadow-sm" />
+                <img src={logoDpe} alt="DPE" className="h-10 w-10 rounded-md object-contain ring-1 ring-border bg-white p-0.5 shadow-sm" />
               </div>
 
               {/* Titre */}
               <div className="flex-1 min-w-[220px]">
-                <h1 className="text-base sm:text-lg font-bold leading-tight text-primary-foreground drop-shadow-sm">{computedTitle}</h1>
-                <p className="text-xs text-primary-foreground/80">
+                <h1 className="text-base sm:text-lg font-bold leading-tight text-primary drop-shadow-sm">{computedTitle}</h1>
+                <p className="text-xs text-muted-foreground">
                   Ministère de l'Éducation Nationale
-                  {annee && <> · Année scolaire <strong className="text-primary-foreground">{annee}</strong></>}
+                  {annee && <> · Année scolaire <strong className="text-primary">{annee}</strong></>}
                 </p>
               </div>
 
@@ -112,7 +112,7 @@ export function TDBShell({
                 {onDownloadPdf && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button size="sm" variant="secondary" onClick={onDownloadPdf} disabled={!hasData || generatingPdf} className="bg-white text-primary hover:bg-white/90 shadow">
+                      <Button size="sm" variant="secondary" onClick={onDownloadPdf} disabled={!hasData || generatingPdf} className="bg-primary text-primary-foreground hover:bg-primary/90 shadow">
                         {generatingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
                         <span className="hidden sm:inline">Télécharger PDF</span>
                       </Button>
@@ -123,7 +123,7 @@ export function TDBShell({
                 {onPrint && !isAdmin && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button size="sm" variant="outline" onClick={onPrint} disabled={!hasData} className="bg-white/10 text-primary-foreground border-white/40 hover:bg-white/20 hover:text-primary-foreground">
+                      <Button size="sm" variant="outline" onClick={onPrint} disabled={!hasData} className="text-primary border-primary/30 hover:bg-primary/10 hover:text-primary">
                         <Printer className="h-4 w-4" />
                       </Button>
                     </TooltipTrigger>
@@ -136,25 +136,25 @@ export function TDBShell({
 
             {/* Identification (gauche) + légende (droite) — étirés sur toute la largeur */}
             {!hideIdentificationBar && (
-            <div className="mt-2 flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-white/20 pt-2 text-xs">
+            <div className="mt-2 flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-border/40 pt-2 text-xs">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <span className="inline-flex items-center gap-1 rounded-md bg-white/20 px-2 py-0.5 font-semibold text-primary-foreground ring-1 ring-white/30">
+                <span className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 font-semibold text-primary ring-1 ring-primary/20">
                   {level}
                 </span>
                 {entityName && (
-                  <span className="text-primary-foreground">
+                  <span className="text-foreground">
                     <strong>{entityName}</strong>
                     {entityCode != null && entityCode !== '0' && (
-                      <span className="ml-1 text-primary-foreground/75">· Code {entityCode}</span>
+                      <span className="ml-1 text-muted-foreground">· Code {entityCode}</span>
                     )}
                   </span>
                 )}
               </div>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 {COLOR_LEGEND.map((l) => (
-                  <span key={l.label} className="inline-flex items-center gap-1.5 text-primary-foreground/85">
+                  <span key={l.label} className="inline-flex items-center gap-1.5 text-foreground">
                     <span
-                      className="inline-block h-3 w-3 rounded-sm ring-1 ring-white/40"
+                      className="inline-block h-3 w-3 rounded-sm ring-1 ring-border"
                       style={{ background: l.color }}
                     />
                     {l.label}
@@ -162,7 +162,7 @@ export function TDBShell({
                 ))}
                 <Tooltip>
                   <TooltipTrigger>
-                    <Info className="h-3.5 w-3.5 text-primary-foreground/80" />
+                    <Info className="h-3.5 w-3.5 text-muted-foreground" />
                   </TooltipTrigger>
                   <TooltipContent className="max-w-[260px] text-xs">
                     Le code couleur signale les zones nécessitant une attention. Survolez les cellules pour plus de détails.
@@ -173,6 +173,7 @@ export function TDBShell({
             )}
           </div>
         </div>
+
 
         {/* === Filtres === */}
         <div className="mx-auto max-w-none px-4 pt-4">
