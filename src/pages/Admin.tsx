@@ -1,10 +1,16 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog,
   DialogContent,
@@ -12,17 +18,24 @@ import {
   DialogTitle,
   DialogFooter,
   DialogDescription,
-} from "@/components/ui/dialog";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Switch } from "@/components/ui/switch";
+} from '@/components/ui/dialog';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { Switch } from '@/components/ui/switch';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { toast } from "sonner";
+} from '@/components/ui/select';
+import { toast } from 'sonner';
 import {
   Shield,
   Users,
@@ -41,37 +54,46 @@ import {
   CheckCircle2,
   HardDriveUpload,
   History,
-} from "lucide-react";
-import { useAuth } from "@/contexts/AuthContext";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Navigate } from "react-router-dom";
-import UniversalCrud from "@/components/admin/UniversalCrud";
-import ImportBatchesPanel from "@/components/admin/ImportBatchesPanel";
+  MapPin,
+} from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Navigate } from 'react-router-dom';
+import UniversalCrud from '@/components/admin/UniversalCrud';
+import ImportBatchesPanel from '@/components/admin/ImportBatchesPanel';
 
 const API_BASE = (() => {
   const pid = import.meta.env.VITE_SUPABASE_PROJECT_ID;
   return pid ? `https://${pid}.supabase.co` : import.meta.env.VITE_SUPABASE_URL;
 })();
 const HEADERS = {
-  "Content-Type": "application/json",
+  'Content-Type': 'application/json',
   Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
 };
 
 async function adminFetch(action: string, body: Record<string, any>) {
-  const res = await fetch(`${API_BASE}/functions/v1/db-query?action=${action}`, {
-    method: "POST",
-    headers: HEADERS,
-    body: JSON.stringify(body),
-  });
+  const res = await fetch(
+    `${API_BASE}/functions/v1/db-query?action=${action}`,
+    {
+      method: 'POST',
+      headers: HEADERS,
+      body: JSON.stringify(body),
+    }
+  );
   return res.json();
 }
 
-const asArray = <T,>(value: unknown): T[] => (Array.isArray(value) ? value : []);
+const asArray = <T,>(value: unknown): T[] =>
+  Array.isArray(value) ? value : [];
 
-const formatAdminError = (value: unknown, fallback = "Réponse invalide du serveur") => {
+const formatAdminError = (
+  value: unknown,
+  fallback = 'Réponse invalide du serveur'
+) => {
   if (!value) return fallback;
-  if (typeof value === "string") return value;
-  if (typeof value === "object" && "message" in value) return String((value as { message?: unknown }).message || fallback);
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object' && 'message' in value)
+    return String((value as { message?: unknown }).message || fallback);
   try {
     return JSON.stringify(value);
   } catch {
@@ -116,179 +138,182 @@ async function djangoPost<T = any>(
 
 // ─── Mapping fichier CSV → table TDB (clés explicites pour l'utilisateur) ───
 const EXAMEN_CEPE_COLUMNS = [
-  "ANNEE_SCOLAIRE",
-  "DREN",
-  "CISCO",
-  "OPTION",
-  "CODE_CENTRE",
-  "CODE_ETAB",
-  "ECOLE_ORIGINE",
-  "GENRE",
-  "OP",
-  "PROBLEME",
-  "SVT",
-  "TFM",
-  "MALAGASY",
-  "FRANCAIS",
-  "GEOGRAPHIE",
-  "TOTAL",
-  "MOYENNE",
-  "CEPE",
+  'ANNEE_SCOLAIRE',
+  'DREN',
+  'CISCO',
+  'OPTION',
+  'CODE_CENTRE',
+  'CODE_ETAB',
+  'ECOLE_ORIGINE',
+  'GENRE',
+  'OP',
+  'PROBLEME',
+  'SVT',
+  'TFM',
+  'MALAGASY',
+  'FRANCAIS',
+  'GEOGRAPHIE',
+  'TOTAL',
+  'MOYENNE',
+  'CEPE',
 ] as const;
 
 const EXAMEN_BEPC_COLUMNS = [
-  "ANNEE_SCOLAIRE",
-  "DREN",
-  "CISCO",
-  "MATRICULE",
-  "CODE_ETAB",
-  "ECOLE_ORIGINE",
-  "CODE_CENTRE",
-  "GENRE",
-  "OPTION",
-  "MALAGASY",
-  "FRANCAIS",
-  "ANGLAIS",
-  "MATHEMATIQUE",
-  "PHYSIQUE",
-  "BONUS",
-  "SVT",
-  "HISTO_GEO",
-  "TOTAL",
-  "MOYENNE",
-  "BEPC",
+  'ANNEE_SCOLAIRE',
+  'DREN',
+  'CISCO',
+  'MATRICULE',
+  'CODE_ETAB',
+  'ECOLE_ORIGINE',
+  'CODE_CENTRE',
+  'GENRE',
+  'OPTION',
+  'MALAGASY',
+  'FRANCAIS',
+  'ANGLAIS',
+  'MATHEMATIQUE',
+  'PHYSIQUE',
+  'BONUS',
+  'SVT',
+  'HISTO_GEO',
+  'TOTAL',
+  'MOYENNE',
+  'BEPC',
 ] as const;
 
 // Normalisation accents/espaces/tirets pour auto-mapping
 const normHeader = (s: string) =>
-  s.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase().replace(/[\s\-_]+/g, "");
+  s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[\s\-_]+/g, '');
 
 const BEPC_ALIASES: Record<string, string> = {
-  dren: "DREN",
-  cisco: "CISCO",
-  matricule: "MATRICULE",
-  codeetablissement: "CODE_ETAB",
-  codeetab: "CODE_ETAB",
-  codeecole: "CODE_ETAB",
-  ecoledorigine: "ECOLE_ORIGINE",
-  ecoleorigine: "ECOLE_ORIGINE",
-  codecentre: "CODE_CENTRE",
-  sexe: "GENRE",
-  genre: "GENRE",
-  option: "OPTION",
-  malagasy: "MALAGASY",
-  francais: "FRANCAIS",
-  anglais: "ANGLAIS",
-  mathematique: "MATHEMATIQUE",
-  mathematiques: "MATHEMATIQUE",
-  maths: "MATHEMATIQUE",
-  physique: "PHYSIQUE",
-  bonus: "BONUS",
-  svt: "SVT",
-  histogeo: "HISTO_GEO",
-  histoiregeographie: "HISTO_GEO",
-  totalbepc: "TOTAL",
-  total: "TOTAL",
-  moyennebepc: "MOYENNE",
-  moyenne: "MOYENNE",
-  resultat: "BEPC",
-  decision: "BEPC",
-  bepc: "BEPC",
-  anneescolaire: "ANNEE_SCOLAIRE",
-  annee: "ANNEE_SCOLAIRE",
+  dren: 'DREN',
+  cisco: 'CISCO',
+  matricule: 'MATRICULE',
+  codeetablissement: 'CODE_ETAB',
+  codeetab: 'CODE_ETAB',
+  codeecole: 'CODE_ETAB',
+  ecoledorigine: 'ECOLE_ORIGINE',
+  ecoleorigine: 'ECOLE_ORIGINE',
+  codecentre: 'CODE_CENTRE',
+  sexe: 'GENRE',
+  genre: 'GENRE',
+  option: 'OPTION',
+  malagasy: 'MALAGASY',
+  francais: 'FRANCAIS',
+  anglais: 'ANGLAIS',
+  mathematique: 'MATHEMATIQUE',
+  mathematiques: 'MATHEMATIQUE',
+  maths: 'MATHEMATIQUE',
+  physique: 'PHYSIQUE',
+  bonus: 'BONUS',
+  svt: 'SVT',
+  histogeo: 'HISTO_GEO',
+  histoiregeographie: 'HISTO_GEO',
+  totalbepc: 'TOTAL',
+  total: 'TOTAL',
+  moyennebepc: 'MOYENNE',
+  moyenne: 'MOYENNE',
+  resultat: 'BEPC',
+  decision: 'BEPC',
+  bepc: 'BEPC',
+  anneescolaire: 'ANNEE_SCOLAIRE',
+  annee: 'ANNEE_SCOLAIRE',
 };
 
 const CEPE_ALIASES: Record<string, string> = {
-  anneescolaire: "ANNEE_SCOLAIRE",
-  annee: "ANNEE_SCOLAIRE",
-  anneeexamen: "ANNEE_SCOLAIRE",
-  dren: "DREN",
-  cisco: "CISCO",
-  option: "OPTION",
-  codecentre: "CODE_CENTRE",
-  codecentreexamen: "CODE_CENTRE",
-  centre: "CODE_CENTRE",
-  codeetab: "CODE_ETAB",
-  codeetablissement: "CODE_ETAB",
-  codeecole: "CODE_ETAB",
-  ecoledorigine: "ECOLE_ORIGINE",
-  ecoleorigine: "ECOLE_ORIGINE",
-  etablissementorigine: "ECOLE_ORIGINE",
-  sexe: "GENRE",
-  genre: "GENRE",
-  op: "OP",
-  operation: "OP",
-  probleme: "PROBLEME",
-  problemes: "PROBLEME",
-  svt: "SVT",
-  tfm: "TFM",
-  malagasy: "MALAGASY",
-  mlg: "MALAGASY",
-  francais: "FRANCAIS",
-  frs: "FRANCAIS",
-  geographie: "GEOGRAPHIE",
-  geo: "GEOGRAPHIE",
-  total: "TOTAL",
-  totalgeneral: "TOTAL",
-  moyenne: "MOYENNE",
-  resultat: "CEPE",
-  decision: "CEPE",
-  cepe: "CEPE",
+  anneescolaire: 'ANNEE_SCOLAIRE',
+  annee: 'ANNEE_SCOLAIRE',
+  anneeexamen: 'ANNEE_SCOLAIRE',
+  dren: 'DREN',
+  cisco: 'CISCO',
+  option: 'OPTION',
+  codecentre: 'CODE_CENTRE',
+  codecentreexamen: 'CODE_CENTRE',
+  centre: 'CODE_CENTRE',
+  codeetab: 'CODE_ETAB',
+  codeetablissement: 'CODE_ETAB',
+  codeecole: 'CODE_ETAB',
+  ecoledorigine: 'ECOLE_ORIGINE',
+  ecoleorigine: 'ECOLE_ORIGINE',
+  etablissementorigine: 'ECOLE_ORIGINE',
+  sexe: 'GENRE',
+  genre: 'GENRE',
+  op: 'OP',
+  operation: 'OP',
+  probleme: 'PROBLEME',
+  problemes: 'PROBLEME',
+  svt: 'SVT',
+  tfm: 'TFM',
+  malagasy: 'MALAGASY',
+  mlg: 'MALAGASY',
+  francais: 'FRANCAIS',
+  frs: 'FRANCAIS',
+  geographie: 'GEOGRAPHIE',
+  geo: 'GEOGRAPHIE',
+  total: 'TOTAL',
+  totalgeneral: 'TOTAL',
+  moyenne: 'MOYENNE',
+  resultat: 'CEPE',
+  decision: 'CEPE',
+  cepe: 'CEPE',
 };
 
 const IMPORT_TARGETS = [
   {
-    table: "examen_cepe_candidates",
-    label: "EXAMEN_CEPE_*.xlsx",
-    description: "Résultats CEPE par candidat (notes par matière, genre, admis)",
-    expectedHeaders: ["CODE_ETAB", "GENRE", "MOYENNE"],
-    color: "bg-indigo-500/10 text-indigo-700 border-indigo-300",
+    table: 'examen_cepe_candidates',
+    label: 'EXAMEN_CEPE_*.xlsx',
+    description:
+      'Résultats CEPE par candidat (notes par matière, genre, admis)',
+    expectedHeaders: ['CODE_ETAB', 'GENRE', 'MOYENNE'],
+    color: 'bg-indigo-500/10 text-indigo-700 border-indigo-300',
   },
   {
-    table: "examen_bepc_candidates",
-    label: "anonymat_BEPC_*.xlsx",
+    table: 'examen_bepc_candidates',
+    label: 'anonymat_BEPC_*.xlsx',
     description: "Résultats BEPC par candidat (année à définir à l'import)",
-    expectedHeaders: ["MATRICULE", "MALAGASY", "MATHEMATIQUE"],
-    color: "bg-fuchsia-500/10 text-fuchsia-700 border-fuchsia-300",
+    expectedHeaders: ['MATRICULE', 'MALAGASY', 'MATHEMATIQUE'],
+    color: 'bg-fuchsia-500/10 text-fuchsia-700 border-fuchsia-300',
   },
   {
-    table: "tdb_mada",
-    label: "df_mada.csv",
-    description: "Données nationales agrégées (1 ligne)",
-    expectedHeaders: ["code_mada", "txAbdGlobal", "tx_admis"],
-    color: "bg-purple-500/10 text-purple-700 border-purple-300",
+    table: 'tdb_mada',
+    label: 'df_mada.csv',
+    description: 'Données nationales agrégées (1 ligne)',
+    expectedHeaders: ['code_mada', 'txAbdGlobal', 'tx_admis'],
+    color: 'bg-purple-500/10 text-purple-700 border-purple-300',
   },
   {
-    table: "tdb_dren",
-    label: "df_dren.csv",
-    description: "Une ligne par DREN (23 régions)",
-    expectedHeaders: ["CODE_DREN", "DREN", "txAbdGlobal"],
-    color: "bg-blue-500/10 text-blue-700 border-blue-300",
+    table: 'tdb_dren',
+    label: 'df_dren.csv',
+    description: 'Une ligne par DREN (23 régions)',
+    expectedHeaders: ['CODE_DREN', 'DREN', 'txAbdGlobal'],
+    color: 'bg-blue-500/10 text-blue-700 border-blue-300',
   },
   {
-    table: "tdb_cisco",
-    label: "df_cisco.csv",
-    description: "Une ligne par CISCO (114 circonscriptions)",
-    expectedHeaders: ["CODE_CISCO", "CISCO", "CODE_DREN"],
-    color: "bg-emerald-500/10 text-emerald-700 border-emerald-300",
+    table: 'tdb_cisco',
+    label: 'df_cisco.csv',
+    description: 'Une ligne par CISCO (114 circonscriptions)',
+    expectedHeaders: ['CODE_CISCO', 'CISCO', 'CODE_DREN'],
+    color: 'bg-emerald-500/10 text-emerald-700 border-emerald-300',
   },
   {
-    table: "tdb_zap",
-    label: "df_zap.csv",
-    description: "Une ligne par ZAP (~1700 zones)",
-    expectedHeaders: ["CODE_ZAP", "ZAP", "CODE_CISCO"],
-    color: "bg-amber-500/10 text-amber-700 border-amber-300",
+    table: 'tdb_zap',
+    label: 'df_zap.csv',
+    description: 'Une ligne par ZAP (~1700 zones)',
+    expectedHeaders: ['CODE_ZAP', 'ZAP', 'CODE_CISCO'],
+    color: 'bg-amber-500/10 text-amber-700 border-amber-300',
   },
   {
-    table: "tdb_ecole",
-    label: "df_ecole.csv ou df_tdbecoles.csv",
-    description: "Une ligne par établissement (~25 000 écoles)",
-    expectedHeaders: ["CODE_ETAB", "NOM_ETAB", "CODE_ZAP"],
-    color: "bg-rose-500/10 text-rose-700 border-rose-300",
+    table: 'tdb_ecole',
+    label: 'df_ecole.csv ou df_tdbecoles.csv',
+    description: 'Une ligne par établissement (~25 000 écoles)',
+    expectedHeaders: ['CODE_ETAB', 'NOM_ETAB', 'CODE_ZAP'],
+    color: 'bg-rose-500/10 text-rose-700 border-rose-300',
   },
 ] as const;
-
 
 interface DBUser {
   id: number;
@@ -321,82 +346,132 @@ const Admin = () => {
   // ─── Users ───
   const [users, setUsers] = useState<DBUser[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [loadingConfig, setLoadingConfig] = useState(false);
+  const [sigConfig, setSigConfig] = useState({
+    pointage: true,
+    deplacement: false,
+    validation_deplacement: false,
+  });
+  const [searchTerm, setSearchTerm] = useState('');
   const [editUser, setEditUser] = useState<DBUser | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showDelete, setShowDelete] = useState<DBUser | null>(null);
   const emptyForm = {
-    username: "",
-    first_name: "",
-    last_name: "",
-    email: "",
-    password: "",
+    username: '',
+    first_name: '',
+    last_name: '',
+    email: '',
+    password: '',
     is_active: true,
     is_staff: false,
     is_superuser: false,
-    dren: "0",
-    cisco: "0",
+    dren: '0',
+    cisco: '0',
   };
   const [formData, setFormData] = useState(emptyForm);
   const [editForm, setEditForm] = useState({
-    first_name: "",
-    last_name: "",
-    email: "",
+    first_name: '',
+    last_name: '',
+    email: '',
     is_active: true,
     is_staff: false,
     is_superuser: false,
-    dren: "0",
-    cisco: "0",
-    newPassword: "",
+    dren: '0',
+    cisco: '0',
+    newPassword: '',
   });
 
   // ─── Imports ───
-  const [importTarget, setImportTarget] = useState<typeof IMPORT_TARGETS[number] | null>(null);
+  const [importTarget, setImportTarget] = useState<
+    (typeof IMPORT_TARGETS)[number] | null
+  >(null);
   const [importFile, setImportFile] = useState<File | null>(null);
-  const [importData, setImportData] = useState<{ headers: string[]; rows: any[][] } | null>(null);
+  const [importData, setImportData] = useState<{
+    headers: string[];
+    rows: any[][];
+  } | null>(null);
   const [importRowCount, setImportRowCount] = useState(0);
   const [workerBackedImport, setWorkerBackedImport] = useState(false);
   const [parsingFile, setParsingFile] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
-  const [tableColumns, setTableColumns] = useState<{ column_name: string; data_type: string }[]>([]);
-  const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
-  const [showTruncate, setShowTruncate] = useState<typeof IMPORT_TARGETS[number] | null>(null);
+  const [tableColumns, setTableColumns] = useState<
+    { column_name: string; data_type: string }[]
+  >([]);
+  const [columnMapping, setColumnMapping] = useState<Record<string, string>>(
+    {}
+  );
+  const [showTruncate, setShowTruncate] = useState<
+    (typeof IMPORT_TARGETS)[number] | null
+  >(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const importWorkerRef = useRef<Worker | null>(null);
-  const workerResolversRef = useRef(new Map<number, (value: ImportWorkerResponse) => void>());
+  const workerResolversRef = useRef(
+    new Map<number, (value: ImportWorkerResponse) => void>()
+  );
   const workerMessageIdRef = useRef(0);
-  const isCepeImport = importTarget?.table === "examen_cepe_candidates";
-  const isBepcImport = importTarget?.table === "examen_bepc_candidates";
+  const isCepeImport = importTarget?.table === 'examen_cepe_candidates';
+  const isBepcImport = importTarget?.table === 'examen_bepc_candidates';
   const isExamenImport = isCepeImport || isBepcImport;
-  const [importYear, setImportYear] = useState<string>(String(new Date().getFullYear()));
+  const [importYear, setImportYear] = useState<string>(
+    String(new Date().getFullYear())
+  );
   const importCanReachStep3 = !!importData;
-  const displayedImportRowCount = workerBackedImport ? importRowCount : (importData?.rows.length ?? 0);
+  const displayedImportRowCount = workerBackedImport
+    ? importRowCount
+    : (importData?.rows.length ?? 0);
   const effectiveTableColumns = useMemo(() => {
     if (isCepeImport) {
       return EXAMEN_CEPE_COLUMNS.map((column_name) => ({
         column_name,
-        data_type: ["ANNEE_SCOLAIRE", "CODE_ETAB"].includes(column_name) ? "integer" : ["DREN", "CISCO", "OPTION", "CODE_CENTRE", "ECOLE_ORIGINE", "GENRE", "CEPE"].includes(column_name) ? "text" : "numeric",
+        data_type: ['ANNEE_SCOLAIRE', 'CODE_ETAB'].includes(column_name)
+          ? 'integer'
+          : [
+                'DREN',
+                'CISCO',
+                'OPTION',
+                'CODE_CENTRE',
+                'ECOLE_ORIGINE',
+                'GENRE',
+                'CEPE',
+              ].includes(column_name)
+            ? 'text'
+            : 'numeric',
       }));
     }
     if (isBepcImport) {
       return EXAMEN_BEPC_COLUMNS.map((column_name) => ({
         column_name,
-        data_type: ["ANNEE_SCOLAIRE", "CODE_ETAB"].includes(column_name) ? "integer"
-          : ["GENRE", "OPTION", "BEPC", "MATRICULE", "ECOLE_ORIGINE", "CODE_CENTRE", "DREN", "CISCO"].includes(column_name) ? "text"
-          : "numeric",
+        data_type: ['ANNEE_SCOLAIRE', 'CODE_ETAB'].includes(column_name)
+          ? 'integer'
+          : [
+                'GENRE',
+                'OPTION',
+                'BEPC',
+                'MATRICULE',
+                'ECOLE_ORIGINE',
+                'CODE_CENTRE',
+                'DREN',
+                'CISCO',
+              ].includes(column_name)
+            ? 'text'
+            : 'numeric',
       }));
     }
     return tableColumns;
   }, [isCepeImport, isBepcImport, tableColumns]);
 
-
   useEffect(() => {
-    const worker = new Worker(new URL("../workers/excelImport.worker.ts", import.meta.url), { type: "module" });
+    const worker = new Worker(
+      new URL('../workers/excelImport.worker.ts', import.meta.url),
+      { type: 'module' }
+    );
     importWorkerRef.current = worker;
-    worker.onmessage = (event: MessageEvent<ImportWorkerResponse & { id?: number }>) => {
+    worker.onmessage = (
+      event: MessageEvent<ImportWorkerResponse & { id?: number }>
+    ) => {
       const id = event.data?.id;
-      if (typeof id !== "number") return;
+      if (typeof id !== 'number') return;
       const resolve = workerResolversRef.current.get(id);
       if (!resolve) return;
       workerResolversRef.current.delete(id);
@@ -410,19 +485,23 @@ const Admin = () => {
     };
   }, []);
 
-  const callImportWorker = useCallback((payload: Record<string, any>, transfer?: Transferable[]) => {
-    const worker = importWorkerRef.current;
-    if (!worker) return Promise.reject(new Error("Worker d'import indisponible"));
+  const callImportWorker = useCallback(
+    (payload: Record<string, any>, transfer?: Transferable[]) => {
+      const worker = importWorkerRef.current;
+      if (!worker)
+        return Promise.reject(new Error("Worker d'import indisponible"));
 
-    const id = ++workerMessageIdRef.current;
-    return new Promise<ImportWorkerResponse>((resolve) => {
-      workerResolversRef.current.set(id, resolve);
-      worker.postMessage({ id, ...payload }, transfer ?? []);
-    });
-  }, []);
+      const id = ++workerMessageIdRef.current;
+      return new Promise<ImportWorkerResponse>((resolve) => {
+        workerResolversRef.current.set(id, resolve);
+        worker.postMessage({ id, ...payload }, transfer ?? []);
+      });
+    },
+    []
+  );
 
   // ─── CRUD TDB ───
-  const [crudTable, setCrudTable] = useState<string>("tdb_dren");
+  const [crudTable, setCrudTable] = useState<string>('tdb_dren');
   const [crudRows, setCrudRows] = useState<any[]>([]);
   const [crudLoading, setCrudLoading] = useState(false);
   const [crudCounts, setCrudCounts] = useState<Record<string, number>>({});
@@ -434,15 +513,19 @@ const Admin = () => {
     if (!isAdmin) return;
     setLoadingUsers(true);
     try {
-      const res = await adminFetch("listUsers", { adminUsername: user?.username });
+      const res = await adminFetch('listUsers', {
+        adminUsername: user?.username,
+      });
       if (res.success) setUsers(asArray<DBUser>(res.users));
       else {
         setUsers([]);
-        toast.error(formatAdminError(res.error, "Erreur de chargement des utilisateurs"));
+        toast.error(
+          formatAdminError(res.error, 'Erreur de chargement des utilisateurs')
+        );
       }
     } catch {
       setUsers([]);
-      toast.error("Erreur de chargement");
+      toast.error('Erreur de chargement');
     }
     setLoadingUsers(false);
   }, [isAdmin, user?.username]);
@@ -453,14 +536,17 @@ const Admin = () => {
 
   const handleCreate = async () => {
     if (!formData.username || formData.username.length < 3) {
-      toast.error("Identifiant requis (min 3 car.)");
+      toast.error('Identifiant requis (min 3 car.)');
       return;
     }
     if (!formData.password || formData.password.length < 4) {
-      toast.error("Mot de passe requis (min 4 car.)");
+      toast.error('Mot de passe requis (min 4 car.)');
       return;
     }
-    const res = await adminFetch("createUser", { adminUsername: user?.username, ...formData });
+    const res = await adminFetch('createUser', {
+      adminUsername: user?.username,
+      ...formData,
+    });
     if (res.success) {
       toast.success(`Utilisateur ${formData.username} créé`);
       setShowCreate(false);
@@ -471,14 +557,14 @@ const Admin = () => {
 
   const handleUpdate = async () => {
     if (!editUser) return;
-    const res = await adminFetch("updateUser", {
+    const res = await adminFetch('updateUser', {
       adminUsername: user?.username,
       userId: editUser.id,
       ...editForm,
       newPassword: editForm.newPassword || undefined,
     });
     if (res.success) {
-      toast.success("Utilisateur mis à jour");
+      toast.success('Utilisateur mis à jour');
       setEditUser(null);
       loadUsers();
     } else toast.error(res.error);
@@ -486,12 +572,12 @@ const Admin = () => {
 
   const handleDelete = async () => {
     if (!showDelete) return;
-    const res = await adminFetch("deleteUser", {
+    const res = await adminFetch('deleteUser', {
       adminUsername: user?.username,
       userId: showDelete.id,
     });
     if (res.success) {
-      toast.success("Utilisateur supprimé");
+      toast.success('Utilisateur supprimé');
       setShowDelete(null);
       loadUsers();
     } else toast.error(res.error);
@@ -508,7 +594,7 @@ const Admin = () => {
       is_superuser: u.is_superuser,
       dren: String(u.dren || 0),
       cisco: String(u.cisco || 0),
-      newPassword: "",
+      newPassword: '',
     });
   };
 
@@ -529,18 +615,19 @@ const Admin = () => {
     let totalRows = 0;
 
     try {
-      if (fname.endsWith(".csv") || fname.endsWith(".txt")) {
+      if (fname.endsWith('.csv') || fname.endsWith('.txt')) {
         const text = await file.text();
-        const clean = text.replace(/^\uFEFF/, "");
+        const clean = text.replace(/^\uFEFF/, '');
         const lines = clean.split(/\r?\n/).filter((l) => l.trim().length > 0);
         if (lines.length < 2) {
-          toast.error("Fichier CSV vide");
+          toast.error('Fichier CSV vide');
           return;
         }
-        const sep = lines[0].includes(";") && !lines[0].includes(",") ? ";" : ",";
+        const sep =
+          lines[0].includes(';') && !lines[0].includes(',') ? ';' : ',';
         const parseLine = (line: string): string[] => {
           const out: string[] = [];
-          let cur = "",
+          let cur = '',
             inQ = false;
           for (let i = 0; i < line.length; i++) {
             const ch = line[i];
@@ -550,7 +637,7 @@ const Admin = () => {
             } else if (ch === '"') inQ = !inQ;
             else if (ch === sep && !inQ) {
               out.push(cur);
-              cur = "";
+              cur = '';
             } else cur += ch;
           }
           out.push(cur);
@@ -560,14 +647,24 @@ const Admin = () => {
         rows = lines.slice(1).map(parseLine);
         totalRows = rows.length;
       } else {
-        toast.info("Lecture du fichier Excel… cela peut prendre 30–60 s pour les gros fichiers.");
+        toast.info(
+          'Lecture du fichier Excel… cela peut prendre 30–60 s pour les gros fichiers.'
+        );
         await new Promise((r) => setTimeout(r, 30));
         let parsedOk = false;
         try {
           const buf = await file.arrayBuffer();
           // Try worker first (keeps UI responsive on huge files).
-          const parsed = await callImportWorker({ type: "parse", buffer: buf.slice(0) }, [buf.slice(0)] as any).catch(() => null as any);
-          if (parsed && parsed.ok && parsed.headers && parsed.rowCount !== undefined) {
+          const parsed = await callImportWorker(
+            { type: 'parse', buffer: buf.slice(0) },
+            [buf.slice(0)] as any
+          ).catch(() => null as any);
+          if (
+            parsed &&
+            parsed.ok &&
+            parsed.headers &&
+            parsed.rowCount !== undefined
+          ) {
             headers = parsed.headers;
             rows = parsed.previewRows || [];
             setImportRowCount(parsed.rowCount);
@@ -576,24 +673,99 @@ const Admin = () => {
             parsedOk = true;
           } else {
             // Fallback: parse inline on the main thread.
-            const XLSX = await import("xlsx");
-            const wb = XLSX.read(buf, { type: "array" });
-            const norm = (v: unknown) => String(v ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "");
-            const known = new Set(["anneescolaire","annee","dren","cisco","codeetab","codeetablissement","codecentre","ecoleorigine","ecoledorigine","sexe","genre","option","op","operation","probleme","svt","tfm","malagasy","mlg","francais","frs","anglais","mathematique","mathematiques","physique","bonus","histogeo","histoiregeographie","geographie","total","moyenne","resultat","decision","statut","cepe","bepc"]);
-            const score = (row: any[]) => row.filter((cell) => known.has(norm(cell))).length * 3 + row.filter((cell) => cell !== null && cell !== undefined && String(cell).trim() !== "").length;
+            const XLSX = await import('xlsx');
+            const wb = XLSX.read(buf, { type: 'array' });
+            const norm = (v: unknown) =>
+              String(v ?? '')
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '');
+            const known = new Set([
+              'anneescolaire',
+              'annee',
+              'dren',
+              'cisco',
+              'codeetab',
+              'codeetablissement',
+              'codecentre',
+              'ecoleorigine',
+              'ecoledorigine',
+              'sexe',
+              'genre',
+              'option',
+              'op',
+              'operation',
+              'probleme',
+              'svt',
+              'tfm',
+              'malagasy',
+              'mlg',
+              'francais',
+              'frs',
+              'anglais',
+              'mathematique',
+              'mathematiques',
+              'physique',
+              'bonus',
+              'histogeo',
+              'histoiregeographie',
+              'geographie',
+              'total',
+              'moyenne',
+              'resultat',
+              'decision',
+              'statut',
+              'cepe',
+              'bepc',
+            ]);
+            const score = (row: any[]) =>
+              row.filter((cell) => known.has(norm(cell))).length * 3 +
+              row.filter(
+                (cell) =>
+                  cell !== null &&
+                  cell !== undefined &&
+                  String(cell).trim() !== ''
+              ).length;
             const extracted = wb.SheetNames.map((name) => {
               const ws = wb.Sheets[name];
-              const all: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false, defval: null });
-              const filtered = all.filter((r: any[]) => Array.isArray(r) && r.some((c: any) => c !== null && c !== undefined && c !== ""));
+              const all: any[][] = XLSX.utils.sheet_to_json(ws, {
+                header: 1,
+                blankrows: false,
+                defval: null,
+              });
+              const filtered = all.filter(
+                (r: any[]) =>
+                  Array.isArray(r) &&
+                  r.some((c: any) => c !== null && c !== undefined && c !== '')
+              );
               if (filtered.length < 2) return null;
-              let idx = 0, best = -1;
-              filtered.slice(0, 40).forEach((row, i) => { const s = score(row); if (s > best) { best = s; idx = i; } });
+              let idx = 0,
+                best = -1;
+              filtered.slice(0, 40).forEach((row, i) => {
+                const s = score(row);
+                if (s > best) {
+                  best = s;
+                  idx = i;
+                }
+              });
               return filtered.slice(best >= 4 ? idx : 0);
             }).find(Boolean) as any[][] | undefined;
             const json = extracted || [];
-            if (json.length < 2) { toast.error("Fichier Excel vide"); return; }
-            headers = (json[0] as any[]).map((h: any) => String(h ?? "").trim());
-            rows = json.slice(1).filter((r: any[]) => Array.isArray(r) && r.some((c: any) => c !== null && c !== undefined && c !== ""));
+            if (json.length < 2) {
+              toast.error('Fichier Excel vide');
+              return;
+            }
+            headers = (json[0] as any[]).map((h: any) =>
+              String(h ?? '').trim()
+            );
+            rows = json
+              .slice(1)
+              .filter(
+                (r: any[]) =>
+                  Array.isArray(r) &&
+                  r.some((c: any) => c !== null && c !== undefined && c !== '')
+              );
             totalRows = rows.length;
             setWorkerBackedImport(false);
             parsedOk = true;
@@ -606,18 +778,30 @@ const Admin = () => {
       }
 
       setImportData({ headers, rows });
-      toast.success(`${totalRows || rows.length} lignes détectées (${headers.length} colonnes)`);
+      toast.success(
+        `${totalRows || rows.length} lignes détectées (${headers.length} colonnes)`
+      );
 
       // Helper: build auto-mapping for examen imports
-      const buildExamenMapping = (hdrs: string[], table: string): Record<string, string> => {
-        const cols = table === "examen_cepe_candidates"
-          ? (EXAMEN_CEPE_COLUMNS as readonly string[])
-          : (EXAMEN_BEPC_COLUMNS as readonly string[]);
-        const aliases = table === "examen_cepe_candidates" ? CEPE_ALIASES : BEPC_ALIASES;
+      const buildExamenMapping = (
+        hdrs: string[],
+        table: string
+      ): Record<string, string> => {
+        const cols =
+          table === 'examen_cepe_candidates'
+            ? (EXAMEN_CEPE_COLUMNS as readonly string[])
+            : (EXAMEN_BEPC_COLUMNS as readonly string[]);
+        const aliases =
+          table === 'examen_cepe_candidates' ? CEPE_ALIASES : BEPC_ALIASES;
         const mapping: Record<string, string> = {};
         hdrs.forEach((h) => {
-          const direct = cols.find((c) => c.toLowerCase() === h.toLowerCase().trim());
-          if (direct) { mapping[h] = direct; return; }
+          const direct = cols.find(
+            (c) => c.toLowerCase() === h.toLowerCase().trim()
+          );
+          if (direct) {
+            mapping[h] = direct;
+            return;
+          }
           const alias = aliases[normHeader(h)];
           if (alias && cols.includes(alias)) mapping[h] = alias;
         });
@@ -627,20 +811,28 @@ const Admin = () => {
       // Auto-detect target if not yet selected
       if (!importTarget) {
         const detected = IMPORT_TARGETS.find((t) =>
-          t.expectedHeaders.every((h) => headers.includes(h)),
+          t.expectedHeaders.every((h) => headers.includes(h))
         );
         if (detected) {
           setImportTarget(detected);
-          if (detected.table === "examen_cepe_candidates" || detected.table === "examen_bepc_candidates") {
+          if (
+            detected.table === 'examen_cepe_candidates' ||
+            detected.table === 'examen_bepc_candidates'
+          ) {
             setTableColumns([]);
             setColumnMapping(buildExamenMapping(headers, detected.table));
           } else {
             await loadTableColumns(detected.table, headers);
           }
-          toast.info(`Détection automatique : ${detected.label} → ${detected.table}`);
+          toast.info(
+            `Détection automatique : ${detected.label} → ${detected.table}`
+          );
         }
       } else {
-        if (importTarget.table === "examen_cepe_candidates" || importTarget.table === "examen_bepc_candidates") {
+        if (
+          importTarget.table === 'examen_cepe_candidates' ||
+          importTarget.table === 'examen_bepc_candidates'
+        ) {
           setTableColumns([]);
           setColumnMapping(buildExamenMapping(headers, importTarget.table));
         } else {
@@ -655,7 +847,7 @@ const Admin = () => {
   };
 
   const loadTableColumns = async (tableName: string, headers?: string[]) => {
-    const res = await adminFetch("getTableColumns", {
+    const res = await adminFetch('getTableColumns', {
       adminUsername: user?.username,
       tableName,
     });
@@ -665,7 +857,9 @@ const Admin = () => {
       const mapping: Record<string, string> = {};
       hdrs.forEach((h) => {
         const m = res.columns.find(
-          (c: any) => c.column_name.toLowerCase() === h.toLowerCase() || c.column_name === h,
+          (c: any) =>
+            c.column_name.toLowerCase() === h.toLowerCase() ||
+            c.column_name === h
         );
         if (m) mapping[h] = m.column_name;
       });
@@ -673,19 +867,29 @@ const Admin = () => {
     }
   };
 
-  const selectImportTarget = async (t: typeof IMPORT_TARGETS[number]) => {
+  const selectImportTarget = async (t: (typeof IMPORT_TARGETS)[number]) => {
     setImportTarget(t);
     if (!importData) return;
 
-    if (t.table === "examen_cepe_candidates" || t.table === "examen_bepc_candidates") {
-      const cols = t.table === "examen_cepe_candidates"
-        ? (EXAMEN_CEPE_COLUMNS as readonly string[])
-        : (EXAMEN_BEPC_COLUMNS as readonly string[]);
-      const aliases = t.table === "examen_cepe_candidates" ? CEPE_ALIASES : BEPC_ALIASES;
+    if (
+      t.table === 'examen_cepe_candidates' ||
+      t.table === 'examen_bepc_candidates'
+    ) {
+      const cols =
+        t.table === 'examen_cepe_candidates'
+          ? (EXAMEN_CEPE_COLUMNS as readonly string[])
+          : (EXAMEN_BEPC_COLUMNS as readonly string[]);
+      const aliases =
+        t.table === 'examen_cepe_candidates' ? CEPE_ALIASES : BEPC_ALIASES;
       const fallbackMapping: Record<string, string> = {};
       importData.headers.forEach((h) => {
-        const direct = cols.find((c) => c.toLowerCase() === h.toLowerCase().trim());
-        if (direct) { fallbackMapping[h] = direct; return; }
+        const direct = cols.find(
+          (c) => c.toLowerCase() === h.toLowerCase().trim()
+        );
+        if (direct) {
+          fallbackMapping[h] = direct;
+          return;
+        }
         const alias = aliases[normHeader(h)];
         if (alias && cols.includes(alias)) fallbackMapping[h] = alias;
       });
@@ -699,18 +903,20 @@ const Admin = () => {
 
   const handleImport = async () => {
     if (!importTarget || !importData) {
-      toast.error("Sélectionnez une table cible");
+      toast.error('Sélectionnez une table cible');
       return;
     }
     const mapped = Object.entries(columnMapping).filter(([, v]) => v);
     if (mapped.length === 0) {
-      toast.error("Aucune colonne mappée");
+      toast.error('Aucune colonne mappée');
       return;
     }
     if (isExamenImport) {
       const y = parseInt(importYear, 10);
       if (!Number.isFinite(y) || y < 1990 || y > 2100) {
-        toast.error("Veuillez sélectionner une année scolaire valide pour l'examen (ex. 2024)");
+        toast.error(
+          "Veuillez sélectionner une année scolaire valide pour l'examen (ex. 2024)"
+        );
         return;
       }
     }
@@ -722,34 +928,48 @@ const Admin = () => {
         .filter((x) => x.dbCol);
       // Pour les examens (CEPE / BEPC) : forcer ANNEE_SCOLAIRE depuis le sélecteur admin
       // (on remplace toute colonne ANNEE_SCOLAIRE éventuellement mappée pour garantir la cohérence).
-      const filteredIdx = isExamenImport ? excelIdx.filter((x) => x.dbCol !== "ANNEE_SCOLAIRE") : excelIdx;
+      const filteredIdx = isExamenImport
+        ? excelIdx.filter((x) => x.dbCol !== 'ANNEE_SCOLAIRE')
+        : excelIdx;
       const injectYear = isExamenImport;
       const columns = injectYear
-        ? ["ANNEE_SCOLAIRE", ...filteredIdx.map((x) => x.dbCol)]
+        ? ['ANNEE_SCOLAIRE', ...filteredIdx.map((x) => x.dbCol)]
         : filteredIdx.map((x) => x.dbCol);
       const yearVal = isExamenImport ? parseInt(importYear, 10) : null;
 
       let totalInserted = 0;
       const errors: string[] = [];
-      const totalSourceRows = workerBackedImport ? importRowCount : importData.rows.length;
+      const totalSourceRows = workerBackedImport
+        ? importRowCount
+        : importData.rows.length;
       // Lots plus petits + pause réelle entre les lots → évite la surchauffe machine
       // (anciennement jusqu'à 2000 lignes/lot sans pause, ce qui saturait CPU et RAM
       // lors des très gros imports CEPE).
-      const batch = totalSourceRows > 100000 ? 500 : totalSourceRows > 20000 ? 400 : 300;
-      const pauseMs = totalSourceRows > 100000 ? 250 : totalSourceRows > 20000 ? 150 : 60;
-      const importBatchId = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+      const batch =
+        totalSourceRows > 100000 ? 500 : totalSourceRows > 20000 ? 400 : 300;
+      const pauseMs =
+        totalSourceRows > 100000 ? 250 : totalSourceRows > 20000 ? 150 : 60;
+      const importBatchId =
+        typeof crypto !== 'undefined' && 'randomUUID' in crypto
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random()}`;
       const importBatchTs = new Date().toISOString();
       for (let i = 0; i < totalSourceRows; i += batch) {
         const rawSlice = workerBackedImport
-          ? (await callImportWorker({ type: "getChunk", offset: i, limit: batch })).rows || []
+          ? (
+              await callImportWorker({
+                type: 'getChunk',
+                offset: i,
+                limit: batch,
+              })
+            ).rows || []
           : importData.rows.slice(i, i + batch);
         const slice = rawSlice.map((row) => {
           const base = filteredIdx.map((x) => row[x.index] ?? null);
           return injectYear ? [yearVal, ...base] : base;
         });
 
-
-        const res = await adminFetch("importData", {
+        const res = await adminFetch('importData', {
           adminUsername: user?.username,
           tableName: importTarget.table,
           columns,
@@ -767,23 +987,27 @@ const Admin = () => {
           errors.push(res.error);
           break;
         }
-        setImportProgress(Math.round(((i + slice.length) / totalSourceRows) * 100));
+        setImportProgress(
+          Math.round(((i + slice.length) / totalSourceRows) * 100)
+        );
         // Vraie pause pour laisser le CPU respirer (évite la surchauffe).
         await new Promise((r) => setTimeout(r, pauseMs));
       }
       if (errors.length === 0) {
-        toast.success(`${totalInserted} lignes insérées dans ${importTarget.table}`);
+        toast.success(
+          `${totalInserted} lignes insérées dans ${importTarget.table}`
+        );
       } else {
         toast.warning(`${totalInserted} insérées, ${errors.length} erreurs`);
-        console.warn("Erreurs import:", errors);
+        console.warn('Erreurs import:', errors);
       }
       setImportFile(null);
       setImportData(null);
       setImportRowCount(0);
       setWorkerBackedImport(false);
       setColumnMapping({});
-      await callImportWorker({ type: "clear" });
-      if (fileRef.current) fileRef.current.value = "";
+      await callImportWorker({ type: 'clear' });
+      if (fileRef.current) fileRef.current.value = '';
       loadCrudCounts();
     } catch (e: any) {
       toast.error(`Erreur d'import: ${e.message}`);
@@ -794,9 +1018,9 @@ const Admin = () => {
 
   const handleTruncate = async () => {
     if (!showTruncate) return;
-    const res = await adminFetch("crudTdb", {
+    const res = await adminFetch('crudTdb', {
       adminUsername: user?.username,
-      op: "truncate",
+      op: 'truncate',
       table: showTruncate.table,
     });
     if (res.success) {
@@ -811,20 +1035,27 @@ const Admin = () => {
   const loadCrudData = useCallback(async () => {
     setCrudLoading(true);
     try {
-      const res = await adminFetch("crudTdb", {
+      const res = await adminFetch('crudTdb', {
         adminUsername: user?.username,
-        op: "list",
+        op: 'list',
         table: crudTable,
       });
       if (res.success && Array.isArray(res.data)) {
         setCrudRows(res.data);
       } else {
         setCrudRows([]);
-        toast.error(formatAdminError(res.error ?? res.data, `Impossible de charger ${crudTable}`));
+        toast.error(
+          formatAdminError(
+            res.error ?? res.data,
+            `Impossible de charger ${crudTable}`
+          )
+        );
       }
     } catch (error) {
       setCrudRows([]);
-      toast.error(formatAdminError(error, `Impossible de charger ${crudTable}`));
+      toast.error(
+        formatAdminError(error, `Impossible de charger ${crudTable}`)
+      );
     }
     setCrudLoading(false);
   }, [crudTable, user?.username]);
@@ -833,13 +1064,13 @@ const Admin = () => {
     const counts: Record<string, number> = {};
     await Promise.all(
       IMPORT_TARGETS.map(async (t) => {
-        const res = await adminFetch("crudTdb", {
+        const res = await adminFetch('crudTdb', {
           adminUsername: user?.username,
-          op: "list",
+          op: 'list',
           table: t.table,
         });
         if (res.success) counts[t.table] = asArray(res.data).length;
-      }),
+      })
     );
     setCrudCounts(counts);
   }, [user?.username]);
@@ -924,17 +1155,17 @@ const Admin = () => {
       setLoadingConfig(false);
     }
   };
-  
-const handleCrudDelete = async () => {
+
+  const handleCrudDelete = async () => {
     if (!deleteRow) return;
-    const res = await adminFetch("crudTdb", {
+    const res = await adminFetch('crudTdb', {
       adminUsername: user?.username,
-      op: "delete",
+      op: 'delete',
       table: crudTable,
       id: deleteRow.id,
     });
     if (res.success) {
-      toast.success("Ligne supprimée");
+      toast.success('Ligne supprimée');
       setDeleteRow(null);
       loadCrudData();
       loadCrudCounts();
@@ -944,15 +1175,15 @@ const handleCrudDelete = async () => {
   const handleCrudUpdate = async () => {
     if (!editRow) return;
     const { id, imported_at, ...payload } = editRow;
-    const res = await adminFetch("crudTdb", {
+    const res = await adminFetch('crudTdb', {
       adminUsername: user?.username,
-      op: "update",
+      op: 'update',
       table: crudTable,
       id,
       data: payload,
     });
     if (res.success) {
-      toast.success("Ligne mise à jour");
+      toast.success('Ligne mise à jour');
       setEditRow(null);
       loadCrudData();
     } else toast.error(res.error);
@@ -962,7 +1193,7 @@ const handleCrudDelete = async () => {
     (u) =>
       u.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
       u.first_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      u.last_name.toLowerCase().includes(searchTerm.toLowerCase()),
+      u.last_name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   if (!user) return <Navigate to="/login" replace />;
@@ -984,14 +1215,67 @@ const handleCrudDelete = async () => {
 
   // Display columns for CRUD per table
   const crudDisplayCols: Record<string, string[]> = {
-    tdb_mada: ["id", "code_mada", "nombre_eleves", "txAbdGlobal", "tx_admis", "TPA"],
-    tdb_dren: ["id", "CODE_DREN", "DREN", "nombre_eleves", "txAbdGlobal", "tx_admis", "TPA"],
-    tdb_cisco: ["id", "CODE_CISCO", "CISCO", "DREN", "nombre_eleves", "txAbdGlobal", "tx_admis"],
-    tdb_zap: ["id", "CODE_ZAP", "ZAP", "CISCO", "nombre_eleves", "txAbdGlobal", "tx_admis"],
-    tdb_ecole: ["id", "CODE_ETAB", "NOM_ETAB", "ZAP", "nombre_eleves", "txAbdGlobal", "tx_admis"],
-    examen_cepe_candidates: ["id", "ANNEE_SCOLAIRE", "CODE_ETAB", "GENRE", "MOYENNE", "CEPE"],
-    examen_bepc_candidates: ["id", "ANNEE_SCOLAIRE", "CODE_ETAB", "GENRE", "OPTION", "MOYENNE", "BEPC"],
-
+    tdb_mada: [
+      'id',
+      'code_mada',
+      'nombre_eleves',
+      'txAbdGlobal',
+      'tx_admis',
+      'TPA',
+    ],
+    tdb_dren: [
+      'id',
+      'CODE_DREN',
+      'DREN',
+      'nombre_eleves',
+      'txAbdGlobal',
+      'tx_admis',
+      'TPA',
+    ],
+    tdb_cisco: [
+      'id',
+      'CODE_CISCO',
+      'CISCO',
+      'DREN',
+      'nombre_eleves',
+      'txAbdGlobal',
+      'tx_admis',
+    ],
+    tdb_zap: [
+      'id',
+      'CODE_ZAP',
+      'ZAP',
+      'CISCO',
+      'nombre_eleves',
+      'txAbdGlobal',
+      'tx_admis',
+    ],
+    tdb_ecole: [
+      'id',
+      'CODE_ETAB',
+      'NOM_ETAB',
+      'ZAP',
+      'nombre_eleves',
+      'txAbdGlobal',
+      'tx_admis',
+    ],
+    examen_cepe_candidates: [
+      'id',
+      'ANNEE_SCOLAIRE',
+      'CODE_ETAB',
+      'GENRE',
+      'MOYENNE',
+      'CEPE',
+    ],
+    examen_bepc_candidates: [
+      'id',
+      'ANNEE_SCOLAIRE',
+      'CODE_ETAB',
+      'GENRE',
+      'OPTION',
+      'MOYENNE',
+      'BEPC',
+    ],
   };
   const crudRowsList = asArray<any>(crudRows);
 
@@ -1006,12 +1290,17 @@ const handleCrudDelete = async () => {
             <div>
               <h1 className="text-lg font-bold tracking-tight flex items-center gap-2">
                 Console d'administration
-                <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30 text-[10px] h-5">
+                <Badge
+                  variant="outline"
+                  className="bg-primary/10 text-primary border-primary/30 text-[10px] h-5"
+                >
                   Superuser
                 </Badge>
               </h1>
               <p className="text-xs text-muted-foreground">
-                Connecté en tant que <strong className="text-foreground">{user.username}</strong> · Gérez utilisateurs, données et imports
+                Connecté en tant que{' '}
+                <strong className="text-foreground">{user.username}</strong> ·
+                Gérez utilisateurs, données et imports
               </p>
             </div>
           </div>
@@ -1093,9 +1382,19 @@ const handleCrudDelete = async () => {
               <FileSpreadsheet className="h-4 w-4" />
               <AlertTitle>Comment importer vos fichiers ?</AlertTitle>
               <AlertDescription className="text-xs space-y-1 mt-2">
-                <p><strong>1.</strong> Choisissez la table cible ci-dessous (selon le fichier).</p>
-                <p><strong>2.</strong> Sélectionnez le fichier <code className="bg-muted px-1 rounded">.csv</code> ou <code className="bg-muted px-1 rounded">.xlsx</code>.</p>
-                <p><strong>3.</strong> Vérifiez la correspondance auto des colonnes puis cliquez sur Importer.</p>
+                <p>
+                  <strong>1.</strong> Choisissez la table cible ci-dessous
+                  (selon le fichier).
+                </p>
+                <p>
+                  <strong>2.</strong> Sélectionnez le fichier{' '}
+                  <code className="bg-muted px-1 rounded">.csv</code> ou{' '}
+                  <code className="bg-muted px-1 rounded">.xlsx</code>.
+                </p>
+                <p>
+                  <strong>3.</strong> Vérifiez la correspondance auto des
+                  colonnes puis cliquez sur Importer.
+                </p>
               </AlertDescription>
             </Alert>
 
@@ -1114,20 +1413,27 @@ const handleCrudDelete = async () => {
                       onClick={() => selectImportTarget(t)}
                       className={`text-left p-3 rounded-lg border-2 transition-all ${
                         active
-                          ? "border-primary ring-2 ring-primary/20 bg-primary/5"
-                          : "border-border hover:border-primary/40 bg-card"
+                          ? 'border-primary ring-2 ring-primary/20 bg-primary/5'
+                          : 'border-border hover:border-primary/40 bg-card'
                       }`}
                     >
                       <div className="flex items-start justify-between mb-1">
-                        <Badge variant="outline" className={`text-xs ${t.color}`}>
+                        <Badge
+                          variant="outline"
+                          className={`text-xs ${t.color}`}
+                        >
                           {t.label}
                         </Badge>
-                        {active && <CheckCircle2 className="w-4 h-4 text-primary" />}
+                        {active && (
+                          <CheckCircle2 className="w-4 h-4 text-primary" />
+                        )}
                       </div>
                       <p className="text-sm font-bold mt-2">→ {t.table}</p>
-                      <p className="text-xs text-muted-foreground mt-1">{t.description}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {t.description}
+                      </p>
                       <p className="text-xs mt-2 font-medium">
-                        {count} ligne{count > 1 ? "s" : ""} actuellement
+                        {count} ligne{count > 1 ? 's' : ''} actuellement
                       </p>
                     </button>
                   );
@@ -1144,28 +1450,47 @@ const handleCrudDelete = async () => {
                     Étape 2 — Sélectionner le fichier {importTarget.label}
                   </CardTitle>
                   <CardDescription>
-                    Le fichier sera importé dans la table{" "}
-                    <code className="bg-muted px-1 rounded">{importTarget.table}</code>
+                    Le fichier sera importé dans la table{' '}
+                    <code className="bg-muted px-1 rounded">
+                      {importTarget.table}
+                    </code>
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {isExamenImport && (
                     <div className="flex flex-wrap items-center gap-2 p-3 rounded-md border border-primary/40 bg-primary/5">
-                      <Label htmlFor="exam-year" className="text-sm font-semibold whitespace-nowrap">
-                        Année scolaire {isCepeImport ? "CEPE" : "BEPC"} <span className="text-destructive">*</span>
+                      <Label
+                        htmlFor="exam-year"
+                        className="text-sm font-semibold whitespace-nowrap"
+                      >
+                        Année scolaire {isCepeImport ? 'CEPE' : 'BEPC'}{' '}
+                        <span className="text-destructive">*</span>
                       </Label>
-                      <Select value={importYear} onValueChange={setImportYear} disabled={importing}>
-                        <SelectTrigger id="exam-year" className="w-40 bg-background">
+                      <Select
+                        value={importYear}
+                        onValueChange={setImportYear}
+                        disabled={importing}
+                      >
+                        <SelectTrigger
+                          id="exam-year"
+                          className="w-40 bg-background"
+                        >
                           <SelectValue placeholder="— Choisir —" />
                         </SelectTrigger>
                         <SelectContent>
-                          {Array.from({ length: 21 }, (_, k) => new Date().getFullYear() + 2 - k).map((y) => (
-                            <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                          {Array.from(
+                            { length: 21 },
+                            (_, k) => new Date().getFullYear() + 2 - k
+                          ).map((y) => (
+                            <SelectItem key={y} value={String(y)}>
+                              {y}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                       <p className="text-xs text-muted-foreground">
-                        Obligatoire. Cette année écrasera celle du fichier et remplacera les données existantes pour la même année.
+                        Obligatoire. Cette année écrasera celle du fichier et
+                        remplacera les données existantes pour la même année.
                       </p>
                     </div>
                   )}
@@ -1191,13 +1516,15 @@ const handleCrudDelete = async () => {
                   </div>
                   {importData && (
                     <p className="text-sm text-muted-foreground">
-                      ✅ <strong>{displayedImportRowCount}</strong> lignes,{" "}
-                      <strong>{importData.headers.length}</strong> colonnes détectées
+                      ✅ <strong>{displayedImportRowCount}</strong> lignes,{' '}
+                      <strong>{importData.headers.length}</strong> colonnes
+                      détectées
                     </p>
                   )}
                   {parsingFile && (
                     <p className="text-sm text-muted-foreground flex items-center gap-2">
-                      <Loader2 className="w-4 h-4 animate-spin" /> Analyse du fichier en cours…
+                      <Loader2 className="w-4 h-4 animate-spin" /> Analyse du
+                      fichier en cours…
                     </p>
                   )}
                 </CardContent>
@@ -1212,7 +1539,8 @@ const handleCrudDelete = async () => {
                     Étape 3 — Vérifier la correspondance des colonnes
                   </CardTitle>
                   <CardDescription>
-                    Auto-détection par nom. Désélectionnez les colonnes à ignorer.
+                    Auto-détection par nom. Désélectionnez les colonnes à
+                    ignorer.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -1228,17 +1556,19 @@ const handleCrudDelete = async () => {
                       <TableBody>
                         {importData.headers.map((h, i) => (
                           <TableRow key={i}>
-                            <TableCell className="font-medium text-xs">{h}</TableCell>
+                            <TableCell className="font-medium text-xs">
+                              {h}
+                            </TableCell>
                             <TableCell className="text-xs text-muted-foreground max-w-32 truncate">
-                              {String(importData.rows[0]?.[i] ?? "")}
+                              {String(importData.rows[0]?.[i] ?? '')}
                             </TableCell>
                             <TableCell>
                               <Select
-                                value={columnMapping[h] || "_skip"}
+                                value={columnMapping[h] || '_skip'}
                                 onValueChange={(v) =>
                                   setColumnMapping((p) => ({
                                     ...p,
-                                    [h]: v === "_skip" ? "" : v,
+                                    [h]: v === '_skip' ? '' : v,
                                   }))
                                 }
                               >
@@ -1246,9 +1576,14 @@ const handleCrudDelete = async () => {
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="_skip">— Ignorer —</SelectItem>
+                                  <SelectItem value="_skip">
+                                    — Ignorer —
+                                  </SelectItem>
                                   {effectiveTableColumns.map((c) => (
-                                    <SelectItem key={c.column_name} value={c.column_name}>
+                                    <SelectItem
+                                      key={c.column_name}
+                                      value={c.column_name}
+                                    >
                                       {c.column_name} ({c.data_type})
                                     </SelectItem>
                                   ))}
@@ -1261,7 +1596,12 @@ const handleCrudDelete = async () => {
                     </Table>
                   </div>
 
-                  <Button onClick={handleImport} disabled={importing || parsingFile} className="w-full" size="lg">
+                  <Button
+                    onClick={handleImport}
+                    disabled={importing || parsingFile}
+                    className="w-full"
+                    size="lg"
+                  >
                     {importing ? (
                       <>
                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -1270,7 +1610,8 @@ const handleCrudDelete = async () => {
                     ) : (
                       <>
                         <Download className="w-4 h-4 mr-2" />
-                        Importer {displayedImportRowCount} lignes dans {importTarget.table}
+                        Importer {displayedImportRowCount} lignes dans{' '}
+                        {importTarget.table}
                       </>
                     )}
                   </Button>
@@ -1302,7 +1643,7 @@ const handleCrudDelete = async () => {
                 disabled={crudLoading}
               >
                 <RefreshCw
-                  className={`w-4 h-4 mr-1 ${crudLoading ? "animate-spin" : ""}`}
+                  className={`w-4 h-4 mr-1 ${crudLoading ? 'animate-spin' : ''}`}
                 />
                 Actualiser
               </Button>
@@ -1316,7 +1657,7 @@ const handleCrudDelete = async () => {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      {(crudDisplayCols[crudTable] || ["id"]).map((c) => (
+                      {(crudDisplayCols[crudTable] || ['id']).map((c) => (
                         <TableHead key={c}>{c}</TableHead>
                       ))}
                       <TableHead className="text-right">Actions</TableHead>
@@ -1326,7 +1667,9 @@ const handleCrudDelete = async () => {
                     {crudLoading ? (
                       <TableRow>
                         <TableCell
-                          colSpan={(crudDisplayCols[crudTable]?.length || 1) + 1}
+                          colSpan={
+                            (crudDisplayCols[crudTable]?.length || 1) + 1
+                          }
                           className="text-center py-8"
                         >
                           <Loader2 className="w-6 h-6 animate-spin mx-auto" />
@@ -1335,7 +1678,9 @@ const handleCrudDelete = async () => {
                     ) : crudRowsList.length === 0 ? (
                       <TableRow>
                         <TableCell
-                          colSpan={(crudDisplayCols[crudTable]?.length || 1) + 1}
+                          colSpan={
+                            (crudDisplayCols[crudTable]?.length || 1) + 1
+                          }
                           className="text-center py-8 text-muted-foreground"
                         >
                           Aucune donnée. Importez via l'onglet Import.
@@ -1344,13 +1689,13 @@ const handleCrudDelete = async () => {
                     ) : (
                       crudRowsList.map((r) => (
                         <TableRow key={r.id}>
-                          {(crudDisplayCols[crudTable] || ["id"]).map((c) => (
+                          {(crudDisplayCols[crudTable] || ['id']).map((c) => (
                             <TableCell key={c} className="text-xs">
                               {r[c] === null || r[c] === undefined
-                                ? "—"
-                                : typeof r[c] === "number"
-                                ? Number(r[c]).toLocaleString("fr-FR")
-                                : String(r[c])}
+                                ? '—'
+                                : typeof r[c] === 'number'
+                                  ? Number(r[c]).toLocaleString('fr-FR')
+                                  : String(r[c])}
                             </TableCell>
                           ))}
                           <TableCell className="text-right">
@@ -1401,7 +1746,7 @@ const handleCrudDelete = async () => {
                 disabled={loadingUsers}
               >
                 <RefreshCw
-                  className={`w-4 h-4 mr-1 ${loadingUsers ? "animate-spin" : ""}`}
+                  className={`w-4 h-4 mr-1 ${loadingUsers ? 'animate-spin' : ''}`}
                 />
                 Actualiser
               </Button>
@@ -1436,7 +1781,10 @@ const handleCrudDelete = async () => {
                       </TableRow>
                     ) : filteredUsers.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                        <TableCell
+                          colSpan={9}
+                          className="text-center py-8 text-muted-foreground"
+                        >
                           Aucun utilisateur trouvé
                         </TableCell>
                       </TableRow>
@@ -1446,23 +1794,26 @@ const handleCrudDelete = async () => {
                           <TableCell className="font-medium text-sm">
                             {u.username}
                             {u.username === user.username && (
-                              <Badge variant="outline" className="ml-2 text-[10px]">
+                              <Badge
+                                variant="outline"
+                                className="ml-2 text-[10px]"
+                              >
                                 vous
                               </Badge>
                             )}
                           </TableCell>
                           <TableCell className="text-sm">
-                            {`${u.first_name} ${u.last_name}`.trim() || "—"}
+                            {`${u.first_name} ${u.last_name}`.trim() || '—'}
                           </TableCell>
                           <TableCell className="text-muted-foreground text-xs">
-                            {u.email || "—"}
+                            {u.email || '—'}
                           </TableCell>
                           <TableCell className="text-center">
                             <Badge
-                              variant={u.is_active ? "default" : "destructive"}
+                              variant={u.is_active ? 'default' : 'destructive'}
                               className="text-xs"
                             >
-                              {u.is_active ? "Oui" : "Non"}
+                              {u.is_active ? 'Oui' : 'Non'}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-center">
@@ -1481,12 +1832,18 @@ const handleCrudDelete = async () => {
                               </Badge>
                             )}
                           </TableCell>
-                          <TableCell className="text-xs">{u.dren || "—"}</TableCell>
-                          <TableCell className="text-xs">{u.cisco || "—"}</TableCell>
+                          <TableCell className="text-xs">
+                            {u.dren || '—'}
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            {u.cisco || '—'}
+                          </TableCell>
                           <TableCell className="text-xs text-muted-foreground">
                             {u.last_login
-                              ? new Date(u.last_login).toLocaleDateString("fr-FR")
-                              : "Jamais"}
+                              ? new Date(u.last_login).toLocaleDateString(
+                                  'fr-FR'
+                                )
+                              : 'Jamais'}
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex gap-1 justify-end">
@@ -1556,12 +1913,12 @@ const handleCrudDelete = async () => {
 
                     <span
                       className={`text-sm font-medium px-3 py-1 rounded-full ${
-                        sigConfig.pointage
+                        sigConfig?.pointage
                           ? 'bg-green-100 text-green-700'
                           : 'bg-gray-100 text-gray-600'
                       }`}
                     >
-                      {sigConfig.pointage ? '✅ Activé' : '❌ Désactivé'}
+                      {sigConfig?.pointage ? '✅ Activé' : '❌ Désactivé'}
                     </span>
                   </div>
                 </div>
@@ -1589,12 +1946,12 @@ const handleCrudDelete = async () => {
 
                     <span
                       className={`text-sm font-medium px-3 py-1 rounded-full ${
-                        sigConfig.deplacement
+                        sigConfig?.deplacement
                           ? 'bg-green-100 text-green-700'
                           : 'bg-gray-100 text-gray-600'
                       }`}
                     >
-                      {sigConfig.deplacement ? '✅ Activé' : '❌ Désactivé'}
+                      {sigConfig?.deplacement ? '✅ Activé' : '❌ Désactivé'}
                     </span>
                   </div>
                 </div>
@@ -1622,12 +1979,12 @@ const handleCrudDelete = async () => {
 
                     <span
                       className={`text-sm font-medium px-3 py-1 rounded-full ${
-                        sigConfig.validation_deplacement
+                        sigConfig?.validation_deplacement
                           ? 'bg-green-100 text-green-700'
                           : 'bg-gray-100 text-gray-600'
                       }`}
                     >
-                      {sigConfig.validation_deplacement
+                      {sigConfig?.validation_deplacement
                         ? '✅ Activé'
                         : '❌ Désactivé'}
                     </span>
@@ -1657,7 +2014,9 @@ const handleCrudDelete = async () => {
                 <Label>Identifiant *</Label>
                 <Input
                   value={formData.username}
-                  onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, username: e.target.value })
+                  }
                 />
               </div>
               <div>
@@ -1665,21 +2024,27 @@ const handleCrudDelete = async () => {
                 <Input
                   type="password"
                   value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, password: e.target.value })
+                  }
                 />
               </div>
               <div>
                 <Label>Nom</Label>
                 <Input
                   value={formData.first_name}
-                  onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, first_name: e.target.value })
+                  }
                 />
               </div>
               <div>
                 <Label>Prénom</Label>
                 <Input
                   value={formData.last_name}
-                  onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, last_name: e.target.value })
+                  }
                 />
               </div>
             </div>
@@ -1687,7 +2052,9 @@ const handleCrudDelete = async () => {
               <Label>Email</Label>
               <Input
                 value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, email: e.target.value })
+                }
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -1695,14 +2062,18 @@ const handleCrudDelete = async () => {
                 <Label>DREN</Label>
                 <Input
                   value={formData.dren}
-                  onChange={(e) => setFormData({ ...formData, dren: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, dren: e.target.value })
+                  }
                 />
               </div>
               <div>
                 <Label>CISCO</Label>
                 <Input
                   value={formData.cisco}
-                  onChange={(e) => setFormData({ ...formData, cisco: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, cisco: e.target.value })
+                  }
                 />
               </div>
             </div>
@@ -1710,21 +2081,27 @@ const handleCrudDelete = async () => {
               <div className="flex items-center gap-2">
                 <Switch
                   checked={formData.is_active}
-                  onCheckedChange={(v) => setFormData({ ...formData, is_active: v })}
+                  onCheckedChange={(v) =>
+                    setFormData({ ...formData, is_active: v })
+                  }
                 />
                 <Label>Actif</Label>
               </div>
               <div className="flex items-center gap-2">
                 <Switch
                   checked={formData.is_staff}
-                  onCheckedChange={(v) => setFormData({ ...formData, is_staff: v })}
+                  onCheckedChange={(v) =>
+                    setFormData({ ...formData, is_staff: v })
+                  }
                 />
                 <Label>Staff</Label>
               </div>
               <div className="flex items-center gap-2">
                 <Switch
                   checked={formData.is_superuser}
-                  onCheckedChange={(v) => setFormData({ ...formData, is_superuser: v })}
+                  onCheckedChange={(v) =>
+                    setFormData({ ...formData, is_superuser: v })
+                  }
                 />
                 <Label>Admin</Label>
               </div>
@@ -1755,14 +2132,18 @@ const handleCrudDelete = async () => {
                 <Label>Nom</Label>
                 <Input
                   value={editForm.first_name}
-                  onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, first_name: e.target.value })
+                  }
                 />
               </div>
               <div>
                 <Label>Prénom</Label>
                 <Input
                   value={editForm.last_name}
-                  onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, last_name: e.target.value })
+                  }
                 />
               </div>
             </div>
@@ -1770,7 +2151,9 @@ const handleCrudDelete = async () => {
               <Label>Email</Label>
               <Input
                 value={editForm.email}
-                onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, email: e.target.value })
+                }
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -1778,14 +2161,18 @@ const handleCrudDelete = async () => {
                 <Label>DREN</Label>
                 <Input
                   value={editForm.dren}
-                  onChange={(e) => setEditForm({ ...editForm, dren: e.target.value })}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, dren: e.target.value })
+                  }
                 />
               </div>
               <div>
                 <Label>CISCO</Label>
                 <Input
                   value={editForm.cisco}
-                  onChange={(e) => setEditForm({ ...editForm, cisco: e.target.value })}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, cisco: e.target.value })
+                  }
                 />
               </div>
             </div>
@@ -1794,28 +2181,36 @@ const handleCrudDelete = async () => {
               <Input
                 type="password"
                 value={editForm.newPassword}
-                onChange={(e) => setEditForm({ ...editForm, newPassword: e.target.value })}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, newPassword: e.target.value })
+                }
               />
             </div>
             <div className="flex items-center gap-6">
               <div className="flex items-center gap-2">
                 <Switch
                   checked={editForm.is_active}
-                  onCheckedChange={(v) => setEditForm({ ...editForm, is_active: v })}
+                  onCheckedChange={(v) =>
+                    setEditForm({ ...editForm, is_active: v })
+                  }
                 />
                 <Label>Actif</Label>
               </div>
               <div className="flex items-center gap-2">
                 <Switch
                   checked={editForm.is_staff}
-                  onCheckedChange={(v) => setEditForm({ ...editForm, is_staff: v })}
+                  onCheckedChange={(v) =>
+                    setEditForm({ ...editForm, is_staff: v })
+                  }
                 />
                 <Label>Staff</Label>
               </div>
               <div className="flex items-center gap-2">
                 <Switch
                   checked={editForm.is_superuser}
-                  onCheckedChange={(v) => setEditForm({ ...editForm, is_superuser: v })}
+                  onCheckedChange={(v) =>
+                    setEditForm({ ...editForm, is_superuser: v })
+                  }
                 />
                 <Label>Admin</Label>
               </div>
@@ -1839,7 +2234,8 @@ const handleCrudDelete = async () => {
           <DialogHeader>
             <DialogTitle>Supprimer l'utilisateur</DialogTitle>
             <DialogDescription>
-              Supprimer <strong>{showDelete?.username}</strong> ? Action irréversible.
+              Supprimer <strong>{showDelete?.username}</strong> ? Action
+              irréversible.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -1863,8 +2259,8 @@ const handleCrudDelete = async () => {
               Vider la table {showTruncate?.table}
             </DialogTitle>
             <DialogDescription>
-              Toutes les données de <strong>{showTruncate?.table}</strong> seront supprimées.
-              Cette action est irréversible.
+              Toutes les données de <strong>{showTruncate?.table}</strong>{' '}
+              seront supprimées. Cette action est irréversible.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -1908,23 +2304,24 @@ const handleCrudDelete = async () => {
               Modifier ligne #{editRow?.id} de {crudTable}
             </DialogTitle>
             <DialogDescription>
-              Modifiez les indicateurs principaux. Les champs non listés restent inchangés.
+              Modifiez les indicateurs principaux. Les champs non listés restent
+              inchangés.
             </DialogDescription>
           </DialogHeader>
           {editRow && (
             <div className="grid grid-cols-2 gap-3">
               {Object.keys(editRow)
-                .filter((k) => !["id", "imported_at"].includes(k))
+                .filter((k) => !['id', 'imported_at'].includes(k))
                 .slice(0, 30)
                 .map((k) => (
                   <div key={k}>
                     <Label className="text-xs">{k}</Label>
                     <Input
-                      value={editRow[k] ?? ""}
+                      value={editRow[k] ?? ''}
                       onChange={(e) =>
                         setEditRow({
                           ...editRow,
-                          [k]: e.target.value === "" ? null : e.target.value,
+                          [k]: e.target.value === '' ? null : e.target.value,
                         })
                       }
                       className="h-8 text-xs"
