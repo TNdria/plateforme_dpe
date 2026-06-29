@@ -168,23 +168,29 @@ export const generateMultiPagePdf = async (
     svgRestore.forEach((fn) => fn());
     ancestorRestore.forEach((fn) => fn());
 
-    // Width-fit ratio (mm per pixel)
-    const ratio = usableW / canvas.width;
-    const fullImgHmm = canvas.height * ratio;
+    // Fit uniformly inside the A3 usable area, then upscale to fill the page
+    // vertically (so each A3 page is well filled top→bottom, left→right).
+    const widthRatio = usableW / canvas.width;
+    const heightRatio = usableH / canvas.height;
+    const fitRatio = Math.min(widthRatio, heightRatio);
+    const fullImgHmm = canvas.height * widthRatio;
 
     if (fullImgHmm <= usableH) {
+      // Content shorter than a page → scale up to fill the A3 page entirely
+      const finalW = canvas.width * fitRatio;
+      const finalH = canvas.height * fitRatio;
       const imgData = canvas.toDataURL('image/png');
       renderedPages.push({
         imgData,
-        imgW: usableW,
-        imgH: fullImgHmm,
-        x: margin,
-        y: contentTop,
+        imgW: finalW,
+        imgH: finalH,
+        x: margin + (usableW - finalW) / 2,
+        y: contentTop + (usableH - finalH) / 2,
         sectionIndex: i,
       });
     } else {
       // Slice the tall canvas into A3-page-sized chunks (preserving sharpness)
-      const sliceHpx = Math.floor(usableH / ratio);
+      const sliceHpx = Math.floor(usableH / widthRatio);
       let yPx = 0;
       while (yPx < canvas.height) {
         const remaining = canvas.height - yPx;
@@ -201,7 +207,7 @@ export const generateMultiPagePdf = async (
         renderedPages.push({
           imgData: sliceData,
           imgW: usableW,
-          imgH: thisSliceHpx * ratio,
+          imgH: thisSliceHpx * widthRatio,
           x: margin,
           y: contentTop,
           sectionIndex: i,

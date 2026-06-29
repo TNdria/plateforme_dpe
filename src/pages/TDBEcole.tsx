@@ -197,7 +197,7 @@ const TDBEcole = () => {
     };
 
     return (
-      <div ref={printRef} style={{ width: '100%', maxWidth: '1100px', margin: '0 auto', padding: '8px', font: '10px verdana', background: '#fff', color: '#000' }}>
+      <div ref={printRef} style={{ width: '100%', maxWidth: '1191px', margin: '0 auto', padding: '8px', font: '10px verdana', background: '#fff', color: '#000' }}>
         {/* HEADER — style PDF CEG */}
         <div style={{ border: '1.5px solid #000' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', border: 'none' }}>

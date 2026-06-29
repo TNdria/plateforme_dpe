@@ -241,7 +241,7 @@ const TDBZap = () => {
     const redCisco = pctVal(Number(c.ressources?.red_g||0)+Number(c.ressources?.red_f||0), c.ressources?.nbr_eleve);
 
     return (
-      <div ref={printRef} style={{ width: '100%', maxWidth: '1100px', margin: '0 auto', padding: '8px', font: '10px verdana', background: '#fff', userSelect: 'text' }}>
+      <div ref={printRef} style={{ width: '100%', maxWidth: '1191px', margin: '0 auto', padding: '8px', font: '10px verdana', background: '#fff', userSelect: 'text' }}>
         {/* HEADER */}
         <div style={{ border: '2px solid #000', padding: '6px 10px' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', border: 'none' }}>

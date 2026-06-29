@@ -10,61 +10,511 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.1"
+    PostgrestVersion: "13.0.5"
   }
   public: {
     Tables: {
+      app_settings: {
+        Row: {
+          key: string
+          updated_at: string
+          value: Json
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          value: Json
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          value?: Json
+        }
+        Relationships: []
+      }
       tdb_cisco: {
         Row: {
           CISCO: string | null
           CODE_CISCO: number | null
           CODE_DREN: number | null
-          data: Json
           DREN: string | null
+          ecole_continue: number | null
+          electricite: number | null
+          eleve_2km: number | null
+          ens_classe: number | null
+          ens_im: number | null
+          fr_sc1: number | null
+          fr_sc2: number | null
+          fram_nonsub: number | null
+          fram_sub: number | null
           id: number
-          imported_at: string
+          imported_at: string | null
+          maths_sc1: number | null
+          maths_sc2: number | null
+          mlg_sc1: number | null
+          mlg_sc2: number | null
+          montant_ce: number | null
+          nombre_eleves: number | null
+          nombre_section: number | null
+          point_eau: number | null
+          ratio_cpsdc: number | null
+          ratio_ece: number | null
+          ratio_efrs: number | null
+          ratio_em: number | null
+          ratio_emlg: number | null
+          ratio_emths: number | null
+          ratio_epa: number | null
+          ratio_eq: number | null
+          ratio_wc_com: number | null
+          ratio_wc_f: number | null
+          red_CE: number | null
+          red_CE_f: number | null
+          red_CE_g: number | null
+          red_CM1: number | null
+          red_CM1_f: number | null
+          red_CM1_g: number | null
+          red_CM2: number | null
+          red_CM2_f: number | null
+          red_CM2_g: number | null
+          red_CP1: number | null
+          red_CP1_f: number | null
+          red_CP1_g: number | null
+          red_CP2: number | null
+          red_CP2_f: number | null
+          red_CP2_g: number | null
+          red_ensemble: number | null
+          red_fille: number | null
+          red_garcons: number | null
+          sm_fr: number | null
+          sm_geo: number | null
+          sm_maths: number | null
+          sm_mlg: number | null
+          sm_op: number | null
+          sm_probleme: number | null
+          sm_svt: number | null
+          sm_tfm: number | null
+          sup_10_fr: number | null
+          sup_10_geo: number | null
+          sup_10_maths: number | null
+          sup_10_mlg: number | null
+          sup_10_op: number | null
+          sup_10_probleme: number | null
+          sup_10_svt: number | null
+          sup_10_tfm: number | null
+          TPA: number | null
+          tx_admis: number | null
+          tx_admis_f: number | null
+          tx_admis_g: number | null
+          txAbdcecm1: number | null
+          txAbdcm1cm2: number | null
+          txAbdcp1cp2: number | null
+          txAbdcp2ce: number | null
+          txAbdGlobal: number | null
+          txRetentionFilles: number | null
+          txRetentionGarcons: number | null
+          txRetentionTotal: number | null
         }
         Insert: {
           CISCO?: string | null
           CODE_CISCO?: number | null
           CODE_DREN?: number | null
-          data?: Json
           DREN?: string | null
+          ecole_continue?: number | null
+          electricite?: number | null
+          eleve_2km?: number | null
+          ens_classe?: number | null
+          ens_im?: number | null
+          fr_sc1?: number | null
+          fr_sc2?: number | null
+          fram_nonsub?: number | null
+          fram_sub?: number | null
           id?: number
-          imported_at?: string
+          imported_at?: string | null
+          maths_sc1?: number | null
+          maths_sc2?: number | null
+          mlg_sc1?: number | null
+          mlg_sc2?: number | null
+          montant_ce?: number | null
+          nombre_eleves?: number | null
+          nombre_section?: number | null
+          point_eau?: number | null
+          ratio_cpsdc?: number | null
+          ratio_ece?: number | null
+          ratio_efrs?: number | null
+          ratio_em?: number | null
+          ratio_emlg?: number | null
+          ratio_emths?: number | null
+          ratio_epa?: number | null
+          ratio_eq?: number | null
+          ratio_wc_com?: number | null
+          ratio_wc_f?: number | null
+          red_CE?: number | null
+          red_CE_f?: number | null
+          red_CE_g?: number | null
+          red_CM1?: number | null
+          red_CM1_f?: number | null
+          red_CM1_g?: number | null
+          red_CM2?: number | null
+          red_CM2_f?: number | null
+          red_CM2_g?: number | null
+          red_CP1?: number | null
+          red_CP1_f?: number | null
+          red_CP1_g?: number | null
+          red_CP2?: number | null
+          red_CP2_f?: number | null
+          red_CP2_g?: number | null
+          red_ensemble?: number | null
+          red_fille?: number | null
+          red_garcons?: number | null
+          sm_fr?: number | null
+          sm_geo?: number | null
+          sm_maths?: number | null
+          sm_mlg?: number | null
+          sm_op?: number | null
+          sm_probleme?: number | null
+          sm_svt?: number | null
+          sm_tfm?: number | null
+          sup_10_fr?: number | null
+          sup_10_geo?: number | null
+          sup_10_maths?: number | null
+          sup_10_mlg?: number | null
+          sup_10_op?: number | null
+          sup_10_probleme?: number | null
+          sup_10_svt?: number | null
+          sup_10_tfm?: number | null
+          TPA?: number | null
+          tx_admis?: number | null
+          tx_admis_f?: number | null
+          tx_admis_g?: number | null
+          txAbdcecm1?: number | null
+          txAbdcm1cm2?: number | null
+          txAbdcp1cp2?: number | null
+          txAbdcp2ce?: number | null
+          txAbdGlobal?: number | null
+          txRetentionFilles?: number | null
+          txRetentionGarcons?: number | null
+          txRetentionTotal?: number | null
         }
         Update: {
           CISCO?: string | null
           CODE_CISCO?: number | null
           CODE_DREN?: number | null
-          data?: Json
           DREN?: string | null
+          ecole_continue?: number | null
+          electricite?: number | null
+          eleve_2km?: number | null
+          ens_classe?: number | null
+          ens_im?: number | null
+          fr_sc1?: number | null
+          fr_sc2?: number | null
+          fram_nonsub?: number | null
+          fram_sub?: number | null
           id?: number
-          imported_at?: string
+          imported_at?: string | null
+          maths_sc1?: number | null
+          maths_sc2?: number | null
+          mlg_sc1?: number | null
+          mlg_sc2?: number | null
+          montant_ce?: number | null
+          nombre_eleves?: number | null
+          nombre_section?: number | null
+          point_eau?: number | null
+          ratio_cpsdc?: number | null
+          ratio_ece?: number | null
+          ratio_efrs?: number | null
+          ratio_em?: number | null
+          ratio_emlg?: number | null
+          ratio_emths?: number | null
+          ratio_epa?: number | null
+          ratio_eq?: number | null
+          ratio_wc_com?: number | null
+          ratio_wc_f?: number | null
+          red_CE?: number | null
+          red_CE_f?: number | null
+          red_CE_g?: number | null
+          red_CM1?: number | null
+          red_CM1_f?: number | null
+          red_CM1_g?: number | null
+          red_CM2?: number | null
+          red_CM2_f?: number | null
+          red_CM2_g?: number | null
+          red_CP1?: number | null
+          red_CP1_f?: number | null
+          red_CP1_g?: number | null
+          red_CP2?: number | null
+          red_CP2_f?: number | null
+          red_CP2_g?: number | null
+          red_ensemble?: number | null
+          red_fille?: number | null
+          red_garcons?: number | null
+          sm_fr?: number | null
+          sm_geo?: number | null
+          sm_maths?: number | null
+          sm_mlg?: number | null
+          sm_op?: number | null
+          sm_probleme?: number | null
+          sm_svt?: number | null
+          sm_tfm?: number | null
+          sup_10_fr?: number | null
+          sup_10_geo?: number | null
+          sup_10_maths?: number | null
+          sup_10_mlg?: number | null
+          sup_10_op?: number | null
+          sup_10_probleme?: number | null
+          sup_10_svt?: number | null
+          sup_10_tfm?: number | null
+          TPA?: number | null
+          tx_admis?: number | null
+          tx_admis_f?: number | null
+          tx_admis_g?: number | null
+          txAbdcecm1?: number | null
+          txAbdcm1cm2?: number | null
+          txAbdcp1cp2?: number | null
+          txAbdcp2ce?: number | null
+          txAbdGlobal?: number | null
+          txRetentionFilles?: number | null
+          txRetentionGarcons?: number | null
+          txRetentionTotal?: number | null
         }
         Relationships: []
       }
       tdb_dren: {
         Row: {
           CODE_DREN: number | null
-          data: Json
           DREN: string | null
+          ecole_continue: number | null
+          electricite: number | null
+          eleve_2km: number | null
+          ens_classe: number | null
+          ens_im: number | null
+          fr_sc1: number | null
+          fr_sc2: number | null
+          fram_nonsub: number | null
+          fram_sub: number | null
           id: number
-          imported_at: string
+          imported_at: string | null
+          maths_sc1: number | null
+          maths_sc2: number | null
+          mlg_sc1: number | null
+          mlg_sc2: number | null
+          montant_ce: number | null
+          nombre_eleves: number | null
+          nombre_section: number | null
+          point_eau: number | null
+          ratio_cpsdc: number | null
+          ratio_ece: number | null
+          ratio_efrs: number | null
+          ratio_em: number | null
+          ratio_emlg: number | null
+          ratio_emths: number | null
+          ratio_epa: number | null
+          ratio_eq: number | null
+          ratio_wc_com: number | null
+          ratio_wc_f: number | null
+          red_CE: number | null
+          red_CE_f: number | null
+          red_CE_g: number | null
+          red_CM1: number | null
+          red_CM1_f: number | null
+          red_CM1_g: number | null
+          red_CM2: number | null
+          red_CM2_f: number | null
+          red_CM2_g: number | null
+          red_CP1: number | null
+          red_CP1_f: number | null
+          red_CP1_g: number | null
+          red_CP2: number | null
+          red_CP2_f: number | null
+          red_CP2_g: number | null
+          red_ensemble: number | null
+          red_fille: number | null
+          red_garcons: number | null
+          sm_fr: number | null
+          sm_geo: number | null
+          sm_maths: number | null
+          sm_mlg: number | null
+          sm_op: number | null
+          sm_probleme: number | null
+          sm_svt: number | null
+          sm_tfm: number | null
+          sup_10_fr: number | null
+          sup_10_geo: number | null
+          sup_10_maths: number | null
+          sup_10_mlg: number | null
+          sup_10_op: number | null
+          sup_10_probleme: number | null
+          sup_10_svt: number | null
+          sup_10_tfm: number | null
+          TPA: number | null
+          tx_admis: number | null
+          tx_admis_f: number | null
+          tx_admis_g: number | null
+          txAbdcecm1: number | null
+          txAbdcm1cm2: number | null
+          txAbdcp1cp2: number | null
+          txAbdcp2ce: number | null
+          txAbdGlobal: number | null
+          txRetentionFilles: number | null
+          txRetentionGarcons: number | null
+          txRetentionTotal: number | null
         }
         Insert: {
           CODE_DREN?: number | null
-          data?: Json
           DREN?: string | null
+          ecole_continue?: number | null
+          electricite?: number | null
+          eleve_2km?: number | null
+          ens_classe?: number | null
+          ens_im?: number | null
+          fr_sc1?: number | null
+          fr_sc2?: number | null
+          fram_nonsub?: number | null
+          fram_sub?: number | null
           id?: number
-          imported_at?: string
+          imported_at?: string | null
+          maths_sc1?: number | null
+          maths_sc2?: number | null
+          mlg_sc1?: number | null
+          mlg_sc2?: number | null
+          montant_ce?: number | null
+          nombre_eleves?: number | null
+          nombre_section?: number | null
+          point_eau?: number | null
+          ratio_cpsdc?: number | null
+          ratio_ece?: number | null
+          ratio_efrs?: number | null
+          ratio_em?: number | null
+          ratio_emlg?: number | null
+          ratio_emths?: number | null
+          ratio_epa?: number | null
+          ratio_eq?: number | null
+          ratio_wc_com?: number | null
+          ratio_wc_f?: number | null
+          red_CE?: number | null
+          red_CE_f?: number | null
+          red_CE_g?: number | null
+          red_CM1?: number | null
+          red_CM1_f?: number | null
+          red_CM1_g?: number | null
+          red_CM2?: number | null
+          red_CM2_f?: number | null
+          red_CM2_g?: number | null
+          red_CP1?: number | null
+          red_CP1_f?: number | null
+          red_CP1_g?: number | null
+          red_CP2?: number | null
+          red_CP2_f?: number | null
+          red_CP2_g?: number | null
+          red_ensemble?: number | null
+          red_fille?: number | null
+          red_garcons?: number | null
+          sm_fr?: number | null
+          sm_geo?: number | null
+          sm_maths?: number | null
+          sm_mlg?: number | null
+          sm_op?: number | null
+          sm_probleme?: number | null
+          sm_svt?: number | null
+          sm_tfm?: number | null
+          sup_10_fr?: number | null
+          sup_10_geo?: number | null
+          sup_10_maths?: number | null
+          sup_10_mlg?: number | null
+          sup_10_op?: number | null
+          sup_10_probleme?: number | null
+          sup_10_svt?: number | null
+          sup_10_tfm?: number | null
+          TPA?: number | null
+          tx_admis?: number | null
+          tx_admis_f?: number | null
+          tx_admis_g?: number | null
+          txAbdcecm1?: number | null
+          txAbdcm1cm2?: number | null
+          txAbdcp1cp2?: number | null
+          txAbdcp2ce?: number | null
+          txAbdGlobal?: number | null
+          txRetentionFilles?: number | null
+          txRetentionGarcons?: number | null
+          txRetentionTotal?: number | null
         }
         Update: {
           CODE_DREN?: number | null
-          data?: Json
           DREN?: string | null
+          ecole_continue?: number | null
+          electricite?: number | null
+          eleve_2km?: number | null
+          ens_classe?: number | null
+          ens_im?: number | null
+          fr_sc1?: number | null
+          fr_sc2?: number | null
+          fram_nonsub?: number | null
+          fram_sub?: number | null
           id?: number
-          imported_at?: string
+          imported_at?: string | null
+          maths_sc1?: number | null
+          maths_sc2?: number | null
+          mlg_sc1?: number | null
+          mlg_sc2?: number | null
+          montant_ce?: number | null
+          nombre_eleves?: number | null
+          nombre_section?: number | null
+          point_eau?: number | null
+          ratio_cpsdc?: number | null
+          ratio_ece?: number | null
+          ratio_efrs?: number | null
+          ratio_em?: number | null
+          ratio_emlg?: number | null
+          ratio_emths?: number | null
+          ratio_epa?: number | null
+          ratio_eq?: number | null
+          ratio_wc_com?: number | null
+          ratio_wc_f?: number | null
+          red_CE?: number | null
+          red_CE_f?: number | null
+          red_CE_g?: number | null
+          red_CM1?: number | null
+          red_CM1_f?: number | null
+          red_CM1_g?: number | null
+          red_CM2?: number | null
+          red_CM2_f?: number | null
+          red_CM2_g?: number | null
+          red_CP1?: number | null
+          red_CP1_f?: number | null
+          red_CP1_g?: number | null
+          red_CP2?: number | null
+          red_CP2_f?: number | null
+          red_CP2_g?: number | null
+          red_ensemble?: number | null
+          red_fille?: number | null
+          red_garcons?: number | null
+          sm_fr?: number | null
+          sm_geo?: number | null
+          sm_maths?: number | null
+          sm_mlg?: number | null
+          sm_op?: number | null
+          sm_probleme?: number | null
+          sm_svt?: number | null
+          sm_tfm?: number | null
+          sup_10_fr?: number | null
+          sup_10_geo?: number | null
+          sup_10_maths?: number | null
+          sup_10_mlg?: number | null
+          sup_10_op?: number | null
+          sup_10_probleme?: number | null
+          sup_10_svt?: number | null
+          sup_10_tfm?: number | null
+          TPA?: number | null
+          tx_admis?: number | null
+          tx_admis_f?: number | null
+          tx_admis_g?: number | null
+          txAbdcecm1?: number | null
+          txAbdcm1cm2?: number | null
+          txAbdcp1cp2?: number | null
+          txAbdcp2ce?: number | null
+          txAbdGlobal?: number | null
+          txRetentionFilles?: number | null
+          txRetentionGarcons?: number | null
+          txRetentionTotal?: number | null
         }
         Relationships: []
       }
@@ -75,11 +525,86 @@ export type Database = {
           CODE_DREN: number | null
           CODE_ETAB: number | null
           CODE_ZAP: number | null
-          data: Json
           DREN: string | null
+          ecole_continue: string | null
+          electricite: string | null
+          eleve_2km: number | null
+          ens_classe: number | null
+          ens_im: number | null
+          fr_sc1: number | null
+          fr_sc2: number | null
+          fram_nonsub: number | null
+          fram_sub: number | null
           id: number
-          imported_at: string
+          imported_at: string | null
+          maths_sc1: number | null
+          maths_sc2: number | null
+          mlg_sc1: number | null
+          mlg_sc2: number | null
+          montant_ce: number | null
           NOM_ETAB: string | null
+          nombre_eleves: number | null
+          nombre_section: number | null
+          point_eau: string | null
+          profilRetEnsemble: string | null
+          profilRetFilles: string | null
+          profilRetGarcons: string | null
+          ratio_cpsdc: number | null
+          ratio_ece: number | null
+          ratio_efrs: number | null
+          ratio_em: number | null
+          ratio_emlg: number | null
+          ratio_emths: number | null
+          ratio_epa: number | null
+          ratio_eq: number | null
+          ratio_wc_com: number | null
+          ratio_wc_f: number | null
+          red_CE: number | null
+          red_CE_f: number | null
+          red_CE_g: number | null
+          red_CM1: number | null
+          red_CM1_f: number | null
+          red_CM1_g: number | null
+          red_CM2: number | null
+          red_CM2_f: number | null
+          red_CM2_g: number | null
+          red_CP1: number | null
+          red_CP1_f: number | null
+          red_CP1_g: number | null
+          red_CP2: number | null
+          red_CP2_f: number | null
+          red_CP2_g: number | null
+          red_ensemble: number | null
+          red_fille: number | null
+          red_garcons: number | null
+          sm_fr: number | null
+          sm_geo: number | null
+          sm_maths: number | null
+          sm_mlg: number | null
+          sm_op: number | null
+          sm_probleme: number | null
+          sm_svt: number | null
+          sm_tfm: number | null
+          sup_10_fr: number | null
+          sup_10_geo: number | null
+          sup_10_maths: number | null
+          sup_10_mlg: number | null
+          sup_10_op: number | null
+          sup_10_probleme: number | null
+          sup_10_svt: number | null
+          sup_10_tfm: number | null
+          TPA: number | null
+          tx_admis: number | null
+          tx_admis_f: number | null
+          tx_admis_g: number | null
+          txAbdcecm1: number | null
+          txAbdcm1cm2: number | null
+          txAbdcp1cp2: number | null
+          txAbdcp2ce: number | null
+          txAbdGlobal: number | null
+          txRetentionFilles: number | null
+          txRetentionGarcons: number | null
+          txRetentionTotal: number | null
           ZAP: string | null
         }
         Insert: {
@@ -88,11 +613,86 @@ export type Database = {
           CODE_DREN?: number | null
           CODE_ETAB?: number | null
           CODE_ZAP?: number | null
-          data?: Json
           DREN?: string | null
+          ecole_continue?: string | null
+          electricite?: string | null
+          eleve_2km?: number | null
+          ens_classe?: number | null
+          ens_im?: number | null
+          fr_sc1?: number | null
+          fr_sc2?: number | null
+          fram_nonsub?: number | null
+          fram_sub?: number | null
           id?: number
-          imported_at?: string
+          imported_at?: string | null
+          maths_sc1?: number | null
+          maths_sc2?: number | null
+          mlg_sc1?: number | null
+          mlg_sc2?: number | null
+          montant_ce?: number | null
           NOM_ETAB?: string | null
+          nombre_eleves?: number | null
+          nombre_section?: number | null
+          point_eau?: string | null
+          profilRetEnsemble?: string | null
+          profilRetFilles?: string | null
+          profilRetGarcons?: string | null
+          ratio_cpsdc?: number | null
+          ratio_ece?: number | null
+          ratio_efrs?: number | null
+          ratio_em?: number | null
+          ratio_emlg?: number | null
+          ratio_emths?: number | null
+          ratio_epa?: number | null
+          ratio_eq?: number | null
+          ratio_wc_com?: number | null
+          ratio_wc_f?: number | null
+          red_CE?: number | null
+          red_CE_f?: number | null
+          red_CE_g?: number | null
+          red_CM1?: number | null
+          red_CM1_f?: number | null
+          red_CM1_g?: number | null
+          red_CM2?: number | null
+          red_CM2_f?: number | null
+          red_CM2_g?: number | null
+          red_CP1?: number | null
+          red_CP1_f?: number | null
+          red_CP1_g?: number | null
+          red_CP2?: number | null
+          red_CP2_f?: number | null
+          red_CP2_g?: number | null
+          red_ensemble?: number | null
+          red_fille?: number | null
+          red_garcons?: number | null
+          sm_fr?: number | null
+          sm_geo?: number | null
+          sm_maths?: number | null
+          sm_mlg?: number | null
+          sm_op?: number | null
+          sm_probleme?: number | null
+          sm_svt?: number | null
+          sm_tfm?: number | null
+          sup_10_fr?: number | null
+          sup_10_geo?: number | null
+          sup_10_maths?: number | null
+          sup_10_mlg?: number | null
+          sup_10_op?: number | null
+          sup_10_probleme?: number | null
+          sup_10_svt?: number | null
+          sup_10_tfm?: number | null
+          TPA?: number | null
+          tx_admis?: number | null
+          tx_admis_f?: number | null
+          tx_admis_g?: number | null
+          txAbdcecm1?: number | null
+          txAbdcm1cm2?: number | null
+          txAbdcp1cp2?: number | null
+          txAbdcp2ce?: number | null
+          txAbdGlobal?: number | null
+          txRetentionFilles?: number | null
+          txRetentionGarcons?: number | null
+          txRetentionTotal?: number | null
           ZAP?: string | null
         }
         Update: {
@@ -101,11 +701,86 @@ export type Database = {
           CODE_DREN?: number | null
           CODE_ETAB?: number | null
           CODE_ZAP?: number | null
-          data?: Json
           DREN?: string | null
+          ecole_continue?: string | null
+          electricite?: string | null
+          eleve_2km?: number | null
+          ens_classe?: number | null
+          ens_im?: number | null
+          fr_sc1?: number | null
+          fr_sc2?: number | null
+          fram_nonsub?: number | null
+          fram_sub?: number | null
           id?: number
-          imported_at?: string
+          imported_at?: string | null
+          maths_sc1?: number | null
+          maths_sc2?: number | null
+          mlg_sc1?: number | null
+          mlg_sc2?: number | null
+          montant_ce?: number | null
           NOM_ETAB?: string | null
+          nombre_eleves?: number | null
+          nombre_section?: number | null
+          point_eau?: string | null
+          profilRetEnsemble?: string | null
+          profilRetFilles?: string | null
+          profilRetGarcons?: string | null
+          ratio_cpsdc?: number | null
+          ratio_ece?: number | null
+          ratio_efrs?: number | null
+          ratio_em?: number | null
+          ratio_emlg?: number | null
+          ratio_emths?: number | null
+          ratio_epa?: number | null
+          ratio_eq?: number | null
+          ratio_wc_com?: number | null
+          ratio_wc_f?: number | null
+          red_CE?: number | null
+          red_CE_f?: number | null
+          red_CE_g?: number | null
+          red_CM1?: number | null
+          red_CM1_f?: number | null
+          red_CM1_g?: number | null
+          red_CM2?: number | null
+          red_CM2_f?: number | null
+          red_CM2_g?: number | null
+          red_CP1?: number | null
+          red_CP1_f?: number | null
+          red_CP1_g?: number | null
+          red_CP2?: number | null
+          red_CP2_f?: number | null
+          red_CP2_g?: number | null
+          red_ensemble?: number | null
+          red_fille?: number | null
+          red_garcons?: number | null
+          sm_fr?: number | null
+          sm_geo?: number | null
+          sm_maths?: number | null
+          sm_mlg?: number | null
+          sm_op?: number | null
+          sm_probleme?: number | null
+          sm_svt?: number | null
+          sm_tfm?: number | null
+          sup_10_fr?: number | null
+          sup_10_geo?: number | null
+          sup_10_maths?: number | null
+          sup_10_mlg?: number | null
+          sup_10_op?: number | null
+          sup_10_probleme?: number | null
+          sup_10_svt?: number | null
+          sup_10_tfm?: number | null
+          TPA?: number | null
+          tx_admis?: number | null
+          tx_admis_f?: number | null
+          tx_admis_g?: number | null
+          txAbdcecm1?: number | null
+          txAbdcm1cm2?: number | null
+          txAbdcp1cp2?: number | null
+          txAbdcp2ce?: number | null
+          txAbdGlobal?: number | null
+          txRetentionFilles?: number | null
+          txRetentionGarcons?: number | null
+          txRetentionTotal?: number | null
           ZAP?: string | null
         }
         Relationships: []
@@ -151,43 +826,304 @@ export type Database = {
       }
       tdb_mada: {
         Row: {
-          CODE_MADA: number | null
-          data: Json
+          code_mada: number | null
+          ecole_continue: number | null
+          electricite: number | null
+          eleve_2km: number | null
+          ens_classe: number | null
+          ens_im: number | null
+          fr_sc1: number | null
+          fr_sc2: number | null
+          fram_nonsub: number | null
+          fram_sub: number | null
           id: number
-          imported_at: string
+          imported_at: string | null
+          maths_sc1: number | null
+          maths_sc2: number | null
+          mlg_sc1: number | null
+          mlg_sc2: number | null
+          montant_ce: number | null
+          nombre_eleves: number | null
+          nombre_section: number | null
+          point_eau: number | null
+          ratio_cpsdc: number | null
+          ratio_ece: number | null
+          ratio_efrs: number | null
+          ratio_em: number | null
+          ratio_emlg: number | null
+          ratio_emths: number | null
+          ratio_epa: number | null
+          ratio_eq: number | null
+          ratio_wc_com: number | null
+          ratio_wc_f: number | null
+          red_CE: number | null
+          red_CE_f: number | null
+          red_CE_g: number | null
+          red_CM1: number | null
+          red_CM1_f: number | null
+          red_CM1_g: number | null
+          red_CM2: number | null
+          red_CM2_f: number | null
+          red_CM2_g: number | null
+          red_CP1: number | null
+          red_CP1_f: number | null
+          red_CP1_g: number | null
+          red_CP2: number | null
+          red_CP2_f: number | null
+          red_CP2_g: number | null
+          red_ensemble: number | null
+          red_fille: number | null
+          red_garcons: number | null
+          sm_fr: number | null
+          sm_geo: number | null
+          sm_maths: number | null
+          sm_mlg: number | null
+          sm_op: number | null
+          sm_probleme: number | null
+          sm_svt: number | null
+          sm_tfm: number | null
+          sup_10_fr: number | null
+          sup_10_geo: number | null
+          sup_10_maths: number | null
+          sup_10_mlg: number | null
+          sup_10_op: number | null
+          sup_10_probleme: number | null
+          sup_10_svt: number | null
+          sup_10_tfm: number | null
+          TPA: number | null
+          tx_admis: number | null
+          tx_admis_f: number | null
+          tx_admis_g: number | null
+          txAbdcecm1: number | null
+          txAbdcm1cm2: number | null
+          txAbdcp1cp2: number | null
+          txAbdcp2ce: number | null
+          txAbdGlobal: number | null
+          txRetentionFilles: number | null
+          txRetentionGarcons: number | null
+          txRetentionTotal: number | null
         }
         Insert: {
-          CODE_MADA?: number | null
-          data?: Json
+          code_mada?: number | null
+          ecole_continue?: number | null
+          electricite?: number | null
+          eleve_2km?: number | null
+          ens_classe?: number | null
+          ens_im?: number | null
+          fr_sc1?: number | null
+          fr_sc2?: number | null
+          fram_nonsub?: number | null
+          fram_sub?: number | null
           id?: number
-          imported_at?: string
+          imported_at?: string | null
+          maths_sc1?: number | null
+          maths_sc2?: number | null
+          mlg_sc1?: number | null
+          mlg_sc2?: number | null
+          montant_ce?: number | null
+          nombre_eleves?: number | null
+          nombre_section?: number | null
+          point_eau?: number | null
+          ratio_cpsdc?: number | null
+          ratio_ece?: number | null
+          ratio_efrs?: number | null
+          ratio_em?: number | null
+          ratio_emlg?: number | null
+          ratio_emths?: number | null
+          ratio_epa?: number | null
+          ratio_eq?: number | null
+          ratio_wc_com?: number | null
+          ratio_wc_f?: number | null
+          red_CE?: number | null
+          red_CE_f?: number | null
+          red_CE_g?: number | null
+          red_CM1?: number | null
+          red_CM1_f?: number | null
+          red_CM1_g?: number | null
+          red_CM2?: number | null
+          red_CM2_f?: number | null
+          red_CM2_g?: number | null
+          red_CP1?: number | null
+          red_CP1_f?: number | null
+          red_CP1_g?: number | null
+          red_CP2?: number | null
+          red_CP2_f?: number | null
+          red_CP2_g?: number | null
+          red_ensemble?: number | null
+          red_fille?: number | null
+          red_garcons?: number | null
+          sm_fr?: number | null
+          sm_geo?: number | null
+          sm_maths?: number | null
+          sm_mlg?: number | null
+          sm_op?: number | null
+          sm_probleme?: number | null
+          sm_svt?: number | null
+          sm_tfm?: number | null
+          sup_10_fr?: number | null
+          sup_10_geo?: number | null
+          sup_10_maths?: number | null
+          sup_10_mlg?: number | null
+          sup_10_op?: number | null
+          sup_10_probleme?: number | null
+          sup_10_svt?: number | null
+          sup_10_tfm?: number | null
+          TPA?: number | null
+          tx_admis?: number | null
+          tx_admis_f?: number | null
+          tx_admis_g?: number | null
+          txAbdcecm1?: number | null
+          txAbdcm1cm2?: number | null
+          txAbdcp1cp2?: number | null
+          txAbdcp2ce?: number | null
+          txAbdGlobal?: number | null
+          txRetentionFilles?: number | null
+          txRetentionGarcons?: number | null
+          txRetentionTotal?: number | null
         }
         Update: {
-          CODE_MADA?: number | null
-          data?: Json
+          code_mada?: number | null
+          ecole_continue?: number | null
+          electricite?: number | null
+          eleve_2km?: number | null
+          ens_classe?: number | null
+          ens_im?: number | null
+          fr_sc1?: number | null
+          fr_sc2?: number | null
+          fram_nonsub?: number | null
+          fram_sub?: number | null
           id?: number
-          imported_at?: string
+          imported_at?: string | null
+          maths_sc1?: number | null
+          maths_sc2?: number | null
+          mlg_sc1?: number | null
+          mlg_sc2?: number | null
+          montant_ce?: number | null
+          nombre_eleves?: number | null
+          nombre_section?: number | null
+          point_eau?: number | null
+          ratio_cpsdc?: number | null
+          ratio_ece?: number | null
+          ratio_efrs?: number | null
+          ratio_em?: number | null
+          ratio_emlg?: number | null
+          ratio_emths?: number | null
+          ratio_epa?: number | null
+          ratio_eq?: number | null
+          ratio_wc_com?: number | null
+          ratio_wc_f?: number | null
+          red_CE?: number | null
+          red_CE_f?: number | null
+          red_CE_g?: number | null
+          red_CM1?: number | null
+          red_CM1_f?: number | null
+          red_CM1_g?: number | null
+          red_CM2?: number | null
+          red_CM2_f?: number | null
+          red_CM2_g?: number | null
+          red_CP1?: number | null
+          red_CP1_f?: number | null
+          red_CP1_g?: number | null
+          red_CP2?: number | null
+          red_CP2_f?: number | null
+          red_CP2_g?: number | null
+          red_ensemble?: number | null
+          red_fille?: number | null
+          red_garcons?: number | null
+          sm_fr?: number | null
+          sm_geo?: number | null
+          sm_maths?: number | null
+          sm_mlg?: number | null
+          sm_op?: number | null
+          sm_probleme?: number | null
+          sm_svt?: number | null
+          sm_tfm?: number | null
+          sup_10_fr?: number | null
+          sup_10_geo?: number | null
+          sup_10_maths?: number | null
+          sup_10_mlg?: number | null
+          sup_10_op?: number | null
+          sup_10_probleme?: number | null
+          sup_10_svt?: number | null
+          sup_10_tfm?: number | null
+          TPA?: number | null
+          tx_admis?: number | null
+          tx_admis_f?: number | null
+          tx_admis_g?: number | null
+          txAbdcecm1?: number | null
+          txAbdcm1cm2?: number | null
+          txAbdcp1cp2?: number | null
+          txAbdcp2ce?: number | null
+          txAbdGlobal?: number | null
+          txRetentionFilles?: number | null
+          txRetentionGarcons?: number | null
+          txRetentionTotal?: number | null
         }
         Relationships: []
       }
       tdb_ref: {
         Row: {
+          ALTITUDE: number | null
+          CISCO: string | null
+          CODE_CISCO: number | null
+          CODE_DREN: number | null
           CODE_ETAB: number | null
-          data: Json
+          CODE_ZAP: number | null
+          COMMUNE: string | null
+          DISTRICT: string | null
+          DREN: string | null
+          FOKONTANY: string | null
           id: number
-          imported_at: string
+          imported_at: string | null
+          LATITUDE: number | null
+          LONGITUDE: number | null
+          MILIEU: string | null
+          NOM_ETAB: string | null
+          REGION: string | null
+          SECTEUR: string | null
+          ZAP: string | null
         }
         Insert: {
+          ALTITUDE?: number | null
+          CISCO?: string | null
+          CODE_CISCO?: number | null
+          CODE_DREN?: number | null
           CODE_ETAB?: number | null
-          data?: Json
+          CODE_ZAP?: number | null
+          COMMUNE?: string | null
+          DISTRICT?: string | null
+          DREN?: string | null
+          FOKONTANY?: string | null
           id?: number
-          imported_at?: string
+          imported_at?: string | null
+          LATITUDE?: number | null
+          LONGITUDE?: number | null
+          MILIEU?: string | null
+          NOM_ETAB?: string | null
+          REGION?: string | null
+          SECTEUR?: string | null
+          ZAP?: string | null
         }
         Update: {
+          ALTITUDE?: number | null
+          CISCO?: string | null
+          CODE_CISCO?: number | null
+          CODE_DREN?: number | null
           CODE_ETAB?: number | null
-          data?: Json
+          CODE_ZAP?: number | null
+          COMMUNE?: string | null
+          DISTRICT?: string | null
+          DREN?: string | null
+          FOKONTANY?: string | null
           id?: number
-          imported_at?: string
+          imported_at?: string | null
+          LATITUDE?: number | null
+          LONGITUDE?: number | null
+          MILIEU?: string | null
+          NOM_ETAB?: string | null
+          REGION?: string | null
+          SECTEUR?: string | null
+          ZAP?: string | null
         }
         Relationships: []
       }
@@ -197,10 +1133,82 @@ export type Database = {
           CODE_CISCO: number | null
           CODE_DREN: number | null
           CODE_ZAP: number | null
-          data: Json
           DREN: string | null
+          ecole_continue: number | null
+          electricite: number | null
+          eleve_2km: number | null
+          ens_classe: number | null
+          ens_im: number | null
+          fr_sc1: number | null
+          fr_sc2: number | null
+          fram_nonsub: number | null
+          fram_sub: number | null
           id: number
-          imported_at: string
+          imported_at: string | null
+          maths_sc1: number | null
+          maths_sc2: number | null
+          mlg_sc1: number | null
+          mlg_sc2: number | null
+          montant_ce: number | null
+          nombre_eleves: number | null
+          nombre_section: number | null
+          point_eau: number | null
+          ratio_cpsdc: number | null
+          ratio_ece: number | null
+          ratio_efrs: number | null
+          ratio_em: number | null
+          ratio_emlg: number | null
+          ratio_emths: number | null
+          ratio_epa: number | null
+          ratio_eq: number | null
+          ratio_wc_com: number | null
+          ratio_wc_f: number | null
+          red_CE: number | null
+          red_CE_f: number | null
+          red_CE_g: number | null
+          red_CM1: number | null
+          red_CM1_f: number | null
+          red_CM1_g: number | null
+          red_CM2: number | null
+          red_CM2_f: number | null
+          red_CM2_g: number | null
+          red_CP1: number | null
+          red_CP1_f: number | null
+          red_CP1_g: number | null
+          red_CP2: number | null
+          red_CP2_f: number | null
+          red_CP2_g: number | null
+          red_ensemble: number | null
+          red_fille: number | null
+          red_garcons: number | null
+          sm_fr: number | null
+          sm_geo: number | null
+          sm_maths: number | null
+          sm_mlg: number | null
+          sm_op: number | null
+          sm_probleme: number | null
+          sm_svt: number | null
+          sm_tfm: number | null
+          sup_10_fr: number | null
+          sup_10_geo: number | null
+          sup_10_maths: number | null
+          sup_10_mlg: number | null
+          sup_10_op: number | null
+          sup_10_probleme: number | null
+          sup_10_svt: number | null
+          sup_10_tfm: number | null
+          TPA: number | null
+          tx_admis: number | null
+          tx_admis_f: number | null
+          tx_admis_g: number | null
+          txAbdcecm1: number | null
+          txAbdcm1cm2: number | null
+          txAbdcp1cp2: number | null
+          txAbdcp2ce: number | null
+          txAbdGlobal: number | null
+          txRetentionFilles: number | null
+          txRetentionGarcons: number | null
+          txRetentionTotal: number | null
           ZAP: string | null
         }
         Insert: {
@@ -208,10 +1216,82 @@ export type Database = {
           CODE_CISCO?: number | null
           CODE_DREN?: number | null
           CODE_ZAP?: number | null
-          data?: Json
           DREN?: string | null
+          ecole_continue?: number | null
+          electricite?: number | null
+          eleve_2km?: number | null
+          ens_classe?: number | null
+          ens_im?: number | null
+          fr_sc1?: number | null
+          fr_sc2?: number | null
+          fram_nonsub?: number | null
+          fram_sub?: number | null
           id?: number
-          imported_at?: string
+          imported_at?: string | null
+          maths_sc1?: number | null
+          maths_sc2?: number | null
+          mlg_sc1?: number | null
+          mlg_sc2?: number | null
+          montant_ce?: number | null
+          nombre_eleves?: number | null
+          nombre_section?: number | null
+          point_eau?: number | null
+          ratio_cpsdc?: number | null
+          ratio_ece?: number | null
+          ratio_efrs?: number | null
+          ratio_em?: number | null
+          ratio_emlg?: number | null
+          ratio_emths?: number | null
+          ratio_epa?: number | null
+          ratio_eq?: number | null
+          ratio_wc_com?: number | null
+          ratio_wc_f?: number | null
+          red_CE?: number | null
+          red_CE_f?: number | null
+          red_CE_g?: number | null
+          red_CM1?: number | null
+          red_CM1_f?: number | null
+          red_CM1_g?: number | null
+          red_CM2?: number | null
+          red_CM2_f?: number | null
+          red_CM2_g?: number | null
+          red_CP1?: number | null
+          red_CP1_f?: number | null
+          red_CP1_g?: number | null
+          red_CP2?: number | null
+          red_CP2_f?: number | null
+          red_CP2_g?: number | null
+          red_ensemble?: number | null
+          red_fille?: number | null
+          red_garcons?: number | null
+          sm_fr?: number | null
+          sm_geo?: number | null
+          sm_maths?: number | null
+          sm_mlg?: number | null
+          sm_op?: number | null
+          sm_probleme?: number | null
+          sm_svt?: number | null
+          sm_tfm?: number | null
+          sup_10_fr?: number | null
+          sup_10_geo?: number | null
+          sup_10_maths?: number | null
+          sup_10_mlg?: number | null
+          sup_10_op?: number | null
+          sup_10_probleme?: number | null
+          sup_10_svt?: number | null
+          sup_10_tfm?: number | null
+          TPA?: number | null
+          tx_admis?: number | null
+          tx_admis_f?: number | null
+          tx_admis_g?: number | null
+          txAbdcecm1?: number | null
+          txAbdcm1cm2?: number | null
+          txAbdcp1cp2?: number | null
+          txAbdcp2ce?: number | null
+          txAbdGlobal?: number | null
+          txRetentionFilles?: number | null
+          txRetentionGarcons?: number | null
+          txRetentionTotal?: number | null
           ZAP?: string | null
         }
         Update: {
@@ -219,10 +1299,82 @@ export type Database = {
           CODE_CISCO?: number | null
           CODE_DREN?: number | null
           CODE_ZAP?: number | null
-          data?: Json
           DREN?: string | null
+          ecole_continue?: number | null
+          electricite?: number | null
+          eleve_2km?: number | null
+          ens_classe?: number | null
+          ens_im?: number | null
+          fr_sc1?: number | null
+          fr_sc2?: number | null
+          fram_nonsub?: number | null
+          fram_sub?: number | null
           id?: number
-          imported_at?: string
+          imported_at?: string | null
+          maths_sc1?: number | null
+          maths_sc2?: number | null
+          mlg_sc1?: number | null
+          mlg_sc2?: number | null
+          montant_ce?: number | null
+          nombre_eleves?: number | null
+          nombre_section?: number | null
+          point_eau?: number | null
+          ratio_cpsdc?: number | null
+          ratio_ece?: number | null
+          ratio_efrs?: number | null
+          ratio_em?: number | null
+          ratio_emlg?: number | null
+          ratio_emths?: number | null
+          ratio_epa?: number | null
+          ratio_eq?: number | null
+          ratio_wc_com?: number | null
+          ratio_wc_f?: number | null
+          red_CE?: number | null
+          red_CE_f?: number | null
+          red_CE_g?: number | null
+          red_CM1?: number | null
+          red_CM1_f?: number | null
+          red_CM1_g?: number | null
+          red_CM2?: number | null
+          red_CM2_f?: number | null
+          red_CM2_g?: number | null
+          red_CP1?: number | null
+          red_CP1_f?: number | null
+          red_CP1_g?: number | null
+          red_CP2?: number | null
+          red_CP2_f?: number | null
+          red_CP2_g?: number | null
+          red_ensemble?: number | null
+          red_fille?: number | null
+          red_garcons?: number | null
+          sm_fr?: number | null
+          sm_geo?: number | null
+          sm_maths?: number | null
+          sm_mlg?: number | null
+          sm_op?: number | null
+          sm_probleme?: number | null
+          sm_svt?: number | null
+          sm_tfm?: number | null
+          sup_10_fr?: number | null
+          sup_10_geo?: number | null
+          sup_10_maths?: number | null
+          sup_10_mlg?: number | null
+          sup_10_op?: number | null
+          sup_10_probleme?: number | null
+          sup_10_svt?: number | null
+          sup_10_tfm?: number | null
+          TPA?: number | null
+          tx_admis?: number | null
+          tx_admis_f?: number | null
+          tx_admis_g?: number | null
+          txAbdcecm1?: number | null
+          txAbdcm1cm2?: number | null
+          txAbdcp1cp2?: number | null
+          txAbdcp2ce?: number | null
+          txAbdGlobal?: number | null
+          txRetentionFilles?: number | null
+          txRetentionGarcons?: number | null
+          txRetentionTotal?: number | null
           ZAP?: string | null
         }
         Relationships: []
