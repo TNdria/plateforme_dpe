@@ -93,12 +93,19 @@ const menuItems: { section?: string; items: MenuItem[] }[] = [
     section: "CARTOGRAPHIE",
     items: [
       {
+        label: "ORS",
+        icon: MapPin,
+        requiresAuth: true,
+        children: [
+          { label: "ORS Primaire", path: "/ors-primaire" },
+          { label: "ORS Collège", path: "/ors-college" },
+          { label: "ORS Lycée", path: "/ors-lycee" },
+        ],
+      },
+      {
         label: "Géolocalisation",
         icon: MapPin,
         children: [
-          { label: "ORS Primaire", path: "/ors-primaire", requiresAuth: true },
-          { label: "ORS Collège", path: "/ors-college", requiresAuth: true },
-          { label: "ORS Lycée", path: "/ors-lycee", requiresAuth: true },
           { label: "Établissement", path: "/sig" },
         ],
       },

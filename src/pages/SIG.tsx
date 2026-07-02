@@ -29,6 +29,9 @@ import {
   Filter,
   MapPin,
   ZoomIn,
+  Download,
+  FileImage,
+  Archive,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
@@ -42,8 +45,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import DataActionsBar from '@/components/admin/DataActionsBar';
-import { sumFields, BE_FIELDS, ME_FIELDS } from '../utils/sig';
-
+import { sumFields, BE_FIELDS, ME_FIELDS, NIVEAU_LABEL } from '../utils/sig';
 // ====================== CONFIG ======================
 const DJANGO_BASE_URL = 'https://dpe-men.mg';
 
@@ -207,7 +209,7 @@ const SIG = () => {
   const verificationMarkersRef = useRef<L.LayerGroup>(new L.LayerGroup());
   const markersRef = useRef<any[]>([]);
   const tempMarkersRef = useRef<any[]>([]);
-
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
   // ====================== STATE ======================
   const [drens, setDrens] = useState<Dren[]>([]);
   const [ciscos, setCiscos] = useState<Cisco[]>([]);
@@ -344,6 +346,7 @@ const SIG = () => {
       maxZoom: 24,
       attribution: '© MEN/DPE',
     });
+
     const OSM_LAYER = L.tileLayer(
       'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
       {
@@ -427,6 +430,33 @@ const SIG = () => {
       },
     });
     new FullscreenControl().addTo(map);
+
+    // Bouton Télécharger
+    const DownloadControl = L.Control.extend({
+      options: { position: 'topleft' as L.ControlPosition },
+      onAdd: () => {
+        const btn = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+        btn.innerHTML = `
+          <a href="#" title="Télécharger coordonnées des marqueurs actifs" 
+            style="font-size:16px;line-height:30px;width:30px;height:30px;display:flex;align-items:center;justify-content:center;">
+            <i class="fas fa-download"></i>
+          </a>`;
+
+        btn.onclick = (e: Event) => {
+          e.preventDefault();
+          const { total } = collectActiveMarkers();
+          if (total === 0) {
+            toast.error(
+              "Appliquez d'abord un filtre et activez au moins un groupe de marqueurs pour établissement et/ou village"
+            );
+            return;
+          }
+          setShowDownloadModal(true);
+        };
+        return btn;
+      },
+    });
+    new DownloadControl().addTo(map);
 
     // Légende
     const legend = new (L.Control.extend({
@@ -593,14 +623,6 @@ const SIG = () => {
             verifier: Boolean(permissions.verifier ?? true), // fallback sécurisé
           },
         });
-
-        // Debug temporaire (à supprimer après vérification)
-        /*console.log('✅ Config SIG chargée :', {
-          validationDeplacement:
-            getModule('validationDeplacement') ||
-            getModule('validation_deplacement'),
-          rawModules: modules,
-        });*/
       } catch (err) {
         //console.warn('❌ Erreur chargement config SIG → fallback', err);
         setSigConfig({
@@ -1069,51 +1091,61 @@ const SIG = () => {
       lc.addOverlay(etabLayersRef.current['layer_etabN3S1'], 'LYCEE PRIVÉ');
       lc.addOverlay(villageLayerRef.current, 'VILLAGES');
 
-      // ── CONTRÔLE AIRES ──
+      // ── CONTRÔLE AIRES (EPP, CEG, LYCEE) ──
       const aireCtrl = new (L.Control.extend({
         options: { position: 'topright' },
       }))();
+
       aireCtrl.onAdd = () => {
         const div = L.DomUtil.create('div', 'control-aire');
-        div.style.cssText =
-          'padding:6px 8px;background:rgba(255,255,255,0.8);font-size:12px;box-shadow:0 0 15px rgba(0,0,0,0.2);border:2px solid #999;border-radius:5px;line-height:2.2;';
         div.innerHTML = `
-          <label style="display:flex;align-items:center;gap:4px;cursor:pointer;margin:0;">
-            <input id="N1S0" class="ctrl_aire_etab" type="checkbox" style="width:15px;height:15px;" />
-            &nbsp;Aire EPP
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin:4px 0;">
+            <input id="aireN1S0" type="checkbox" style="width:16px;height:16px;" />
+            <span>Aire EPP (Primaire)</span>
           </label>
-          <label style="display:flex;align-items:center;gap:4px;cursor:pointer;margin:0;">
-            <input id="N2S0" class="ctrl_aire_etab" type="checkbox" style="width:15px;height:15px;" />
-            &nbsp;Aire CEG
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin:4px 0;">
+            <input id="aireN2S0" type="checkbox" style="width:16px;height:16px;" />
+            <span>Aire CEG (Collège)</span>
           </label>
-          <label style="display:flex;align-items:center;gap:4px;cursor:pointer;margin:0;">
-            <input id="N3S0" class="ctrl_aire_etab" type="checkbox" style="width:15px;height:15px;" />
-            &nbsp;Aire LYCEE
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin:4px 0;">
+            <input id="aireN3S0" type="checkbox" style="width:16px;height:16px;" />
+            <span>Aire LYCEE</span>
           </label>
         `;
+
         L.DomEvent.disableClickPropagation(div);
+
+        // Event listeners
         setTimeout(() => {
-          ['N1S0', 'N2S0', 'N3S0'].forEach((id) => {
-            const cb = document.getElementById(id) as HTMLInputElement;
+          ['N1S0', 'N2S0', 'N3S0'].forEach((niveau) => {
+            const cb = document.getElementById(
+              `aire${niveau}`
+            ) as HTMLInputElement;
             if (!cb) return;
+
             cb.addEventListener('change', () => {
-              const aireLayer = aireLayersRef.current[`aire_etab${id}`];
-              const etabLayer = etabLayersRef.current[`layer_etab${id}`];
-              if (cb.checked && etabLayer && map.hasLayer(etabLayer)) {
-                aireLayer?.addTo(map);
-              } else if (!cb.checked) {
-                aireLayer?.remove();
+              const aireLayer = aireLayersRef.current[`aire_etab${niveau}`];
+              const etabLayer = etabLayersRef.current[`layer_etab${niveau}`];
+              const key = niveau.trim().toUpperCase();
+              if (cb.checked) {
+                if (etabLayer && map.hasLayer(etabLayer)) {
+                  aireLayer?.addTo(map);
+                } else {
+                  toast.warning(
+                    `Activez d'abord le groupe ${NIVEAU_LABEL[key] ?? niveau}  dans le contrôle des couches`
+                  );
+                  cb.checked = false;
+                }
               } else {
-                toast.warning(
-                  "Veuillez afficher le groupe d'établissement correspondant"
-                );
-                cb.checked = false;
+                aireLayer?.remove();
               }
             });
           });
         }, 100);
+
         return div;
       };
+
       aireCtrl.addTo(map);
       ctrlAireRef.current = aireCtrl;
 
@@ -1248,28 +1280,26 @@ const SIG = () => {
 
   // ====================== DÉPLACEMENTS ======================
   const loadDeplacements = async () => {
-  try {
-    if (!selectedDren) {
-      toast.error("DREN obligatoire");
-      return;
+    try {
+      if (!selectedDren) {
+        toast.error('DREN obligatoire');
+        return;
+      }
+
+      const url =
+        selectedCisco > 0
+          ? `/sig/deplacements/non-valides/?dren=${selectedDren}&cisco=${selectedCisco}`
+          : `/sig/deplacements/non-valides/?dren=${selectedDren}`;
+
+      const response = await djangoGet(url);
+
+      setDeplacements(Array.isArray(response?.data) ? response.data : []);
+    } catch (e) {
+      console.error(e);
+      toast.error('Impossible de charger les déplacements');
+      setDeplacements([]);
     }
-
-    const url =
-      selectedCisco > 0
-        ? `/sig/deplacements/non-valides/?dren=${selectedDren}&cisco=${selectedCisco}`
-        : `/sig/deplacements/non-valides/?dren=${selectedDren}`;
-
-    const response = await djangoGet(url);
-
-    setDeplacements(
-      Array.isArray(response?.data) ? response.data : []
-    );
-  } catch (e) {
-    console.error(e);
-    toast.error("Impossible de charger les déplacements");
-    setDeplacements([]);
-  }
-};
+  };
 
   // valider_deplacement attend json.loads(request.body) avec {type_objet, id}
   const handleValider = async (item: any) => {
@@ -1430,6 +1460,294 @@ const SIG = () => {
   );
   const latrineC = isPositive(selectedSchool?.latrine);
 
+  // ====================== DOWNLOAD HELPERS ======================
+  const collectActiveMarkers = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return { etabs: [], villages: [], total: 0 };
+
+    const etabs: any[] = [];
+    const villages: any[] = [];
+
+    // Études actives (visibles)
+    Object.keys(etabLayersRef.current).forEach((key) => {
+      const layerGroup = etabLayersRef.current[key];
+      if (layerGroup && map.hasLayer(layerGroup)) {
+        layerGroup.eachLayer((layer: any) => {
+          if (layer instanceof L.Marker && layer.options?.properties) {
+            etabs.push(layer.options.properties);
+          }
+        });
+      }
+    });
+
+    // Villages actifs
+    if (villageLayerRef.current && map.hasLayer(villageLayerRef.current)) {
+      villageLayerRef.current.eachLayer((layer: any) => {
+        if (layer instanceof L.Marker && layer.properties) {
+          villages.push(layer.properties);
+        }
+      });
+    }
+
+    return {
+      etabs,
+      villages,
+      total: etabs.length + villages.length,
+    };
+  }, []);
+
+  const downloadData = (format: 'csv' | 'excel' | 'json' | 'geojson') => {
+    const { etabs, villages, total } = collectActiveMarkers();
+
+    if (total === 0) {
+      toast.error('Aucun marqueur actif à exporter');
+      return;
+    }
+
+    const data: any[] = [];
+
+    // Établissements
+    etabs.forEach((etab) => {
+      data.push({
+        TYPE: 'ETABLISSEMENT',
+        DREN: etab.DREN || '',
+        CODE_DREN: selectedDren,
+        CISCO: etab.CISCO || '',
+        CODE_CISCO: selectedCisco,
+        COMMUNE: etab.COMMUNE || '',
+        ZAP: etab.ZAP || '',
+        FOKONTANY: etab.FOKONTANY || '',
+        CODE_ETAB: etab.CODE_ETAB,
+        NOM_ETAB: etab.NOM_ETAB,
+        SECTEUR: etab.SECTEUR === 0 ? 'PUBLIC' : 'PRIVÉ',
+        LATITUDE: parseFloat(etab.latitude || 0).toFixed(6),
+        LONGITUDE: parseFloat(etab.longitude || 0).toFixed(6),
+        NIVEAU: NIVEAU_CONFIG[`n${etab.NIVEAU || 1}`]?.label || '',
+      });
+    });
+
+    // Villages
+    villages.forEach((v) => {
+      data.push({
+        TYPE: 'VILLAGE',
+        DREN: '', // rempli selon ton besoin
+        CODE_DREN: selectedDren,
+        CISCO: '',
+        CODE_CISCO: selectedCisco,
+        COMMUNE: '',
+        ZAP: '',
+        FOKONTANY: v.fokontany || '',
+        NOM_VILLAGE: v.name,
+        POPULATION: v.population || '',
+        LATITUDE: parseFloat(v.latitude || 0).toFixed(6),
+        LONGITUDE: parseFloat(v.longitude || 0).toFixed(6),
+      });
+    });
+
+    const timestamp = new Date()
+      .toISOString()
+      .slice(0, 19)
+      .replace(/[:T]/g, '-');
+    const baseName = `SIG_${selectedDren || 'national'}_${timestamp}`;
+
+    if (format === 'csv' || format === 'excel') {
+      const headers = Object.keys(data[0] || {});
+      let csvContent =
+        headers.join(',') +
+        '\n' +
+        data
+          .map((row) =>
+            headers
+              .map((h) => `"${String(row[h] || '').replace(/"/g, '""')}"`)
+              .join(',')
+          )
+          .join('\n');
+
+      const extension = format === 'excel' ? 'xlsx' : 'csv';
+      downloadFile(csvContent, `${baseName}.${extension}`, 'text/csv');
+
+      toast.success(
+        `${total} enregistrements exportés (${format.toUpperCase()})`
+      );
+    } else if (format === 'json') {
+      downloadFile(
+        JSON.stringify(data, null, 2),
+        `${baseName}.json`,
+        'application/json'
+      );
+    } else if (format === 'geojson') {
+      const features = data.map((item) => ({
+        type: 'Feature',
+        geometry: {
+          type: 'Point',
+          coordinates: [parseFloat(item.LONGITUDE), parseFloat(item.LATITUDE)],
+        },
+        properties: { ...item },
+      }));
+
+      const geojson = {
+        type: 'FeatureCollection',
+        features,
+        name: 'SIG Markers',
+        crs: {
+          type: 'name',
+          properties: { name: 'urn:ogc:def:crs:EPSG::4326' },
+        },
+      };
+
+      downloadFile(
+        JSON.stringify(geojson, null, 2),
+        `${baseName}.geojson`,
+        'application/geo+json'
+      );
+    }
+
+    setShowDownloadModal(false);
+  };
+
+  const downloadFile = (content: string, filename: string, mime: string) => {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // Télécharger tous les formats en ZIP
+  const downloadAllFormats = async () => {
+    const { etabs, villages, total } = collectActiveMarkers();
+
+    if (total === 0) {
+      toast.error('Aucun marqueur actif à exporter');
+      return;
+    }
+
+    try {
+      const JSZip = (await import('jszip')).default;
+      const zip = new JSZip();
+
+      const timestamp = new Date()
+        .toISOString()
+        .slice(0, 19)
+        .replace(/[:T]/g, '-');
+      const baseName = `SIG_${selectedDren || 'national'}_${timestamp}`;
+
+      // Générer les données une seule fois
+      const data: any[] = [];
+
+      // Établissements
+      etabs.forEach((etab) => {
+        data.push({
+          TYPE: 'ETABLISSEMENT',
+          DREN: etab.DREN || '',
+          CODE_DREN: selectedDren,
+          CISCO: etab.CISCO || '',
+          CODE_CISCO: selectedCisco,
+          COMMUNE: etab.COMMUNE || '',
+          ZAP: etab.ZAP || '',
+          FOKONTANY: etab.FOKONTANY || '',
+          CODE_ETAB: etab.CODE_ETAB,
+          NOM_ETAB: etab.NOM_ETAB,
+          SECTEUR: etab.SECTEUR === 0 ? 'PUBLIC' : 'PRIVÉ',
+          LATITUDE: parseFloat(etab.latitude || 0).toFixed(6),
+          LONGITUDE: parseFloat(etab.longitude || 0).toFixed(6),
+          NIVEAU: NIVEAU_CONFIG[`n${etab.NIVEAU || 1}`]?.label || '',
+        });
+      });
+
+      // Villages
+      villages.forEach((v) => {
+        data.push({
+          TYPE: 'VILLAGE',
+          DREN: '',
+          CODE_DREN: selectedDren,
+          CISCO: '',
+          CODE_CISCO: selectedCisco,
+          COMMUNE: '',
+          ZAP: '',
+          FOKONTANY: v.fokontany || '',
+          NOM_VILLAGE: v.name,
+          POPULATION: v.population || '',
+          LATITUDE: parseFloat(v.latitude || 0).toFixed(6),
+          LONGITUDE: parseFloat(v.longitude || 0).toFixed(6),
+        });
+      });
+
+      // 1. CSV
+      const headers = Object.keys(data[0] || {});
+      const csvContent =
+        headers.join(',') +
+        '\n' +
+        data
+          .map((row) =>
+            headers
+              .map((h) => `"${String(row[h] || '').replace(/"/g, '""')}"`)
+              .join(',')
+          )
+          .join('\n');
+      zip.file(`${baseName}.csv`, csvContent);
+
+      // 2. JSON
+      zip.file(`${baseName}.json`, JSON.stringify(data, null, 2));
+
+      // 3. GeoJSON
+      const features = data.map((item) => ({
+        type: 'Feature',
+        geometry: {
+          type: 'Point',
+          coordinates: [parseFloat(item.LONGITUDE), parseFloat(item.LATITUDE)],
+        },
+        properties: { ...item },
+      }));
+
+      const geojson = {
+        type: 'FeatureCollection',
+        features,
+        name: 'SIG Markers',
+        crs: {
+          type: 'name',
+          properties: { name: 'urn:ogc:def:crs:EPSG::4326' },
+        },
+      };
+      zip.file(`${baseName}.geojson`, JSON.stringify(geojson, null, 2));
+
+      // Générer le ZIP
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const { saveAs } = await import('file-saver');
+
+      saveAs(blob, `SIG_Export_Complet_${timestamp}.zip`);
+
+      toast.success(`Archive ZIP créée avec succès (${total} enregistrements)`);
+      setShowDownloadModal(false);
+    } catch (error) {
+      console.error(error);
+      toast.error('Erreur lors de la création du ZIP');
+    }
+  };
+
+  // Capture de la carte en PNG
+  const captureMapAsPNG = () => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    import('html2canvas').then(({ default: html2canvas }) => {
+      html2canvas(map.getContainer(), {
+        useCORS: true,
+        scale: 2,
+      }).then((canvas) => {
+        const link = document.createElement('a');
+        link.download = `SIG_Carte_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+        toast.success('Capture de la carte enregistrée');
+      });
+    });
+  };
+
   // ====================== RENDU ======================
   return (
     <div className="h-[calc(100vh-4rem)] relative">
@@ -1447,9 +1765,27 @@ const SIG = () => {
           </Button>
 
           {stats.total > 0 && (
-            <Badge variant="secondary" className="shadow-lg text-xs py-1.5">
-              {stats.publicCount} publics, {stats.privateCount} privés,{' '}
-              {stats.villages} villages — Total : {stats.total}
+            <Badge
+              variant="secondary"
+              className="shadow-lg text-xs py-1.5 px-4"
+            >
+              <div className="flex flex-col gap-0.5">
+                <div>
+                  <strong>Établissements :</strong>{' '}
+                  {stats.publicCount + stats.privateCount} pointés dont{' '}
+                  <span className="text-blue-800 font-bold">
+                    {stats.publicCount}
+                  </span>{' '}
+                  public,{' '}
+                  <span className="text-blue-800 font-bold">
+                    {stats.privateCount}
+                  </span>{' '}
+                  privé
+                </div>
+                <div>
+                  <strong>Villages :</strong> {stats.villages} pointés
+                </div>
+              </div>
             </Badge>
           )}
 
@@ -1712,6 +2048,144 @@ const SIG = () => {
           </div>
         </div>
       )}
+
+      {/* Modal Téléchargement */}
+      <Dialog open={showDownloadModal} onOpenChange={setShowDownloadModal}>
+        <DialogContent className="sm:max-w-xl z-[10000]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-3">
+              <Download className="h-5 w-5" />
+              Exporter les données SIG
+            </DialogTitle>
+            <DialogDescription>
+              Choisissez le format d'export ou téléchargez tout en une fois.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-6 space-y-6">
+            {/* Récapitulatif */}
+            <div className="bg-muted/50 rounded-xl p-5 text-sm">
+              <div className="grid grid-cols-3 gap-4 text-center">
+                <div>
+                  <div className="text-2xl font-semibold text-primary">
+                    {collectActiveMarkers().etabs.length}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Établissements
+                  </div>
+                </div>
+                <div>
+                  <div className="text-2xl font-semibold text-primary">
+                    {collectActiveMarkers().villages.length}
+                  </div>
+                  <div className="text-xs text-muted-foreground">Villages</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-semibold text-primary">
+                    {collectActiveMarkers().total}
+                  </div>
+                  <div className="text-xs text-muted-foreground">Total</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Formats individuels */}
+            <div>
+              <p className="text-sm font-medium text-muted-foreground mb-3">
+                FORMATS INDIVIDUELS
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <Button
+                  onClick={() => downloadData('csv')}
+                  variant="outline"
+                  className="h-20 justify-start"
+                >
+                  <Download className="mr-3 h-5 w-5" />
+                  <div className="text-left">
+                    <div>CSV</div>
+                    <div className="text-xs text-muted-foreground">Tableur</div>
+                  </div>
+                </Button>
+
+                <Button
+                  onClick={() => downloadData('excel')}
+                  variant="outline"
+                  className="h-20 justify-start"
+                >
+                  <Download className="mr-3 h-5 w-5" />
+                  <div className="text-left">
+                    <div>Excel</div>
+                    <div className="text-xs text-muted-foreground">.xlsx</div>
+                  </div>
+                </Button>
+
+                <Button
+                  onClick={() => downloadData('json')}
+                  variant="outline"
+                  className="h-20 justify-start"
+                >
+                  <Download className="mr-3 h-5 w-5" />
+                  <div className="text-left">
+                    <div>JSON</div>
+                    <div className="text-xs text-muted-foreground">
+                      Données brutes
+                    </div>
+                  </div>
+                </Button>
+
+                <Button
+                  onClick={() => downloadData('geojson')}
+                  variant="outline"
+                  className="h-20 justify-start"
+                >
+                  <Download className="mr-3 h-5 w-5" />
+                  <div className="text-left">
+                    <div>GeoJSON</div>
+                    <div className="text-xs text-muted-foreground">
+                      Format cartographique
+                    </div>
+                  </div>
+                </Button>
+              </div>
+            </div>
+
+            {/* Actions groupées */}
+            <div>
+              <p className="text-sm font-medium text-muted-foreground mb-3">
+                ACTIONS GROUPÉES
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <Button
+                  onClick={downloadAllFormats}
+                  variant="default"
+                  className="h-20 flex-col gap-1"
+                >
+                  <Archive className="h-6 w-6" />
+                  Tout télécharger (ZIP)
+                </Button>
+
+                <Button
+                  onClick={captureMapAsPNG}
+                  variant="default"
+                  className="h-20 flex-col gap-1"
+                >
+                  <FileImage className="h-6 w-6" />
+                  Capturer la carte (PNG)
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowDownloadModal(false)}
+            >
+              Fermer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Chargement */}
       {loading && (

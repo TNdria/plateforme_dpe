@@ -29,3 +29,10 @@ export const BE_FIELDS = [
 ];
 
 export const ME_FIELDS = BE_FIELDS.map(f => f.replace("_be", "_me"));
+
+export const NIVEAU_LABEL: Record<string, string> = {
+  N0S0: "Préscolaire public",
+  N1S0: "Primaire public",
+  N2S0: "Collège public",
+  N3S0: "Lycée public",
+};

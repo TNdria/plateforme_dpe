@@ -455,36 +455,6 @@
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15) !important;
 }
 
-/* SIG Aire Control */
-.control-aire {
-  padding: 8px 10px !important;
-  background: rgba(255, 255, 255, 0.95) !important;
-  font-size: 12px !important;
-  box-shadow: 0 0 15px rgba(0, 0, 0, 0.2) !important;
-  border: 2px solid #999 !important;
-  border-radius: 5px !important;
-  line-height: 2.2 !important;
-  min-width: 120px !important;
-}
-
-.control-aire label {
-  display: flex !important;
-  align-items: center !important;
-  gap: 4px !important;
-  cursor: pointer !important;
-  margin: 0 !important;
-  white-space: nowrap !important;
-}
-
-.control-aire input[type="checkbox"] {
-  width: 15px !important;
-  height: 15px !important;
-  min-width: 15px !important;
-  cursor: pointer !important;
-  accent-color: #e09c35 !important;
-  margin: 0 !important;
-}
-
 /* SIG Move Control */
 .control-move {
   background: rgba(255, 255, 255, 0.95) !important;
@@ -504,7 +474,7 @@
   height: 28px !important;
   min-width: 28px !important;
   cursor: pointer !important;
-  accent-color: #e09c35 !important;
+  accent-color: #0517b9 !important;
   border-radius: 50% !important;
   margin: 0 !important;
 }
@@ -690,4 +660,110 @@
   width: 12px;
   height: 12px;
   border-radius: 50%;
+}
+/* =========================
+   LEAFLET CONTROL BAR
+========================= */
+
+.leaflet-control {
+  border: none !important;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.15) !important;
+  border-radius: 10px !important;
+  overflow: hidden;
+}
+
+.leaflet-bar {
+  border: none !important;
+  border-radius: 10px !important;
+  background: rgba(255,255,255,0.95) !important;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.671) !important;
+}
+
+/* Boutons zoom + controls */
+.leaflet-bar a {
+  background: transparent !important;
+  color: #1f2937 !important;
+  border-bottom: 1px solid rgba(0,0,0,0.05) !important;
+  width: 28px !important;
+  height: 25px !important;
+  line-height: 25px !important;
+  font-weight: bold;
+  transition: all 0.2s ease;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+/* hover */
+.leaflet-bar a:hover {
+  background: rgba(59,130,246,0.1) !important;
+  color: #2563eb !important;
+}
+
+/* dernier bouton */
+.leaflet-bar a:last-child {
+  border-bottom: none !important;
+}
+
+/* icônes zoom + - */
+.leaflet-control-zoom-in,
+.leaflet-control-zoom-out {
+  font-size: 18px !important;
+}
+
+/* =========================
+   LEAFLET LAYERS CONTROL (COMPACT)
+========================= */
+.control-aire,
+.leaflet-control-layers {
+  background: rgba(255, 255, 255, 0.95) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.15) !important;
+
+  padding: 6px 8px !important;   /* ↓ réduit fortement */
+  font-size: 12px !important;
+
+  backdrop-filter: blur(10px);
+  border: none !important;
+
+  max-height: 65vh !important;
+  overflow-y: auto !important;
+}
+
+/* LISTE ULTRA COMPACTE */
+.control-aire label,
+.leaflet-control-layers-list label {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;          /* ↓ réduit espace checkbox/texte */
+  margin: 4px 0 !important;      /* ↓ suppression des grands gaps */
+  line-height: 18px !important;
+  padding: 2px 4px !important;  /* effet “bouton” léger */
+  border-radius: 6px !important;
+
+  cursor: pointer !important;
+  font-size: 11.5px !important;
+
+  transition: all 0.15s ease;
+}
+
+/* hover comme bouton */
+.control-aire label:hover,
+.leaflet-control-layers-list label:hover {
+  background: rgba(15, 15, 15, 0.664) !important;
+  color: #fff !important;
+}
+
+.control-aire input[type="checkbox"],
+.leaflet-control-layers input[type="checkbox"],
+.leaflet-control-layers input[type="radio"] {
+  margin: 0 !important;
+  width: 14px !important;
+  height: 14px !important;
+  flex: 0 0 14px;   /* empêche étirement */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  accent-color: #0517b9 !important;
 }
