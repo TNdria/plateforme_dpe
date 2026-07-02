@@ -267,16 +267,32 @@ const getEffectifs = (row: any): number =>
 
 const computeRow = (row: any, cat: CategorieDef, niveau: Niveau) => {
   const eff = getEffectifs(row);
-  // Recalcul systématique du requis selon les formules MEN (doc SDC/BANC)
-  // pour toutes les catégories qui définissent une formule.
-  let requis: number | null = cat.computeRequis
-    ? cat.computeRequis(eff, niveau, row)
-    : pickNum(row, cat.requisKeys);
-  if (requis == null) requis = 0;
-  const existant = pickNum(row, cat.existantKeys) ?? 0;
-  // Besoin et excédent toujours dérivés du requis recalculé pour rester cohérent.
-  const besoin = Math.max(0, requis - existant);
-  const excedent = Math.max(0, existant - requis);
+
+  // 1) Valeurs fournies directement par le backend (REQUIS / BESOIN / EXCEDENT ...).
+  const apiRequis = pickNum(row, cat.requisKeys);
+  const apiExistant = pickNum(row, cat.existantKeys);
+  const apiBesoin = pickNum(row, cat.besoinKeys);
+  const apiExcedent = pickNum(row, cat.excedentKeys);
+
+  // 2) Fallback : formule MEN sur effectifs bruts si disponibles.
+  const computedRequis = cat.computeRequis ? cat.computeRequis(eff, niveau, row) : 0;
+
+  const requis = apiRequis != null ? apiRequis : computedRequis;
+
+  // Existant : si l'API le donne, on l'utilise ; sinon on le dérive de requis/besoin/excédent
+  // (existant = requis - besoin + excédent).
+  let existant: number;
+  if (apiExistant != null) {
+    existant = apiExistant;
+  } else if (apiBesoin != null || apiExcedent != null) {
+    existant = Math.max(0, requis - (apiBesoin ?? 0) + (apiExcedent ?? 0));
+  } else {
+    existant = 0;
+  }
+
+  const besoin = apiBesoin != null ? apiBesoin : Math.max(0, requis - existant);
+  const excedent = apiExcedent != null ? apiExcedent : Math.max(0, existant - requis);
+
   return { requis, existant, besoin, excedent };
 };
 
