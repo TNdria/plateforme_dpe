@@ -135,13 +135,12 @@ const TDBEcole = () => {
     if (!printRef.current || !tdbData) return;
     setGeneratingPdf(true);
     try {
-      const { openHtmlPdf } = await import('@/utils/htmlToPdf');
-      openHtmlPdf(
-        printRef.current,
-        `TDB_ECOLE_${tdbData.names.NOM_ETAB}_${tdbData.annee}`,
-        'print',
+      await generateMultiPagePdf(
+        [printRef.current],
+        `TDB_ECOLE_${tdbData.names.NOM_ETAB}_${tdbData.annee}.pdf`,
+        { orientation: 'portrait', format: 'a3', windowWidth: 1191 }
       );
-      toast.success('Boîte de dialogue d\'impression ouverte');
+      toast.success('PDF téléchargé');
     } catch { toast.error('Erreur PDF'); }
     finally { setGeneratingPdf(false); }
   }, [tdbData]);
@@ -197,7 +196,7 @@ const TDBEcole = () => {
     };
 
     return (
-      <div ref={printRef} style={{ width: '100%', maxWidth: '1100px', margin: '0 auto', padding: '8px', font: '10px verdana', background: '#fff', color: '#000' }}>
+      <div ref={printRef} style={{ width: '100%', maxWidth: '1191px', margin: '0 auto', padding: '8px', font: '10px verdana', background: '#fff', color: '#000' }}>
         {/* HEADER — style PDF CEG */}
         <div style={{ border: '1.5px solid #000' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', border: 'none' }}>
@@ -340,7 +339,7 @@ const TDBEcole = () => {
                         const depens = (lvl: any): 'f' | 'g' | null => {
                           const g = retVal(lvl, `eff_${lastT}_g`, 'eff_t1_g');
                           const f = retVal(lvl, `eff_${lastT}_f`, 'eff_t1_f');
-                          if (!g || !f || Math.abs(g - f) < 0.1) return null;
+                          if (g == null || f == null || (isNaN(g) && isNaN(f)) || (g === 0 && f === 0)) return null; if (Math.abs(g - f) < 0.01) return null;
                           return f < g ? 'f' : 'g';
                         };
                         return (<>
@@ -365,7 +364,7 @@ const TDBEcole = () => {
                         const rE = (lvl: any) => pct(Number(lvl.ressources?.red_g || 0) + Number(lvl.ressources?.red_f || 0), lvl.ressources?.nbr_eleve);
                         const depensRed = (lvl: any): 'f' | 'g' | null => {
                           const g = rValG(lvl), f = rValF(lvl);
-                          if (!g || !f || Math.abs(g - f) < 0.1) return null;
+                          if (g == null || f == null || (isNaN(g) && isNaN(f)) || (g === 0 && f === 0)) return null; if (Math.abs(g - f) < 0.01) return null;
                           return f > g ? 'f' : 'g';
                         };
                         return (<>
@@ -451,7 +450,7 @@ const TDBEcole = () => {
                 const depensAdmis = (lvl: any): 'f' | 'g' | null => {
                   const g = admVal(lvl, 'tx_admis_g');
                   const f = admVal(lvl, 'tx_admis_f');
-                  if (!g || !f || Math.abs(g - f) < 0.1) return null;
+                  if (g == null || f == null || (isNaN(g) && isNaN(f)) || (g === 0 && f === 0)) return null; if (Math.abs(g - f) < 0.01) return null;
                   return f < g ? 'f' : 'g';
                 };
                 return (<>

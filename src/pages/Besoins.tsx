@@ -43,6 +43,29 @@ const RATIOS: Record<Niveau, { elevesParEns: number; elevesParTB: number; manuel
   lycee:    { elevesParEns: 30, elevesParTB: 2, manuelsParEleve: 9 },
 };
 
+// Normes élèves par salle de classe (doc MEN "MODE DE CALCUL BESOINS SDC")
+const NORME_ELEVE_SDC: Record<Niveau, number> = {
+  primaire: 50,
+  college: 50,
+  lycee: 50,
+};
+
+// Détection zone rurale (rural = commune de type rural)
+const isRural = (row: any): boolean => {
+  const cat = String(row?.CATEGORIE_COMMUNE ?? row?.categorie_commune ?? row?.MILIEU ?? '')
+    .toLowerCase()
+    .trim();
+  return cat.startsWith('rural') || cat === 'r';
+};
+
+// Récupère le nombre de groupes pédagogiques (primaire)
+const getGroupePeda = (row: any): number =>
+  pickNumRaw(row, ['GRP_PED', 'GROUPE_PED', 'GROUPES', 'NB_GRP_PED', 'GRP_PEDA', 'GROUPE_PEDAGOGIQUE']) ?? 0;
+
+// Récupère le nombre de sections (collège / lycée)
+const getNbSection = (row: any): number =>
+  pickNumRaw(row, ['NB_SECTION', 'SECTIONS', 'NB_SECTIONS', 'SECTION']) ?? 0;
+
 type CategorieDef = {
   id: Categorie; label: string; shortLabel: string; icon: any; unit: string;
   requisKeys: string[]; existantKeys: string[]; besoinKeys: string[]; excedentKeys: string[];
@@ -174,9 +197,21 @@ const CATEGORIES: CategorieDef[] = [
     id: "salles", label: "Besoins en salles de classe", shortLabel: "Salles de classe",
     icon: Building2, unit: "salles",
     requisKeys: ["SDC_REQUIS", "REQUIS", "REQUIS_TOTAL"],
-    existantKeys: ["SDC_BE", "EXISTANT", "EXISTANT_TOTAL"],
+    existantKeys: ["SDC_BE", "SDC_EXISTANT", "NB_SDC", "EXISTANT", "EXISTANT_TOTAL"],
     besoinKeys: ["BESOIN_SDC", "BESOIN", "BESOINS_TOTAL", "BESOIN_TOTAL"],
     excedentKeys: ["EXCEDENT_SDC", "EXCEDENT", "EXCEDENT_TOTAL"],
+    // Doc MEN: Primaire → rural: requis=groupe_péda; sinon: ceil(groupe_péda/2)
+    //          Collège/Lycée → requis = nombre de sections
+    computeRequis: (eff, niv, row) => {
+      if (niv === "primaire") {
+        const grp = getGroupePeda(row);
+        if (grp <= 0) return Math.ceil((eff || 0) / NORME_ELEVE_SDC.primaire);
+        return isRural(row) ? grp : Math.ceil(grp / 2);
+      }
+      const sec = getNbSection(row);
+      if (sec > 0) return sec;
+      return Math.ceil((eff || 0) / NORME_ELEVE_SDC[niv]);
+    },
   },
   {
     id: "enseignants", label: "Besoins en enseignants", shortLabel: "Enseignants",
@@ -191,13 +226,23 @@ const CATEGORIES: CategorieDef[] = [
       : computeRequisLycee(row, eff),
   },
   {
-    id: "tb", label: "Besoins en tables-bancs", shortLabel: "Tables-bancs",
-    icon: Armchair, unit: "tables-bancs",
-    requisKeys: ["TB_REQUIS", "REQUIS_TB"],
-    existantKeys: ["TB_EXISTANT", "PLACES", "TABLES_BANCS", "TOTAL_TB"],
-    besoinKeys: ["BESOIN_TB", "TB_BESOIN"],
+    id: "tb", label: "Besoins en tables-bancs (places assises)", shortLabel: "Tables-bancs",
+    icon: Armchair, unit: "places",
+    requisKeys: ["TB_REQUIS", "REQUIS_TB", "PLACE_REQUIS"],
+    existantKeys: ["TB_EXISTANT", "PLACES", "TABLES_BANCS", "TOTAL_TB", "NB_PLACES"],
+    besoinKeys: ["BESOIN_TB", "TB_BESOIN", "BESOIN_PLACE"],
     excedentKeys: ["EXCEDENT_TB", "TB_EXCEDENT"],
-    computeRequis: (eff, niv) => Math.ceil(eff / RATIOS[niv].elevesParTB),
+    // Doc MEN: Primaire → rural: requis=effectif; sinon: requis_sdc * 50
+    //          Collège/Lycée → requis = effectif total
+    computeRequis: (eff, niv, row) => {
+      if (niv === "primaire") {
+        if (isRural(row)) return eff || 0;
+        const grp = getGroupePeda(row);
+        const requisSdc = grp > 0 ? Math.ceil(grp / 2) : Math.ceil((eff || 0) / NORME_ELEVE_SDC.primaire);
+        return requisSdc * NORME_ELEVE_SDC.primaire;
+      }
+      return eff || 0;
+    },
   },
   {
     id: "manuels", label: "Besoins en manuels", shortLabel: "Manuels",
@@ -206,7 +251,12 @@ const CATEGORIES: CategorieDef[] = [
     existantKeys: ["MANUEL_EXISTANT", "MANUELS", "TOTAL_MANUELS", "EXISTANT_MANUEL"],
     besoinKeys: ["BESOIN_MANUEL", "MANUEL_BESOIN"],
     excedentKeys: ["EXCEDENT_MANUEL", "MANUEL_EXCEDENT"],
-    computeRequis: (eff, niv) => eff * RATIOS[niv].manuelsParEleve,
+    // Doc MEN: Primaire → 1 livre pour 2 élèves → requis = effectif / 2
+    //          Collège/Lycée → ratio par élève (non spécifié dans doc SDC/BANC)
+    computeRequis: (eff, niv) => {
+      if (niv === "primaire") return Math.ceil((eff || 0) / 2);
+      return (eff || 0) * RATIOS[niv].manuelsParEleve;
+    },
   },
 ];
 
@@ -217,20 +267,32 @@ const getEffectifs = (row: any): number =>
 
 const computeRow = (row: any, cat: CategorieDef, niveau: Niveau) => {
   const eff = getEffectifs(row);
-  let requis = pickNum(row, cat.requisKeys);
-  // Recalcule toujours les enseignants à partir des effectifs détaillés
-  // (les colonnes pré-remplies peuvent contenir 0 si jamais initialisées)
-  if (cat.id === "enseignants" && cat.computeRequis) {
-    const computed = cat.computeRequis(eff, niveau, row);
-    if (computed > 0) requis = computed;
+
+  // 1) Valeurs fournies directement par le backend (REQUIS / BESOIN / EXCEDENT ...).
+  const apiRequis = pickNum(row, cat.requisKeys);
+  const apiExistant = pickNum(row, cat.existantKeys);
+  const apiBesoin = pickNum(row, cat.besoinKeys);
+  const apiExcedent = pickNum(row, cat.excedentKeys);
+
+  // 2) Fallback : formule MEN sur effectifs bruts si disponibles.
+  const computedRequis = cat.computeRequis ? cat.computeRequis(eff, niveau, row) : 0;
+
+  const requis = apiRequis != null ? apiRequis : computedRequis;
+
+  // Existant : si l'API le donne, on l'utilise ; sinon on le dérive de requis/besoin/excédent
+  // (existant = requis - besoin + excédent).
+  let existant: number;
+  if (apiExistant != null) {
+    existant = apiExistant;
+  } else if (apiBesoin != null || apiExcedent != null) {
+    existant = Math.max(0, requis - (apiBesoin ?? 0) + (apiExcedent ?? 0));
+  } else {
+    existant = 0;
   }
-  if (requis == null && cat.computeRequis) requis = cat.computeRequis(eff, niveau, row);
-  if (requis == null) requis = 0;
-  const existant = pickNum(row, cat.existantKeys) ?? 0;
-  let besoin = pickNum(row, cat.besoinKeys);
-  let excedent = pickNum(row, cat.excedentKeys);
-  if (cat.id === "enseignants" || besoin == null) besoin = Math.max(0, requis - existant);
-  if (cat.id === "enseignants" || excedent == null) excedent = Math.max(0, existant - requis);
+
+  const besoin = apiBesoin != null ? apiBesoin : Math.max(0, requis - existant);
+  const excedent = apiExcedent != null ? apiExcedent : Math.max(0, existant - requis);
+
   return { requis, existant, besoin, excedent };
 };
 

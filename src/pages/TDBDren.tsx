@@ -11,6 +11,7 @@ import { GenderLabel } from '@/components/score/GenderRow';
 import { ScoreY, computeScoreY } from '@/components/score/ScoreY';
 import { TDBShell } from '@/components/tdb/TDBShell';
 import { TDBImportDialog } from '@/components/tdb/TDBImportDialog';
+import { EfficienceGrid } from '@/components/tdb/EfficienceGrid';
 import DataActionsBar from '@/components/admin/DataActionsBar';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -81,9 +82,12 @@ const TDBDren = () => {
     if (!tdbData || !printRef.current) return;
     setGeneratingPdf(true);
     try {
-      const { openHtmlPdf } = await import('@/utils/htmlToPdf');
-      openHtmlPdf(printRef.current, `TDB_DREN_${tdbData.names.DREN}_${tdbData.annee}`, 'print');
-      toast.success('Boîte de dialogue d\'impression ouverte');
+      await generateMultiPagePdf(
+        [printRef.current],
+        `TDB_DREN_${tdbData.names.DREN}_${tdbData.annee}.pdf`,
+        { orientation: 'portrait', format: 'a3', windowWidth: 1191 }
+      );
+      toast.success('PDF téléchargé');
     } catch (err) { console.error(err); toast.error('Erreur PDF'); }
     finally { setGeneratingPdf(false); }
   }, [tdbData]);
@@ -283,8 +287,8 @@ const TDBDren = () => {
                       const retF = (lvl: any) => { const t5 = Number(lvl.ressources?.eff_t5_f||0), t1 = Number(lvl.ressources?.eff_t1_f||0); return t1 > 0 ? (t5/t1*100).toFixed(1)+'%' : '-'; };
                       const retE = (lvl: any) => { const t5 = Number(lvl.ressources?.eff_t5||0), t1 = Number(lvl.ressources?.eff_t1||0); return t1 > 0 ? (t5/t1*100).toFixed(1)+'%' : '-'; };
                       return (<>
-                        <tr><td style={{ ...st.td, width: '40%' }}><GenderLabel gender="g" /></td><td style={{ ...st.td, textAlign: 'right' }}>{retG(d)}</td><td style={{ ...st.td, textAlign: 'right' }}>{retG(m)}</td></tr>
-                        <tr><td style={st.td}><GenderLabel gender="f" /></td><td style={{ ...st.td, textAlign: 'right' }}>{retF(d)}</td><td style={{ ...st.td, textAlign: 'right' }}>{retF(m)}</td></tr>
+                        <tr><td style={{ ...st.td, width: '40%' }}>Garçons</td><td style={{ ...st.td, textAlign: 'right' }}>{retG(d)}</td><td style={{ ...st.td, textAlign: 'right' }}>{retG(m)}</td></tr>
+                        <tr><td style={st.td}>Filles</td><td style={{ ...st.td, textAlign: 'right' }}>{retF(d)}</td><td style={{ ...st.td, textAlign: 'right' }}>{retF(m)}</td></tr>
                         <tr><td style={st.td}>Ensemble</td><td style={{ ...st.td, textAlign: 'right' }}>{retE(d)}</td><td style={{ ...st.td, textAlign: 'right' }}>{retE(m)}</td></tr>
                       </>);
                     })()}
@@ -300,8 +304,8 @@ const TDBDren = () => {
                       const rF = (lvl: any) => pct(lvl.ressources?.red_f, lvl.ressources?.nbr_eleve_f, 0);
                       const rE = (lvl: any) => pct(Number(lvl.ressources?.red_g||0)+Number(lvl.ressources?.red_f||0), lvl.ressources?.nbr_eleve, 0);
                       return (<>
-                        <tr><td style={{ ...st.td, width: '40%' }}><GenderLabel gender="g" /></td><td style={{ ...st.td, textAlign: 'right' }}>{rG(d)}</td><td style={{ ...st.td, textAlign: 'right' }}>{rG(m)}</td></tr>
-                        <tr><td style={st.td}><GenderLabel gender="f" /></td><td style={{ ...st.td, textAlign: 'right' }}>{rF(d)}</td><td style={{ ...st.td, textAlign: 'right' }}>{rF(m)}</td></tr>
+                        <tr><td style={{ ...st.td, width: '40%' }}>Garçons</td><td style={{ ...st.td, textAlign: 'right' }}>{rG(d)}</td><td style={{ ...st.td, textAlign: 'right' }}>{rG(m)}</td></tr>
+                        <tr><td style={st.td}>Filles</td><td style={{ ...st.td, textAlign: 'right' }}>{rF(d)}</td><td style={{ ...st.td, textAlign: 'right' }}>{rF(m)}</td></tr>
                         <tr><td style={st.td}>Ensemble</td><td style={{ ...st.td, textAlign: 'right' }}>{rE(d)}</td><td style={{ ...st.td, textAlign: 'right' }}>{rE(m)}</td></tr>
                       </>);
                     })()}
@@ -378,8 +382,8 @@ const TDBDren = () => {
                     return pct(Number(lvl.cepe?.admis_g||0)+Number(lvl.cepe?.admis_f||0), Number(lvl.cepe?.nbr_g||0)+Number(lvl.cepe?.nbr_f||0));
                   };
                   return (<>
-                    <tr><td style={st.td}><GenderLabel gender="g" /></td>{[d,m].map((lvl, i) => <td key={i} style={{ ...st.td, textAlign: 'center' }}>{pctDirect(lvl, 'tx_admis_g', 'admis_g', 'nbr_g')}</td>)}</tr>
-                    <tr><td style={st.td}><GenderLabel gender="f" /></td>{[d,m].map((lvl, i) => <td key={i} style={{ ...st.td, textAlign: 'center' }}>{pctDirect(lvl, 'tx_admis_f', 'admis_f', 'nbr_f')}</td>)}</tr>
+                    <tr><td style={st.td}>Garçons</td>{[d,m].map((lvl, i) => <td key={i} style={{ ...st.td, textAlign: 'center' }}>{pctDirect(lvl, 'tx_admis_g', 'admis_g', 'nbr_g')}</td>)}</tr>
+                    <tr><td style={st.td}>Filles</td>{[d,m].map((lvl, i) => <td key={i} style={{ ...st.td, textAlign: 'center' }}>{pctDirect(lvl, 'tx_admis_f', 'admis_f', 'nbr_f')}</td>)}</tr>
                     <tr><td style={st.td}>Ensemble</td>{[d,m].map((lvl, i) => <td key={i} style={{ ...st.td, textAlign: 'center' }}>{pctEns(lvl)}</td>)}</tr>
                   </>);
                 })()}
@@ -483,22 +487,26 @@ const TDBDren = () => {
         </div>
         <div style={{ border: '1px solid #000', padding: '10px' }}>
           <h4 style={{ textAlign: 'center', fontSize: '12px', fontWeight: 'bold', marginBottom: '10px' }}>Efficience des CISCOs de la DREN</h4>
-          <ResponsiveContainer width="100%" height={380}>
-            <ScatterChart margin={{ top: 10, right: 30, left: 10, bottom: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis type="number" dataKey="x" name="Ressources" label={{ value: 'Ressources (%)', position: 'insideBottom', offset: -10 }} />
-              <YAxis type="number" dataKey="y" name="Résultats" label={{ value: 'Résultats (%)', angle: -90, position: 'insideLeft' }} />
-              <Tooltip cursor={{ strokeDasharray: '3 3' }} formatter={(value: any, name: string) => [`${value}%`, name]} />
-              <ReferenceLine x={50} stroke="#999" strokeDasharray="3 3" />
-              <ReferenceLine y={50} stroke="#999" strokeDasharray="3 3" />
-              <Scatter data={efficienceData} fill="#337ab7">
-                {efficienceData.map((entry: any, index: number) => (
-                  <Cell key={index} fill="#337ab7" r={5} />
-                ))}
-                <LabelList dataKey="name" position="right" style={{ fontSize: 9 }} />
-              </Scatter>
-            </ScatterChart>
-          </ResponsiveContainer>
+          {efficienceData.length === 0 || efficienceData.every((p:any)=>p.x===0 && p.y===0) ? (
+            <div style={{ height: 360, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888', fontSize: 11, fontStyle: 'italic' }}>
+              Aucune donnée d'efficience disponible pour cette année.
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={360}>
+              <ScatterChart margin={{ top: 10, right: 30, left: 10, bottom: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis type="number" dataKey="x" name="Ressources" domain={[0, 100]} label={{ value: 'Ressources (%)', position: 'insideBottom', offset: -10 }} tick={{ fontSize: 10 }} />
+                <YAxis type="number" dataKey="y" name="Résultats" domain={[0, 100]} label={{ value: 'Résultats (%)', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 10 }} />
+                <Tooltip cursor={{ strokeDasharray: '3 3' }} formatter={(value: any, name: string) => [`${value}%`, name]} />
+                <ReferenceLine x={50} stroke="#999" strokeDasharray="3 3" />
+                <ReferenceLine y={50} stroke="#999" strokeDasharray="3 3" />
+                <Scatter data={efficienceData}>
+                  {efficienceData.map((entry: any, index: number) => (<Cell key={index} fill="#337ab7" />))}
+                  <LabelList dataKey="name" position="right" style={{ fontSize: 9 }} />
+                </Scatter>
+              </ScatterChart>
+            </ResponsiveContainer>
+          )}
         </div>
           </div>
           </div>

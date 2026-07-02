@@ -11,6 +11,7 @@ import emojiHappy from '@/assets/emoji-happy.jpg';
 import emojiSad from '@/assets/emoji-sad.jpg';
 import { TDBShell } from '@/components/tdb/TDBShell';
 import { TDBImportDialog } from '@/components/tdb/TDBImportDialog';
+import { EfficienceGrid } from '@/components/tdb/EfficienceGrid';
 import { DisparityIcon } from '@/components/score/DisparityIcon';
 import DataActionsBar from '@/components/admin/DataActionsBar';
 import {
@@ -136,9 +137,12 @@ const TDBZap = () => {
     if (!tdbData || !printRef.current) return;
     setGeneratingPdf(true);
     try {
-      const { openHtmlPdf } = await import('@/utils/htmlToPdf');
-      openHtmlPdf(printRef.current, `TDB_ZAP_${tdbData.names.ZAP}_${tdbData.annee}`, 'print');
-      toast.success('Boîte de dialogue d\'impression ouverte');
+      await generateMultiPagePdf(
+        [printRef.current],
+        `TDB_ZAP_${tdbData.names.ZAP}_${tdbData.annee}.pdf`,
+        { orientation: 'portrait', format: 'a3', windowWidth: 1191 }
+      );
+      toast.success('PDF téléchargé');
     } catch (err) { console.error(err); toast.error('Erreur PDF'); }
     finally { setGeneratingPdf(false); }
   }, [tdbData]);
@@ -240,7 +244,7 @@ const TDBZap = () => {
     const redCisco = pctVal(Number(c.ressources?.red_g||0)+Number(c.ressources?.red_f||0), c.ressources?.nbr_eleve);
 
     return (
-      <div ref={printRef} style={{ width: '100%', maxWidth: '1100px', margin: '0 auto', padding: '8px', font: '10px verdana', background: '#fff', userSelect: 'text' }}>
+      <div ref={printRef} style={{ width: '100%', maxWidth: '1191px', margin: '0 auto', padding: '8px', font: '10px verdana', background: '#fff', userSelect: 'text' }}>
         {/* HEADER */}
         <div style={{ border: '2px solid #000', padding: '6px 10px' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', border: 'none' }}>
@@ -416,7 +420,7 @@ const TDBZap = () => {
                             const t5f = Number(lvl.ressources?.eff_t5_f||0), t1f = Number(lvl.ressources?.eff_t1_f||0);
                             const g = t1g > 0 ? t5g / t1g * 100 : 0;
                             const f = t1f > 0 ? t5f / t1f * 100 : 0;
-                            if (!g || !f || Math.abs(g - f) < 0.1) return null;
+                            if (g == null || f == null || (isNaN(g) && isNaN(f)) || (g === 0 && f === 0)) return null; if (Math.abs(g - f) < 0.01) return null;
                             return f < g ? 'f' : 'g';
                           };
                           return (<>
@@ -446,7 +450,7 @@ const TDBZap = () => {
                           const dispRed = (lvl: any): 'f' | 'g' | null => {
                             const g = pctVal(lvl.ressources?.red_g, lvl.ressources?.nbr_eleve_g);
                             const f = pctVal(lvl.ressources?.red_f, lvl.ressources?.nbr_eleve_f);
-                            if (!g || !f || Math.abs(g - f) < 0.1) return null;
+                            if (g == null || f == null || (isNaN(g) && isNaN(f)) || (g === 0 && f === 0)) return null; if (Math.abs(g - f) < 0.01) return null;
                             return f > g ? 'f' : 'g';
                           };
                           return (<>
@@ -605,7 +609,7 @@ const TDBZap = () => {
                       const disp = (lvl: any): 'f' | 'g' | null => {
                         const g = pctVal(lvl.cepe?.admis_g, lvl.cepe?.nbr_g);
                         const f = pctVal(lvl.cepe?.admis_f, lvl.cepe?.nbr_f);
-                        if (!g || !f || Math.abs(g - f) < 0.1) return null;
+                        if (g == null || f == null || (isNaN(g) && isNaN(f)) || (g === 0 && f === 0)) return null; if (Math.abs(g - f) < 0.01) return null;
                         return f < g ? 'f' : 'g';
                       };
                       return (<>
@@ -718,37 +722,43 @@ const TDBZap = () => {
 
         {/* EFFICIENCE ET SUIVI LONGITUDINAL */}
         <div style={s.titre}>Efficience et suivi longitudinal des cohortes d'élèves</div>
-        <div style={{ border: '1px solid #000', display: 'flex', minHeight: '320px' }}>
-          {/* Efficience scatter */}
-          <div style={{ width: '50%', padding: '8px', borderRight: '1px solid #ccc' }}>
-            <h4 style={{ textAlign: 'center', fontSize: '11px', fontWeight: 'bold', marginBottom: '6px' }}>Efficience</h4>
-            <ResponsiveContainer width="100%" height={290}>
-              <ScatterChart margin={{ top: 10, right: 20, left: 10, bottom: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" dataKey="x" name="Ressources (%)" domain={[0, 100]}
-                  label={{ value: 'Ressources (%)', position: 'insideBottom', offset: -10, fontSize: 10 }} tick={{ fontSize: 9 }} />
-                <YAxis type="number" dataKey="y" name="Résultats (%)" domain={[0, 100]}
-                  label={{ value: 'Résultats (%)', angle: -90, position: 'insideLeft', fontSize: 10 }} tick={{ fontSize: 9 }} />
-                <Tooltip cursor={{ strokeDasharray: '3 3' }} formatter={(value: any, name: string) => [`${value}%`, name]} />
-                <ReferenceLine x={50} stroke="#999" strokeDasharray="3 3" />
-                <ReferenceLine y={50} stroke="#999" strokeDasharray="3 3" />
-                <Scatter data={efficienceData} fill="#337ab7">
-                  {efficienceData.map((entry: any, index: number) => (
-                    <Cell key={index} fill={entry.isCurrent ? '#e74c3c' : '#337ab7'} r={entry.isCurrent ? 8 : 4} />
-                  ))}
-                  <LabelList dataKey="name" position="right" style={{ fontSize: 8 }} />
-                </Scatter>
-              </ScatterChart>
-            </ResponsiveContainer>
+        <div style={{ border: '1px solid #000', display: 'grid', gridTemplateColumns: '50% 50%', minHeight: '320px' }}>
+          {/* Efficience scatter — une seule vue */}
+          <div style={{ padding: '8px', borderRight: '1px solid #ccc' }}>
+            <h4 style={{ textAlign: 'center', fontSize: '11px', fontWeight: 'bold', marginBottom: '6px' }}>Efficience — votre ZAP (en rouge) parmi les autres</h4>
+            {efficienceData.length === 0 || efficienceData.every((p:any)=>p.x===0 && p.y===0) ? (
+              <div style={{ height: 290, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888', fontSize: 10, fontStyle: 'italic', textAlign: 'center' }}>
+                Aucune donnée d'efficience disponible.
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={290}>
+                <ScatterChart margin={{ top: 10, right: 20, left: 10, bottom: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis type="number" dataKey="x" name="Ressources (%)" domain={[0, 100]}
+                    label={{ value: 'Ressources (%)', position: 'insideBottom', offset: -10, fontSize: 10 }} tick={{ fontSize: 9 }} />
+                  <YAxis type="number" dataKey="y" name="Résultats (%)" domain={[0, 100]}
+                    label={{ value: 'Résultats (%)', angle: -90, position: 'insideLeft', fontSize: 10 }} tick={{ fontSize: 9 }} />
+                  <Tooltip cursor={{ strokeDasharray: '3 3' }} formatter={(value: any, name: string) => [`${value}%`, name]} />
+                  <ReferenceLine x={50} stroke="#999" strokeDasharray="3 3" />
+                  <ReferenceLine y={50} stroke="#999" strokeDasharray="3 3" />
+                  <Scatter data={efficienceData}>
+                    {efficienceData.map((entry: any, index: number) => (
+                      <Cell key={index} fill={entry.isCurrent ? '#e74c3c' : '#337ab7'} />
+                    ))}
+                    <LabelList dataKey="name" position="right" style={{ fontSize: 8 }} />
+                  </Scatter>
+                </ScatterChart>
+              </ResponsiveContainer>
+            )}
           </div>
           {/* Suivi longitudinal des cohortes */}
-          <div style={{ width: '50%', padding: '8px' }}>
-            <h4 style={{ textAlign: 'center', fontSize: '11px', fontWeight: 'bold', marginBottom: '6px' }}>Suivi longitudinal des cohortes d'élèves sur quatre ans</h4>
+          <div style={{ padding: '8px' }}>
+            <h4 style={{ textAlign: 'center', fontSize: '11px', fontWeight: 'bold', marginBottom: '6px' }}>Suivi longitudinal des cohortes (4 ans)</h4>
             <ResponsiveContainer width="100%" height={290}>
               <LineChart data={suiviData} margin={{ top: 10, right: 20, left: 10, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="name" tick={{ fontSize: 9 }} />
-                <YAxis tick={{ fontSize: 9 }} label={{ value: 'Effectif nouveaux entrants', angle: -90, position: 'insideLeft', fontSize: 9 }} />
+                <YAxis tick={{ fontSize: 9 }} label={{ value: 'Effectif', angle: -90, position: 'insideLeft', fontSize: 9 }} />
                 <Tooltip />
                 <Legend wrapperStyle={{ fontSize: '10px' }} />
                 <Line type="monotone" dataKey="Ensemble" stroke="#337ab7" strokeWidth={2} dot={{ r: 4 }} />

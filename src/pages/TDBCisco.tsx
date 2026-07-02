@@ -12,6 +12,7 @@ import { ScoreY, computeScoreY } from '@/components/score/ScoreY';
 import { TDBShell } from '@/components/tdb/TDBShell';
 import { TDBImportDialog } from '@/components/tdb/TDBImportDialog';
 import { DisparityIcon } from '@/components/score/DisparityIcon';
+import { EfficienceGrid } from '@/components/tdb/EfficienceGrid';
 import DataActionsBar from '@/components/admin/DataActionsBar';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -107,9 +108,12 @@ const TDBCisco = () => {
     if (!tdbData || !printRef.current) return;
     setGeneratingPdf(true);
     try {
-      const { openHtmlPdf } = await import('@/utils/htmlToPdf');
-      openHtmlPdf(printRef.current, `TDB_CISCO_${tdbData.names.CISCO}_${tdbData.annee}`, 'print');
-      toast.success('Boîte de dialogue d\'impression ouverte');
+      await generateMultiPagePdf(
+        [printRef.current],
+        `TDB_CISCO_${tdbData.names.CISCO}_${tdbData.annee}.pdf`,
+        { orientation: 'portrait', format: 'a3', windowWidth: 1191 }
+      );
+      toast.success('PDF téléchargé');
     } catch (err) { console.error(err); toast.error('Erreur PDF'); }
     finally { setGeneratingPdf(false); }
   }, [tdbData]);
@@ -384,13 +388,13 @@ const TDBCisco = () => {
                               return (
                                 <>
                                   <tr>
-                                    <td style={{ ...styles.td, width: '34%' }}><GenderLabel gender="g" /></td>
+                                    <td style={{ ...styles.td, width: '34%' }}>Garçons</td>
                                     <td style={{ ...styles.td, textAlign: 'right' }}>{retG(c)}</td>
                                     <td style={{ ...styles.td, textAlign: 'right' }}>{retG(d)}</td>
                                     <td style={{ ...styles.td, textAlign: 'right' }}>{retG(m)}</td>
                                   </tr>
                                   <tr>
-                                    <td style={{ ...styles.td, fontSize: '10px' }}><GenderLabel gender="f" /></td>
+                                    <td style={{ ...styles.td, fontSize: '10px' }}>Filles</td>
                                     <td style={{ ...styles.td, textAlign: 'right' }}>{retF(c)}</td>
                                     <td style={{ ...styles.td, textAlign: 'right' }}>{retF(d)}</td>
                                     <td style={{ ...styles.td, textAlign: 'right' }}>{retF(m)}</td>
@@ -406,7 +410,7 @@ const TDBCisco = () => {
                                     {[c, d, m].map((lvl, i) => {
                                       const rg = Number(lvl.ressources?.eff_t1_g||0) > 0 ? Number(lvl.ressources?.eff_t5_g||0) / Number(lvl.ressources?.eff_t1_g||1) * 100 : 0;
                                       const rf = Number(lvl.ressources?.eff_t1_f||0) > 0 ? Number(lvl.ressources?.eff_t5_f||0) / Number(lvl.ressources?.eff_t1_f||1) * 100 : 0;
-                                      const kind: 'f' | 'g' | null = Math.abs(rg - rf) < 0.1 ? null : rg < rf ? 'g' : 'f';
+                                      const kind: 'f' | 'g' | null = Math.abs(rg - rf) < 0.01 ? null : rg < rf ? 'g' : 'f';
                                       return <td key={i} style={{ ...styles.td, textAlign: 'center', padding: 2 }}><DisparityIcon kind={kind} /></td>;
                                     })}
                                   </tr>
@@ -432,13 +436,13 @@ const TDBCisco = () => {
                               return (
                                 <>
                                   <tr>
-                                    <td style={{ ...styles.td, width: '34%' }}><GenderLabel gender="g" /></td>
+                                    <td style={{ ...styles.td, width: '34%' }}>Garçons</td>
                                     <td style={{ ...styles.td, textAlign: 'right', ...(isMenaG ? styles.mena : {}) }}>{redGpct(c)}</td>
                                     <td style={{ ...styles.td, textAlign: 'right', width: '22%' }}>{redGpct(d)}</td>
                                     <td style={{ ...styles.td, textAlign: 'right', width: '22%' }}>{redGpct(m)}</td>
                                   </tr>
                                   <tr>
-                                    <td style={{ ...styles.td, fontSize: '10px' }}><GenderLabel gender="f" /></td>
+                                    <td style={{ ...styles.td, fontSize: '10px' }}>Filles</td>
                                     <td style={{ ...styles.td, textAlign: 'right', ...(isMenaF ? styles.mena : {}) }}>{redFpct(c)}</td>
                                     <td style={{ ...styles.td, textAlign: 'right' }}>{redFpct(d)}</td>
                                     <td style={{ ...styles.td, textAlign: 'right' }}>{redFpct(m)}</td>
@@ -454,7 +458,7 @@ const TDBCisco = () => {
                                     {[c, d, m].map((lvl, i) => {
                                       const rg = pctVal(lvl.ressources.red_g, lvl.ressources.nbr_eleve_g);
                                       const rf = pctVal(lvl.ressources.red_f, lvl.ressources.nbr_eleve_f);
-                                      const kind: 'f' | 'g' | null = Math.abs(rg - rf) < 0.1 ? null : rg > rf ? 'g' : 'f';
+                                      const kind: 'f' | 'g' | null = Math.abs(rg - rf) < 0.01 ? null : rg > rf ? 'g' : 'f';
                                       return <td key={i} style={{ ...styles.td, textAlign: 'center', padding: 2 }}><DisparityIcon kind={kind} /></td>;
                                     })}
                                   </tr>
@@ -554,8 +558,8 @@ const TDBCisco = () => {
                         return pct(Number(lvl.cepe?.admis_g||0)+Number(lvl.cepe?.admis_f||0), Number(lvl.cepe?.nbr_g||0)+Number(lvl.cepe?.nbr_f||0));
                       };
                       return (<>
-                        <tr><td style={styles.td}><GenderLabel gender="g" /></td>{[c,d,m].map((lvl, i) => <td key={i} style={{ ...styles.td, textAlign: 'center' }}>{pctDirect(lvl, 'tx_admis_g', 'admis_g', 'nbr_g')}</td>)}</tr>
-                        <tr><td style={{ ...styles.td, fontSize: '10px' }}><GenderLabel gender="f" /></td>{[c,d,m].map((lvl, i) => <td key={i} style={{ ...styles.td, textAlign: 'center' }}>{pctDirect(lvl, 'tx_admis_f', 'admis_f', 'nbr_f')}</td>)}</tr>
+                        <tr><td style={styles.td}>Garçons</td>{[c,d,m].map((lvl, i) => <td key={i} style={{ ...styles.td, textAlign: 'center' }}>{pctDirect(lvl, 'tx_admis_g', 'admis_g', 'nbr_g')}</td>)}</tr>
+                        <tr><td style={{ ...styles.td, fontSize: '10px' }}>Filles</td>{[c,d,m].map((lvl, i) => <td key={i} style={{ ...styles.td, textAlign: 'center' }}>{pctDirect(lvl, 'tx_admis_f', 'admis_f', 'nbr_f')}</td>)}</tr>
                         <tr><td style={{ ...styles.td, fontSize: '10px' }}>Ensemble</td>{[c,d,m].map((lvl, i) => <td key={i} style={{ ...styles.td, textAlign: 'center' }}>{pctEns(lvl)}</td>)}</tr>
                       </>);
                     })()}
@@ -564,7 +568,7 @@ const TDBCisco = () => {
                       {[c, d, m].map((lvl, i) => {
                         const txG = pctVal(lvl.cepe?.admis_g, lvl.cepe?.nbr_g);
                         const txF = pctVal(lvl.cepe?.admis_f, lvl.cepe?.nbr_f);
-                        const kind: 'f' | 'g' | null = Math.abs(txG - txF) < 0.1 ? null : txG < txF ? 'g' : 'f';
+                        const kind: 'f' | 'g' | null = Math.abs(txG - txF) < 0.01 ? null : txG < txF ? 'g' : 'f';
                         return <td key={i} style={{ ...styles.td, textAlign: 'center', padding: 2 }}><DisparityIcon kind={kind} /></td>;
                       })}
                     </tr>
@@ -689,41 +693,45 @@ const TDBCisco = () => {
           <div>
           <div ref={(el) => { sectionRefs.current[2] = el; }} style={{ padding: '10px', background: '#fff' }}>
         <div style={styles.titreIndicateur}><b>Goulot d'Étranglement&nbsp;&nbsp;et&nbsp;&nbsp;Efficience</b></div>
-        <div style={{ border: '1px solid #000', display: 'flex', minHeight: '420px' }}>
-          {/* Goulot bar chart */}
-          <div style={{ width: '50%', padding: '10px' }}>
-            <h4 style={{ textAlign: 'center', fontSize: '12px', fontWeight: 'bold', marginBottom: '10px' }}>Analyse des goulots d'étranglement</h4>
-            <ResponsiveContainer width="100%" height={380}>
-              <BarChart data={goulotData} layout="vertical" margin={{ top: 5, right: 30, left: 200, bottom: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" domain={[0, 100]} label={{ value: 'Indicateurs', position: 'insideBottom', offset: -10 }} />
-                <YAxis dataKey="name" type="category" tick={{ fontSize: 9 }} width={190} />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="cisco" fill="#337ab7" name="CISCO" barSize={8} />
-                <Bar dataKey="dren" fill="#5cb85c" name="DREN" barSize={8} />
-                <Bar dataKey="mada" fill="#f0ad4e" name="MADA" barSize={8} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-          {/* Efficience scatter */}
-          <div style={{ width: '50%', padding: '10px' }}>
-            <h4 style={{ textAlign: 'center', fontSize: '12px', fontWeight: 'bold', marginBottom: '10px' }}>Efficience</h4>
-            <ResponsiveContainer width="100%" height={380}>
+        {/* Ligne 1: Goulot pleine largeur */}
+        <div style={{ border: '1px solid #000', padding: 10, marginBottom: 8 }}>
+          <h4 style={{ textAlign: 'center', fontSize: 12, fontWeight: 'bold', marginBottom: 10 }}>Analyse des goulots d'étranglement</h4>
+          <ResponsiveContainer width="100%" height={340}>
+            <BarChart data={goulotData} layout="vertical" margin={{ top: 5, right: 40, left: 20, bottom: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis type="number" domain={[0, 100]} />
+              <YAxis dataKey="name" type="category" tick={{ fontSize: 9 }} width={220} interval={0} />
+              <Tooltip />
+              <Legend />
+              <Bar dataKey="cisco" fill="#337ab7" name="CISCO" barSize={12} />
+              <Bar dataKey="dren" fill="#5cb85c" name="DREN" barSize={12} />
+              <Bar dataKey="mada" fill="#f0ad4e" name="MADA" barSize={12} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        {/* Ligne 2: Efficience — une seule vue (scatter peer-comparison de la CISCO) */}
+        <div style={{ border: '1px solid #000', padding: 10 }}>
+          <h4 style={{ textAlign: 'center', fontSize: 12, fontWeight: 'bold', marginBottom: 8 }}>Efficience — votre CISCO (en rouge) parmi les autres</h4>
+          {efficienceData.length === 0 || efficienceData.every((p:any)=>p.x===0 && p.y===0) ? (
+            <div style={{ height: 320, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888', fontSize: 11, fontStyle: 'italic' }}>
+              Aucune donnée d'efficience disponible pour cette année.
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={320}>
               <ScatterChart margin={{ top: 10, right: 30, left: 10, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" dataKey="x" name="Ressources" label={{ value: 'Ressources', position: 'insideBottom', offset: -10 }} />
-                <YAxis type="number" dataKey="y" name="Résultats" label={{ value: 'Résultats', angle: -90, position: 'insideLeft' }} />
-                <Tooltip cursor={{ strokeDasharray: '3 3' }} formatter={(value: any, name: string) => [`${value}%`, name]} />
-                <Scatter data={efficienceData} fill="#337ab7">
-                  {efficienceData.map((entry: any, index: number) => (
-                    <Cell key={index} fill={entry.isCurrent ? '#e74c3c' : '#337ab7'} r={entry.isCurrent ? 8 : 5} />
-                  ))}
-                  <LabelList dataKey="name" position="right" style={{ fontSize: 9 }} />
+                <XAxis type="number" dataKey="x" name="Ressources" domain={[0, 100]} label={{ value: 'Ressources (%)', position: 'insideBottom', offset: -10, fontSize: 10 }} tick={{ fontSize: 9 }} />
+                <YAxis type="number" dataKey="y" name="Résultats" domain={[0, 100]} label={{ value: 'Résultats (%)', angle: -90, position: 'insideLeft', fontSize: 10 }} tick={{ fontSize: 9 }} />
+                <Tooltip cursor={{ strokeDasharray: '3 3' }} formatter={(v:any,n:string)=>[`${v}%`,n]} />
+                <ReferenceLine x={50} stroke="#999" strokeDasharray="3 3" />
+                <ReferenceLine y={50} stroke="#999" strokeDasharray="3 3" />
+                <Scatter data={efficienceData}>
+                  {efficienceData.map((entry:any,i:number)=>(<Cell key={i} fill={entry.isCurrent?'#e74c3c':'#337ab7'} />))}
+                  <LabelList dataKey="name" position="right" style={{ fontSize: 8 }} />
                 </Scatter>
               </ScatterChart>
             </ResponsiveContainer>
-          </div>
+          )}
         </div>
           </div>
           </div>

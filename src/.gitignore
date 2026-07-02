@@ -1,0 +1,10 @@
+dpeapp/dpeapp.db
+dpeapp/static/shape/
+**.db
+**sqbpro
+dpeapp/__pycache__
+**xlsx
+**sql
+**geojson
+myenv/
+**.pdf
