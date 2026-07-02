@@ -12,6 +12,7 @@ import {
   BarChart3,
   FileText,
   GraduationCap,
+  School,
   Users,
   ClipboardList,
   LogOut,
@@ -96,10 +97,17 @@ const menuItems: { section?: string; items: MenuItem[] }[] = [
         label: "Géolocalisation",
         icon: MapPin,
         children: [
+          { label: "Établissement", path: "/sig" },
+        ],
+      },
+      {
+        label: "ORS",
+        icon: School,
+        requiresAuth: true,
+        children: [
           { label: "ORS Primaire", path: "/ors-primaire", requiresAuth: true },
           { label: "ORS Collège", path: "/ors-college", requiresAuth: true },
           { label: "ORS Lycée", path: "/ors-lycee", requiresAuth: true },
-          { label: "Établissement", path: "/sig" },
         ],
       },
       { label: "Carte Thématique", icon: Map, path: "/dataviz" },
@@ -123,7 +131,7 @@ const Sidebar = () => {
   const isAdmin = !!user?.is_superuser || !!user?.is_staff;
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
-  const [openMenus, setOpenMenus] = useState<string[]>(["Tableau de Bord", "Données", "Géolocalisation"]);
+  const [openMenus, setOpenMenus] = useState<string[]>(["Tableau de Bord", "Données", "Géolocalisation", "ORS"]);
 
   // Filter menu items based on auth/admin state
   const visibleGroups = useMemo(() => {

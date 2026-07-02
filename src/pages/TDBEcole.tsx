@@ -135,13 +135,12 @@ const TDBEcole = () => {
     if (!printRef.current || !tdbData) return;
     setGeneratingPdf(true);
     try {
-      const { openHtmlPdf } = await import('@/utils/htmlToPdf');
-      openHtmlPdf(
-        printRef.current,
-        `TDB_ECOLE_${tdbData.names.NOM_ETAB}_${tdbData.annee}`,
-        'print',
+      await generateMultiPagePdf(
+        [printRef.current],
+        `TDB_ECOLE_${tdbData.names.NOM_ETAB}_${tdbData.annee}.pdf`,
+        { orientation: 'portrait', format: 'a3', windowWidth: 1191 }
       );
-      toast.success('Boîte de dialogue d\'impression ouverte');
+      toast.success('PDF téléchargé');
     } catch { toast.error('Erreur PDF'); }
     finally { setGeneratingPdf(false); }
   }, [tdbData]);

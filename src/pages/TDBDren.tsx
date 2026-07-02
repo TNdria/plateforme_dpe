@@ -82,9 +82,12 @@ const TDBDren = () => {
     if (!tdbData || !printRef.current) return;
     setGeneratingPdf(true);
     try {
-      const { openHtmlPdf } = await import('@/utils/htmlToPdf');
-      openHtmlPdf(printRef.current, `TDB_DREN_${tdbData.names.DREN}_${tdbData.annee}`, 'print');
-      toast.success('Boîte de dialogue d\'impression ouverte');
+      await generateMultiPagePdf(
+        [printRef.current],
+        `TDB_DREN_${tdbData.names.DREN}_${tdbData.annee}.pdf`,
+        { orientation: 'portrait', format: 'a3', windowWidth: 1191 }
+      );
+      toast.success('PDF téléchargé');
     } catch (err) { console.error(err); toast.error('Erreur PDF'); }
     finally { setGeneratingPdf(false); }
   }, [tdbData]);
