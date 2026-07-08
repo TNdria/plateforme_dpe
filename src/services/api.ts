@@ -553,7 +553,7 @@ export const donneesApi = {
 };
 
 // Besoins API - jointure besoins_<niveau> ↔ fpe_a1
-export const besoinsApi = {
+/*export const besoinsApi = {
   getDrens: () => fetchDB<Dren[]>('getDrens'),
   getCiscos: (codeDren: number) => fetchDB<Cisco[]>('getCiscos', { code_dren: codeDren }),
   getZaps: (codeDren: number, codeCisco: number) =>
@@ -564,6 +564,22 @@ export const besoinsApi = {
     fetchDB<any[]>('getBesoinsCollege', { code_dren: codeDren, code_cisco: codeCisco, code_zap: codeZap, annee }),
   getBesoinsLycee: (codeDren = 0, codeCisco = 0, codeZap = 0, annee = 2025) =>
     fetchDB<any[]>('getBesoinsLycee', { code_dren: codeDren, code_cisco: codeCisco, code_zap: codeZap, annee }),
+};*/
+export const besoinsApi = {
+  getDrens: () => fetchAPI<Dren[]>('/besoins/dren/'),
+  getCiscos: (codeDren: number) => fetchAPI<Cisco[]>(`/besoins/cisco/${codeDren}/`),
+  getZaps: (codeDren: number, codeCisco: number) => 
+    fetchAPI<Zap[]>(`/besoins/zap/${codeDren}/${codeCisco}/`),
+
+  // ====================== BESOINS PAR NIVEAU ======================
+  getBesoinsN1: (codeDren = 0, codeCisco = 0, codeZap = 0, annee = 2025) =>
+    fetchAPI<any[]>(`/besoins/n1/${codeDren}/${codeCisco}/${codeZap}/${annee}/`),
+
+  getBesoinsN2: (codeDren = 0, codeCisco = 0, codeZap = 0, annee = 2025) =>
+    fetchAPI<any[]>(`/besoins/n2/${codeDren}/${codeCisco}/${codeZap}/${annee}/`),
+
+  getBesoinsN3: (codeDren = 0, codeCisco = 0, codeZap = 0, annee = 2025) =>
+    fetchAPI<any[]>(`/besoins/n3/${codeDren}/${codeCisco}/${codeZap}/${annee}/`),
 };
 
 // Diagnostic API - Based on src/diagnostic/urls.py

@@ -46,6 +46,7 @@ import {
 } from 'recharts';
 import DataActionsBar from '@/components/admin/DataActionsBar';
 import { sumFields, BE_FIELDS, ME_FIELDS, NIVEAU_LABEL } from '../utils/sig';
+
 // ====================== CONFIG ======================
 const DJANGO_BASE_URL = 'https://dpe-men.mg';
 
@@ -72,7 +73,6 @@ async function djangoPost<T = any>(
   return res.json();
 }
 
-// Pour les endpoints qui attendent json.loads(request.body) côté Django
 async function djangoPostJSON<T = any>(
   path: string,
   data: Record<string, any>
@@ -207,9 +207,11 @@ const SIG = () => {
   const searchMarkerRef = useRef<L.Circle | null>(null);
   const positionAvantDeplacementRef = useRef<L.LatLng | null>(null);
   const verificationMarkersRef = useRef<L.LayerGroup>(new L.LayerGroup());
+  const [showRecap, setShowRecap] = useState(true);
   const markersRef = useRef<any[]>([]);
   const tempMarkersRef = useRef<any[]>([]);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
+
   // ====================== STATE ======================
   const [drens, setDrens] = useState<Dren[]>([]);
   const [ciscos, setCiscos] = useState<Cisco[]>([]);
@@ -269,8 +271,20 @@ const SIG = () => {
   });
   const [stats, setStats] = useState({
     total: 0,
-    publicCount: 0,
-    privateCount: 0,
+    public: {
+      total: 0,
+      prescolaire: 0,
+      primaire: 0,
+      college: 0,
+      lycee: 0,
+    },
+    private: {
+      total: 0,
+      prescolaire: 0,
+      primaire: 0,
+      college: 0,
+      lycee: 0,
+    },
     villages: 0,
   });
 
@@ -324,7 +338,6 @@ const SIG = () => {
         });
     }, 400);
 
-    // Boussole
     const compassDiv = L.DomUtil.create('div', 'leaflet-control');
     compassDiv.id = 'compass-control';
     compassDiv.style.cssText = `
@@ -341,7 +354,6 @@ const SIG = () => {
       if (zc) zc.style.marginTop = '65px';
     }, 200);
 
-    // Fonds de carte
     const DEFAULT_LAYER = L.tileLayer('', {
       maxZoom: 24,
       attribution: '© MEN/DPE',
@@ -391,7 +403,6 @@ const SIG = () => {
     layerControl.addTo(map);
     layerControlRef.current = layerControl;
 
-    // Bouton Reset
     const ResetControl = L.Control.extend({
       options: { position: 'topleft' as L.ControlPosition },
       onAdd: () => {
@@ -413,7 +424,6 @@ const SIG = () => {
     });
     new ResetControl().addTo(map);
 
-    // Bouton Plein écran
     const FullscreenControl = L.Control.extend({
       options: { position: 'topleft' as L.ControlPosition },
       onAdd: () => {
@@ -431,7 +441,6 @@ const SIG = () => {
     });
     new FullscreenControl().addTo(map);
 
-    // Bouton Télécharger
     const DownloadControl = L.Control.extend({
       options: { position: 'topleft' as L.ControlPosition },
       onAdd: () => {
@@ -458,7 +467,6 @@ const SIG = () => {
     });
     new DownloadControl().addTo(map);
 
-    // Légende
     const legend = new (L.Control.extend({
       options: { position: 'bottomleft' },
     }))();
@@ -495,7 +503,6 @@ const SIG = () => {
       }
     }, 400);
 
-    // Indicateur de zoom
     const zoomCtrl = new (L.Control.extend({
       options: { position: 'topleft' },
     }))();
@@ -546,7 +553,6 @@ const SIG = () => {
 
     map.on('click', () => setContextMenu(null));
 
-    // Init layer groups
     for (let n = 0; n < 4; n++) {
       for (let s = 0; s < 2; s++) {
         etabLayersRef.current[`layer_etabN${n}S${s}`] = new L.LayerGroup();
@@ -556,7 +562,6 @@ const SIG = () => {
 
     mapRef.current = map;
 
-    // Charger les DREN — route kebab-case conforme à urls.py
     djangoGet<Dren[]>('/sig/dren/').then(setDrens).catch(console.error);
 
     return () => {
@@ -576,7 +581,6 @@ const SIG = () => {
           niveau: String(niveau),
           code_etab: String(selectedSchool.CODE_ETAB),
         });
-        // Utilise DJANGO_BASE_URL pour rester cohérent avec les autres appels
         const data = await djangoGet(`/sig/tables-bancs/?${params}`);
         if (!cancelled) setTablesBancs(data);
       } catch (err) {
@@ -598,11 +602,10 @@ const SIG = () => {
         const modules = res?.modules || {};
         const permissions = res?.permissions || {};
 
-        // Normalisation robuste pour gérer les différentes conventions de nommage
         const getModule = (key: string): boolean => {
           return Boolean(
             modules[key] ??
-            modules[key.replace(/([A-Z])/g, '_$1').toLowerCase()] ?? // camelCase → snake_case
+            modules[key.replace(/([A-Z])/g, '_$1').toLowerCase()] ??
             modules[key.toLowerCase()] ??
             false
           );
@@ -620,11 +623,10 @@ const SIG = () => {
             valider: Boolean(permissions.valider),
             rejeter: Boolean(permissions.rejeter),
             supprimer: Boolean(permissions.supprimer),
-            verifier: Boolean(permissions.verifier ?? true), // fallback sécurisé
+            verifier: Boolean(permissions.verifier ?? true),
           },
         });
       } catch (err) {
-        //console.warn('❌ Erreur chargement config SIG → fallback', err);
         setSigConfig({
           modules: {
             pointage: true,
@@ -644,7 +646,7 @@ const SIG = () => {
     loadConfig();
   }, []);
 
-  // ====================== GESTION CISCO PAR RAPPORT DREN SELECTIONNE======================
+  // ====================== GESTION CISCO =======================
   useEffect(() => {
     const load = async () => {
       if (selectedDren === 0) {
@@ -747,38 +749,98 @@ const SIG = () => {
     positionAvantDeplacementRef.current = event.target.getLatLng();
   };
 
-  // updatePositionEtablissement attend json.loads(request.body) côté Django
-  const onDragEtabEnd = async (e: any, etab: any) => {
-    if (!sigConfig.modules.deplacement) return;
-    const { lat, lng } = e.target.getLatLng();
+  const onDragEtabEnd = async (event: any) => {
+    const moveCheckbox = document.getElementById(
+      'check-move'
+    ) as HTMLInputElement | null;
+    const isEnabled = moveCheckbox?.checked ?? sigMoveEnabled;
+    const zoom = mapRef.current?.getZoom() ?? 0;
+
+    // Cas 1 : Le mode déplacement n'est pas activé
+    if (!isEnabled) {
+      if (positionAvantDeplacementRef.current) {
+        event.target.setLatLng(positionAvantDeplacementRef.current);
+      }
+      toast.warning(
+        "Activez le mode 'Déplacer' pour pouvoir modifier la position"
+      );
+      return;
+    }
+
+    // Cas 2 : Zoom insuffisant
+    if (zoom < 16) {
+      if (positionAvantDeplacementRef.current) {
+        event.target.setLatLng(positionAvantDeplacementRef.current);
+      }
+      toast.warning('Déplacement autorisé uniquement à partir du zoom 16');
+      return;
+    }
+
+    const props = event.target.options.properties;
+    const code_etab = props?.CODE_ETAB;
+    const { lat, lng } = event.target.getLatLng();
+
+    if (!code_etab) return;
+
     try {
       await djangoPostJSON('/sig/deplacements/update-position-etablissement/', {
-        code_etab: etab.CODE_ETAB,
+        code_etab,
         nouveau_lat: lat,
         nouveau_lng: lng,
-        demande_par: user?.username || 'system',
       });
-      toast.info('Demande de déplacement envoyée');
+      toast.success("Position de l'établissement mise à jour");
     } catch {
-      toast.error('Erreur lors du déplacement');
+      toast.error('Erreur lors de la mise à jour');
+      if (positionAvantDeplacementRef.current) {
+        event.target.setLatLng(positionAvantDeplacementRef.current);
+      }
     }
   };
 
-  // updatePositionVillage attend json.loads(request.body) côté Django
-  const onDragVillageEnd = async (e: L.LeafletEvent) => {
-    if (!sigConfig.modules.deplacement) return;
-    const marker = e.target as any;
-    const village = marker.properties;
-    const { lat, lng } = (marker as L.Marker).getLatLng();
+  const onDragVillageEnd = async (event: any) => {
+    const moveCheckbox = document.getElementById(
+      'check-move'
+    ) as HTMLInputElement | null;
+    const isEnabled = moveCheckbox?.checked ?? sigMoveEnabled;
+    const zoom = mapRef.current?.getZoom() ?? 0;
+
+    // Cas 1 : Le mode déplacement n'est pas activé
+    if (!isEnabled) {
+      if (positionAvantDeplacementRef.current) {
+        event.target.setLatLng(positionAvantDeplacementRef.current);
+      }
+      toast.warning(
+        "Activez le mode 'Déplacer' pour pouvoir modifier la position"
+      );
+      return;
+    }
+
+    // Cas 2 : Zoom insuffisant
+    if (zoom < 16) {
+      if (positionAvantDeplacementRef.current) {
+        event.target.setLatLng(positionAvantDeplacementRef.current);
+      }
+      toast.warning('Déplacement autorisé uniquement à partir du zoom 16');
+      return;
+    }
+
+    const props = event.target.options.properties;
+    const id = props?.id;
+    const { lat, lng } = event.target.getLatLng();
+
+    if (!id) return;
+
     try {
       await djangoPostJSON('/sig/deplacements/update-position-village/', {
-        id_village: village.id,
+        id_village: id,
         nouveau_lat: lat,
         nouveau_lng: lng,
-        demande_par: user?.username || 'system',
       });
+      toast.success('Position du village mise à jour');
     } catch {
-      toast.error('Erreur lors du déplacement du village');
+      toast.error('Erreur lors de la mise à jour');
+      if (positionAvantDeplacementRef.current)
+        event.target.setLatLng(positionAvantDeplacementRef.current);
     }
   };
 
@@ -840,22 +902,18 @@ const SIG = () => {
 
       marker.bindTooltip(
         `<div class="custom-tooltip">${dataEtab.NOM_ETAB}</div>`,
-        {
-          permanent: false,
-          opacity: 1,
-          direction: 'top',
-        }
+        { permanent: false, opacity: 1, direction: 'top' }
       );
+
       marker.on('mouseover', () => setHoveredEtab(dataEtab));
       marker.on('mouseout', () => setHoveredEtab(null));
       marker.on('click', () => {
         setNiveau(Number(niveauKey.replace('n', '')));
         setSelectedSchool(dataEtab);
       });
+
       marker.on('dragstart', onDragMarkerStart);
-      marker.on('dragend', (e) => {
-        void onDragEtabEnd(e, dataEtab);
-      });
+      marker.on('dragend', onDragEtabEnd);
 
       try {
         const buffer = turf.buffer(turf.point([lng, lat]), config.rayon, {
@@ -936,7 +994,6 @@ const SIG = () => {
       const codeDren = selectedDren;
       const codeCisco = selectedCisco;
 
-      // Routes conformes à urls.py (kebab-case)
       const [
         drenRes,
         ciscoRes,
@@ -978,8 +1035,6 @@ const SIG = () => {
 
       setEtabNonPointe(nonGeoRes.status === 'fulfilled' ? nonGeoRes.value : []);
 
-      // ── SHAPES GÉOGRAPHIQUES ──
-      // get_layer_dren retourne [{shape: FeatureCollection}]
       if (drenData?.[0]?.shape) {
         shpRef.current.dren = L.geoJSON(drenData[0].shape, {
           style: STYLE_DREN,
@@ -1024,15 +1079,12 @@ const SIG = () => {
         map.fitBounds(shpRef.current.dren.getBounds());
       }
 
-      // ── MARQUEURS ÉTABLISSEMENTS ──
       const allSearchItems: SearchItem[] = [];
       allSearchItems.push(...(createLayerEtab(n0Data, 'n0') || []));
       allSearchItems.push(...(createLayerEtab(n1Data, 'n1') || []));
       allSearchItems.push(...(createLayerEtab(n2Data, 'n2') || []));
       allSearchItems.push(...(createLayerEtab(n3Data, 'n3') || []));
 
-      // ── VILLAGES ──
-      // get_layer_village retourne [{id, name, code_dren, code_cisco, longitude, latitude}]
       villageLayerRef.current.clearLayers();
       const villageItems: SearchItem[] = [];
 
@@ -1066,21 +1118,30 @@ const SIG = () => {
       allSearchItems.push(...villageItems);
       setSearchItems(allSearchItems);
 
-      // Statistiques
-      const publicCount =
-        n0Data.length + n1Data.length + n2Data.length + n3Data.length;
+      const allEtabs = [...n0Data, ...n1Data, ...n2Data, ...n3Data];
+
+      const publicEtabs = allEtabs.filter((e: any) => e.SECTEUR === 0);
+      const privateEtabs = allEtabs.filter((e: any) => e.SECTEUR !== 0);
+
       setStats({
-        total: publicCount + villageItems.length,
-        publicCount: [...n0Data, ...n1Data, ...n2Data, ...n3Data].filter(
-          (e: any) => e.SECTEUR === 0
-        ).length,
-        privateCount: [...n0Data, ...n1Data, ...n2Data, ...n3Data].filter(
-          (e: any) => e.SECTEUR !== 0
-        ).length,
+        total: allEtabs.length + villageItems.length,
+        public: {
+          total: publicEtabs.length,
+          prescolaire: n0Data.filter((e: any) => e.SECTEUR === 0).length,
+          primaire: n1Data.filter((e: any) => e.SECTEUR === 0).length,
+          college: n2Data.filter((e: any) => e.SECTEUR === 0).length,
+          lycee: n3Data.filter((e: any) => e.SECTEUR === 0).length,
+        },
+        private: {
+          total: privateEtabs.length,
+          prescolaire: n0Data.filter((e: any) => e.SECTEUR !== 0).length,
+          primaire: n1Data.filter((e: any) => e.SECTEUR !== 0).length,
+          college: n2Data.filter((e: any) => e.SECTEUR !== 0).length,
+          lycee: n3Data.filter((e: any) => e.SECTEUR !== 0).length,
+        },
         villages: villageItems.length,
       });
 
-      // ── OVERLAYS DANS LE LAYER CONTROL ──
       lc.addOverlay(etabLayersRef.current['layer_etabN0S0'], 'PRESCO PUBLIC');
       lc.addOverlay(etabLayersRef.current['layer_etabN0S1'], 'PRESCO PRIVÉ');
       lc.addOverlay(etabLayersRef.current['layer_etabN1S0'], 'PRIMAIRE PUBLIC');
@@ -1091,7 +1152,6 @@ const SIG = () => {
       lc.addOverlay(etabLayersRef.current['layer_etabN3S1'], 'LYCEE PRIVÉ');
       lc.addOverlay(villageLayerRef.current, 'VILLAGES');
 
-      // ── CONTRÔLE AIRES (EPP, CEG, LYCEE) ──
       const aireCtrl = new (L.Control.extend({
         options: { position: 'topright' },
       }))();
@@ -1115,7 +1175,6 @@ const SIG = () => {
 
         L.DomEvent.disableClickPropagation(div);
 
-        // Event listeners
         setTimeout(() => {
           ['N1S0', 'N2S0', 'N3S0'].forEach((niveau) => {
             const cb = document.getElementById(
@@ -1125,17 +1184,8 @@ const SIG = () => {
 
             cb.addEventListener('change', () => {
               const aireLayer = aireLayersRef.current[`aire_etab${niveau}`];
-              const etabLayer = etabLayersRef.current[`layer_etab${niveau}`];
-              const key = niveau.trim().toUpperCase();
               if (cb.checked) {
-                if (etabLayer && map.hasLayer(etabLayer)) {
-                  aireLayer?.addTo(map);
-                } else {
-                  toast.warning(
-                    `Activez d'abord le groupe ${NIVEAU_LABEL[key] ?? niveau}  dans le contrôle des couches`
-                  );
-                  cb.checked = false;
-                }
+                aireLayer?.addTo(map);
               } else {
                 aireLayer?.remove();
               }
@@ -1196,7 +1246,7 @@ const SIG = () => {
     setSearchResults([]);
   };
 
-  // ====================== GÉOLOCALISER ÉTABLISSEMENT ======================
+  // ====================== GÉOLOCALISER ======================
   const handleSaveGeoEtab = async () => {
     if (!selectedEtabGeo) {
       toast.warning('Sélectionnez un établissement');
@@ -1207,7 +1257,6 @@ const SIG = () => {
       return;
     }
     try {
-      // Route conforme à urls.py : /sig/geolocaliser-etablissement/
       await djangoPost('/sig/geolocaliser-etablissement/', {
         code_etab: selectedEtabGeo.CODE_ETAB,
         longitude: geoCoords.lng,
@@ -1226,7 +1275,6 @@ const SIG = () => {
     }
   };
 
-  // ====================== GÉOLOCALISER VILLAGE ======================
   const handleSaveGeoVillage = async () => {
     if (villageForm.name.length < 4) {
       toast.warning('Nom du village invalide (min 4 caractères)');
@@ -1242,7 +1290,6 @@ const SIG = () => {
       return;
     }
     try {
-      // Route conforme à urls.py : /sig/geolocaliser-village/
       await djangoPost('/sig/geolocaliser-village/', {
         name: villageForm.name,
         dren: selectedDren,
@@ -1301,7 +1348,6 @@ const SIG = () => {
     }
   };
 
-  // valider_deplacement attend json.loads(request.body) avec {type_objet, id}
   const handleValider = async (item: any) => {
     try {
       await djangoPostJSON('/sig/deplacements/valider/', {
@@ -1315,7 +1361,6 @@ const SIG = () => {
     }
   };
 
-  // rejeter_deplacement attend json.loads(request.body) avec {type_objet, id}
   const handleRejeter = async (item: any) => {
     try {
       await djangoPostJSON('/sig/deplacements/rejeter/', {
@@ -1329,7 +1374,6 @@ const SIG = () => {
     }
   };
 
-  // supprimer_deplacement attend json.loads(request.body) avec {type_objet, id}
   const handleSupprimer = async (item: any) => {
     if (!confirm('Supprimer définitivement ?')) return;
     try {
@@ -1344,7 +1388,6 @@ const SIG = () => {
     }
   };
 
-  // ====================== VÉRIFICATION DÉPLACEMENT ======================
   const handleVerifier = (item: any) => {
     const map = mapRef.current;
     if (!map) return;
@@ -1403,10 +1446,10 @@ const SIG = () => {
   const filteredEtabNonPointe = etabNonPointe.filter(
     (e) =>
       filterEtabName.length === 0 ||
-      e.NOM_ETAB?.toLowerCase().includes(filterEtabName.toLowerCase())
+      (e.NOM_ETAB &&
+        e.NOM_ETAB.toLowerCase().includes(filterEtabName.toLowerCase()))
   );
 
-  // ====================== STATS ENSEIGNANTS ======================
   const teacherStats = useMemo(() => {
     if (!selectedSchool) return null;
     const niveaux = ['PRÉSCOLAIRE', 'PRIMAIRE', 'COLLÈGE', 'LYCÉE'];
@@ -1421,7 +1464,6 @@ const SIG = () => {
     };
   }, [selectedSchool, niveau]);
 
-  // ====================== INFRA ======================
   const infraStats = (good: any, bad: any, totalOverride?: any) => {
     const bon = Number(good) || 0;
     const mauvais = Number(bad) || 0;
@@ -1430,7 +1472,6 @@ const SIG = () => {
 
   const isPositive = (v: any) => Number(v || 0) > 0;
 
-  // ── Tables-bancs ──
   const latest = useMemo(() => {
     if (!tablesBancs?.length) return null;
     return [...tablesBancs].sort(
@@ -1468,7 +1509,6 @@ const SIG = () => {
     const etabs: any[] = [];
     const villages: any[] = [];
 
-    // Études actives (visibles)
     Object.keys(etabLayersRef.current).forEach((key) => {
       const layerGroup = etabLayersRef.current[key];
       if (layerGroup && map.hasLayer(layerGroup)) {
@@ -1480,7 +1520,6 @@ const SIG = () => {
       }
     });
 
-    // Villages actifs
     if (villageLayerRef.current && map.hasLayer(villageLayerRef.current)) {
       villageLayerRef.current.eachLayer((layer: any) => {
         if (layer instanceof L.Marker && layer.properties) {
@@ -1506,7 +1545,6 @@ const SIG = () => {
 
     const data: any[] = [];
 
-    // Établissements
     etabs.forEach((etab) => {
       data.push({
         TYPE: 'ETABLISSEMENT',
@@ -1526,11 +1564,10 @@ const SIG = () => {
       });
     });
 
-    // Villages
     villages.forEach((v) => {
       data.push({
         TYPE: 'VILLAGE',
-        DREN: '', // rempli selon ton besoin
+        DREN: '',
         CODE_DREN: selectedDren,
         CISCO: '',
         CODE_CISCO: selectedCisco,
@@ -1617,7 +1654,6 @@ const SIG = () => {
     URL.revokeObjectURL(url);
   };
 
-  // Télécharger tous les formats en ZIP
   const downloadAllFormats = async () => {
     const { etabs, villages, total } = collectActiveMarkers();
 
@@ -1636,10 +1672,8 @@ const SIG = () => {
         .replace(/[:T]/g, '-');
       const baseName = `SIG_${selectedDren || 'national'}_${timestamp}`;
 
-      // Générer les données une seule fois
       const data: any[] = [];
 
-      // Établissements
       etabs.forEach((etab) => {
         data.push({
           TYPE: 'ETABLISSEMENT',
@@ -1659,7 +1693,6 @@ const SIG = () => {
         });
       });
 
-      // Villages
       villages.forEach((v) => {
         data.push({
           TYPE: 'VILLAGE',
@@ -1677,7 +1710,6 @@ const SIG = () => {
         });
       });
 
-      // 1. CSV
       const headers = Object.keys(data[0] || {});
       const csvContent =
         headers.join(',') +
@@ -1691,10 +1723,8 @@ const SIG = () => {
           .join('\n');
       zip.file(`${baseName}.csv`, csvContent);
 
-      // 2. JSON
       zip.file(`${baseName}.json`, JSON.stringify(data, null, 2));
 
-      // 3. GeoJSON
       const features = data.map((item) => ({
         type: 'Feature',
         geometry: {
@@ -1715,7 +1745,6 @@ const SIG = () => {
       };
       zip.file(`${baseName}.geojson`, JSON.stringify(geojson, null, 2));
 
-      // Générer le ZIP
       const blob = await zip.generateAsync({ type: 'blob' });
       const { saveAs } = await import('file-saver');
 
@@ -1729,7 +1758,6 @@ const SIG = () => {
     }
   };
 
-  // Capture de la carte en PNG
   const captureMapAsPNG = () => {
     const map = mapRef.current;
     if (!map) return;
@@ -1750,11 +1778,9 @@ const SIG = () => {
 
   // ====================== RENDU ======================
   return (
-    <div className="h-[calc(100vh-4rem)] relative">
-      {/* ── Barre supérieure ── */}
-      <div className="absolute top-3 left-14 z-[1000] flex flex-col gap-2">
-        {/* ==================== Ligne 1 ==================== */}
-        <div className="flex items-center gap-2 flex-wrap">
+    <div className="h-[calc(100vh-4rem)] relative flex flex-row w-full overflow-hidden">
+      <div className="w-[280px] shrink-0 bg-background/95 backdrop-blur border-r flex flex-col">
+        <div className="px-4 py-3 border-b flex flex-wrap items-center gap-2">
           <Button
             onClick={() => setShowFilters(true)}
             size="sm"
@@ -1764,42 +1790,134 @@ const SIG = () => {
             Filtres
           </Button>
 
-          {stats.total > 0 && (
-            <Badge
-              variant="secondary"
-              className="shadow-lg text-xs py-1.5 px-4"
-            >
-              <div className="flex flex-col gap-0.5">
-                <div>
-                  <strong>Établissements :</strong>{' '}
-                  {stats.publicCount + stats.privateCount} pointés dont{' '}
-                  <span className="text-blue-800 font-bold">
-                    {stats.publicCount}
-                  </span>{' '}
-                  public,{' '}
-                  <span className="text-blue-800 font-bold">
-                    {stats.privateCount}
-                  </span>{' '}
-                  privé
-                </div>
-                <div>
-                  <strong>Villages :</strong> {stats.villages} pointés
-                </div>
+          {selectedDren > 0 && stats.total > 0 && (
+            <div className="bg-card border rounded-xl shadow-sm w-full overflow-hidden">
+              <div
+                className="flex items-center justify-between px-4 py-3 border-b cursor-pointer hover:bg-muted/50 transition-colors"
+                onClick={() => setShowRecap(!showRecap)}
+              >
+                <span className="font-semibold text-sm">Récapitulatif</span>
+                <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                  {showRecap ? '−' : '+'}
+                </Button>
               </div>
-            </Badge>
+
+              {showRecap && (
+                <div className="p-4 text-xs space-y-3">
+                  {' '}
+                  {/* Taille réduite */}
+                  {/* Zone sélectionnée */}
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Zone</span>
+                    <strong className="text-foreground text-right">
+                      {drens.find((d) => d.CODE_DREN === selectedDren)?.DREN ||
+                        `DREN ${selectedDren}`}
+
+                      {selectedCisco > 0 && ciscos.length > 0 && (
+                        <>
+                          {' '}
+                          —{' '}
+                          {ciscos.find((c) => c.CODE_CISCO === selectedCisco)
+                            ?.CISCO || `CISCO ${selectedCisco}`}
+                        </>
+                      )}
+                    </strong>
+                  </div>
+                  <hr className="my-2" />
+                  {/* Établissements */}
+                  <div className="flex justify-between items-center">
+                    <span className="font-semibold">Établissements</span>
+                    <Badge variant="secondary" className="tabular-nums">
+                      {(stats.public?.total || 0) + (stats.private?.total || 0)}
+                    </Badge>
+                  </div>
+                  {/* Public */}
+                  <div className="pl-2 space-y-1">
+                    <div className="flex justify-between items-center">
+                      <span className="text-muted-foreground">Public</span>
+                      <span className="font-medium text-blue-700 tabular-nums">
+                        {stats.public?.total || 0}
+                      </span>
+                    </div>
+
+                    <div className="pl-3 space-y-0.5 text-[10px] text-muted-foreground">
+                      <div className="flex justify-between">
+                        <span>Préscolaire</span>
+                        <span className="tabular-nums">
+                          {stats.public?.prescolaire || 0}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Primaire</span>
+                        <span className="tabular-nums">
+                          {stats.public?.primaire || 0}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Collège</span>
+                        <span className="tabular-nums">
+                          {stats.public?.college || 0}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Lycée</span>
+                        <span className="tabular-nums">
+                          {stats.public?.lycee || 0}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  {/* Privé */}
+                  <div className="pl-2 space-y-1">
+                    <div className="flex justify-between items-center">
+                      <span className="text-muted-foreground">Privé</span>
+                      <span className="font-medium text-amber-700 tabular-nums">
+                        {stats.private?.total || 0}
+                      </span>
+                    </div>
+
+                    <div className="pl-3 space-y-0.5 text-[10px] text-muted-foreground">
+                      <div className="flex justify-between">
+                        <span>Préscolaire</span>
+                        <span className="tabular-nums">
+                          {stats.private?.prescolaire || 0}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Primaire</span>
+                        <span className="tabular-nums">
+                          {stats.private?.primaire || 0}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Collège</span>
+                        <span className="tabular-nums">
+                          {stats.private?.college || 0}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Lycée</span>
+                        <span className="tabular-nums">
+                          {stats.private?.lycee || 0}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  {/* Villages */}
+                  <div className="flex justify-between items-center pt-2 border-t">
+                    <span className="font-semibold">Villages</span>
+                    <Badge
+                      variant="outline"
+                      className="bg-emerald-50 text-emerald-700 tabular-nums"
+                    >
+                      {stats.villages || 0}
+                    </Badge>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
-          <div className="bg-background/90 backdrop-blur rounded-md shadow-lg px-1.5 py-0.5">
-            <DataActionsBar
-              table="sig_etablissement"
-              tableLabel="SIG Établissement"
-              compact
-            />
-          </div>
-        </div>
-
-        {/* ==================== Ligne 2 ==================== */}
-        <div className="flex items-center gap-3 flex-wrap">
           {sigConfig.modules.validationDeplacement && (
             <Button
               size="sm"
@@ -1809,7 +1927,6 @@ const SIG = () => {
                   toast.error('Veuillez sélectionner un DREN');
                   return;
                 }
-
                 await loadDeplacements();
                 setShowDeplacementsModal(true);
               }}
@@ -1817,44 +1934,13 @@ const SIG = () => {
               Liste des déplacements
             </Button>
           )}
-
-          {sigConfig.modules.deplacement && (
-            <div className="flex items-center gap-2 bg-background/90 backdrop-blur rounded-md shadow-lg px-3 py-1.5 border border-border">
-              <input
-                id="check-move"
-                type="checkbox"
-                className="w-5 h-5 accent-orange-500 cursor-pointer"
-                checked={sigMoveEnabled}
-                onChange={(e) => {
-                  const zoom = mapRef.current?.getZoom() || 0;
-
-                  if (e.target.checked && zoom <= 13) {
-                    toast.warning('Zoom minimum 14 requis pour déplacer');
-                    return;
-                  }
-
-                  setSigMoveEnabled(e.target.checked);
-                }}
-              />
-
-              <label
-                htmlFor="check-move"
-                className="flex items-center gap-1.5 text-sm font-medium cursor-pointer select-none"
-              >
-                <i className="fas fa-arrows-alt text-orange-600"></i>
-                Déplacer
-              </label>
-            </div>
-          )}
         </div>
 
-        {/* ==================== Ligne 3 ==================== */}
-        <div className="w-80">
-          <div className="relative">
+        <div className="px-4 py-3 flex flex-col gap-3 min-w-0">
+          <div className="relative w-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-
             <Input
-              placeholder="Rechercher écoles ou villages..."
+              placeholder="écoles ou villages..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10 bg-background shadow-lg"
@@ -1876,973 +1962,1013 @@ const SIG = () => {
           )}
         </div>
       </div>
+      {/* Zone MAP */}
+      <div className="relative flex-1 min-w-0 overflow-hidden">
+        <div className="absolute top-3 left-3 z-[1000] bg-background/90 backdrop-blur rounded-md shadow-lg px-1.5 py-0.5">
+          <DataActionsBar
+            table="sig_etablissement"
+            tableLabel="SIG Établissement"
+            compact
+          />
+        </div>
 
-      {/* Bouton arrêt vérification */}
-      {verifyMode && (
-        <Button
-          className="absolute top-20 right-4 z-[2000]"
-          onClick={stopVerification}
-        >
-          Quitter la vérification
-        </Button>
-      )}
+        {sigConfig.modules.deplacement && (
+          <div className="absolute top-4 left-14 z-[1100] flex items-center gap-2 bg-background/90 backdrop-blur rounded-md shadow-lg px-3 py-1.5 border border-border">
+            <input
+              id="check-move"
+              type="checkbox"
+              className="w-5 h-5 accent-orange-500 cursor-pointer"
+              checked={sigMoveEnabled}
+              onChange={(e) => {
+                const zoom = mapRef.current?.getZoom() || 0;
+                if (e.target.checked && zoom < 16) {
+                  toast.warning(
+                    "Zoom 16 requis afin d'avoir la meilleure précision possible pour le déplacement. Zoomez davantage et réessayez."
+                  );
+                  return;
+                }
+                setSigMoveEnabled(e.target.checked);
+              }}
+            />
+            <label
+              htmlFor="check-move"
+              className="flex items-center gap-1.5 text-sm font-medium cursor-pointer select-none"
+            >
+              <i className="fas fa-arrows-alt text-orange-600"></i>
+              Déplacer
+            </label>
+          </div>
+        )}
 
-      {/* Modal Déplacements */}
-      {showDeplacementsModal && (
-        <div className="fixed inset-0 z-[2000] bg-black/40 flex items-center justify-center">
-          <div className="bg-white w-[95%] max-w-7xl rounded-lg shadow-xl p-4 max-h-[92vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold flex items-center gap-2">
-                Liste des déplacements
-                {deplacements.length > 0 && (
-                  <Badge variant="secondary" className="ml-2">
-                    {deplacements.length} en attente
-                  </Badge>
-                )}
-              </h2>
+        {verifyMode && (
+          <Button
+            className="absolute top-3 right-4 z-[2000]"
+            onClick={stopVerification}
+          >
+            Quitter la vérification
+          </Button>
+        )}
+
+        {showDeplacementsModal && (
+          <div className="fixed inset-0 z-[2000] bg-black/40 flex items-center justify-center">
+            <div className="bg-white w-[95%] max-w-7xl rounded-lg shadow-xl p-4 max-h-[92vh] overflow-hidden flex flex-col">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  Liste des déplacements
+                  {deplacements.length > 0 && (
+                    <Badge variant="secondary" className="ml-2">
+                      {deplacements.length} en attente
+                    </Badge>
+                  )}
+                </h2>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowDeplacementsModal(false)}
+                >
+                  Fermer
+                </Button>
+              </div>
+
+              {deplacements.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <p className="text-lg">Aucun déplacement en attente</p>
+                  <p className="text-sm mt-2">
+                    Pour la zone sélectionnée :{' '}
+                    <strong>
+                      {selectedDren
+                        ? drens.find((d) => d.CODE_DREN === selectedDren)
+                            ?.DREN || `DREN ${selectedDren}`
+                        : 'Toutes les DREN'}
+                      {selectedCisco > 0 && ciscos.length > 0 && (
+                        <>
+                          {' '}
+                          —{' '}
+                          {ciscos.find((c) => c.CODE_CISCO === selectedCisco)
+                            ?.CISCO || `CISCO ${selectedCisco}`}
+                        </>
+                      )}
+                    </strong>
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-auto flex-1">
+                  <table className="w-full text-sm border">
+                    <thead className="sticky top-0 bg-gray-100 z-10">
+                      <tr>
+                        <th className="p-3 border">Code</th>
+                        <th className="p-3 border">Type</th>
+                        <th className="p-3 border">Demandé par</th>
+                        <th className="p-3 border">Ancienne Position</th>
+                        <th className="p-3 border">Nouvelle Position</th>
+                        <th className="p-3 border">Date</th>
+                        <th className="p-3 border text-center">Doublons</th>
+                        <th className="p-3 border text-center">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {deplacements.map((item) => {
+                        const typeLabel =
+                          item.type_objet === 'ETAB'
+                            ? 'Établissement'
+                            : item.type_objet === 'VILLAGE'
+                              ? 'Village'
+                              : item.type_objet;
+
+                        return (
+                          <tr
+                            key={`dep-${item.type_objet}-${item.id}`}
+                            className="border-t hover:bg-gray-50"
+                          >
+                            <td className="p-3 border font-medium">
+                              {item.code}
+                            </td>
+                            <td className="p-3 border">
+                              <Badge variant="outline">{typeLabel}</Badge>
+                            </td>
+                            <td className="p-3 border">
+                              {item.demande_par || '-'}
+                            </td>
+                            <td className="p-3 border text-xs font-mono text-muted-foreground">
+                              {item.ancien_lat?.toFixed(6)},{' '}
+                              {item.ancien_lng?.toFixed(6)}
+                            </td>
+                            <td className="p-3 border text-xs font-mono text-blue-600">
+                              {item.nouveau_lat?.toFixed(6)},{' '}
+                              {item.nouveau_lng?.toFixed(6)}
+                            </td>
+                            <td className="p-3 border text-xs text-muted-foreground">
+                              {item.date_demande
+                                ? new Date(item.date_demande).toLocaleString(
+                                    'fr-FR'
+                                  )
+                                : '-'}
+                            </td>
+                            <td className="p-3 border text-center">
+                              {item.is_duplicate ? (
+                                <Badge variant="destructive">Doublon</Badge>
+                              ) : (
+                                <span className="text-emerald-600">
+                                  ✓ Unique
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-3 border">
+                              <div className="flex gap-2 flex-wrap justify-center">
+                                {sigConfig.modules.validationDeplacement && (
+                                  <>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => handleVerifier(item)}
+                                    >
+                                      Vérifier
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      className="bg-green-600 hover:bg-green-700 text-white"
+                                      onClick={() => handleValider(item)}
+                                    >
+                                      Valider
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="destructive"
+                                      onClick={() => handleRejeter(item)}
+                                    >
+                                      Rejeter
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="text-red-600 hover:bg-red-50"
+                                      onClick={() => handleSupprimer(item)}
+                                    >
+                                      Supprimer
+                                    </Button>
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        <Dialog open={showDownloadModal} onOpenChange={setShowDownloadModal}>
+          <DialogContent className="sm:max-w-xl z-[10000]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-3">
+                <Download className="h-5 w-5" />
+                Exporter les données SIG
+              </DialogTitle>
+              <DialogDescription>
+                Choisissez le format d'export ou téléchargez tout en une fois.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="py-6 space-y-6">
+              <div className="bg-muted/50 rounded-xl p-5 text-sm">
+                <div className="grid grid-cols-3 gap-4 text-center">
+                  <div>
+                    <div className="text-2xl font-semibold text-primary">
+                      {collectActiveMarkers().etabs.length}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Établissements
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-semibold text-primary">
+                      {collectActiveMarkers().villages.length}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Villages
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-semibold text-primary">
+                      {collectActiveMarkers().total}
+                    </div>
+                    <div className="text-xs text-muted-foreground">Total</div>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <p className="text-sm font-medium text-muted-foreground mb-3">
+                  FORMATS INDIVIDUELS
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <Button
+                    onClick={() => downloadData('csv')}
+                    variant="outline"
+                    className="h-20 justify-start"
+                  >
+                    <Download className="mr-3 h-5 w-5" />
+                    <div className="text-left">
+                      <div>CSV</div>
+                      <div className="text-xs text-muted-foreground">
+                        Tableur
+                      </div>
+                    </div>
+                  </Button>
+                  <Button
+                    onClick={() => downloadData('excel')}
+                    variant="outline"
+                    className="h-20 justify-start"
+                  >
+                    <Download className="mr-3 h-5 w-5" />
+                    <div className="text-left">
+                      <div>Excel</div>
+                      <div className="text-xs text-muted-foreground">.xlsx</div>
+                    </div>
+                  </Button>
+                  <Button
+                    onClick={() => downloadData('json')}
+                    variant="outline"
+                    className="h-20 justify-start"
+                  >
+                    <Download className="mr-3 h-5 w-5" />
+                    <div className="text-left">
+                      <div>JSON</div>
+                      <div className="text-xs text-muted-foreground">
+                        Données brutes
+                      </div>
+                    </div>
+                  </Button>
+                  <Button
+                    onClick={() => downloadData('geojson')}
+                    variant="outline"
+                    className="h-20 justify-start"
+                  >
+                    <Download className="mr-3 h-5 w-5" />
+                    <div className="text-left">
+                      <div>GeoJSON</div>
+                      <div className="text-xs text-muted-foreground">
+                        Format cartographique
+                      </div>
+                    </div>
+                  </Button>
+                </div>
+              </div>
+
+              <div>
+                <p className="text-sm font-medium text-muted-foreground mb-3">
+                  ACTIONS GROUPÉES
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <Button
+                    onClick={downloadAllFormats}
+                    variant="default"
+                    className="h-20 flex-col gap-1"
+                  >
+                    <Archive className="h-6 w-6" />
+                    Tout télécharger (ZIP)
+                  </Button>
+                  <Button
+                    onClick={captureMapAsPNG}
+                    variant="default"
+                    className="h-20 flex-col gap-1"
+                  >
+                    <FileImage className="h-6 w-6" />
+                    Capturer la carte (PNG)
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter>
               <Button
                 variant="outline"
-                size="sm"
-                onClick={() => setShowDeplacementsModal(false)}
+                onClick={() => setShowDownloadModal(false)}
               >
                 Fermer
               </Button>
-            </div>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
-            {/* Message contextuel */}
-            {deplacements.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                <p className="text-lg">Aucun déplacement en attente</p>
-                <p className="text-sm mt-2">
-                  Pour la zone sélectionnée :{' '}
-                  <strong>
-                    {selectedDren
-                      ? drens.find((d) => d.CODE_DREN === selectedDren)?.DREN ||
-                        `DREN ${selectedDren}`
-                      : 'Toutes les DREN'}
-                    {selectedCisco > 0 && ciscos.length > 0 && (
-                      <>
-                        {' '}
-                        —{' '}
-                        {ciscos.find((c) => c.CODE_CISCO === selectedCisco)
-                          ?.CISCO || `CISCO ${selectedCisco}`}
-                      </>
-                    )}
-                  </strong>
-                </p>
+        {loading && (
+          <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-[1001] flex items-center justify-center">
+            <div className="text-center">
+              <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground">
+                Chargement des données SIG...
+              </p>
+            </div>
+          </div>
+        )}
+
+        {contextMenu && (
+          <div
+            className="absolute z-[2000] bg-white rounded-lg shadow-xl border py-1 min-w-[220px]"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+          >
+            <button
+              className="w-full text-left px-4 py-2 text-sm hover:bg-blue-50 flex items-center gap-2"
+              onClick={() => {
+                if (zoomLevel < 15) {
+                  toast.warning(
+                    'Le niveau de zoom est trop bas. Le zoom minimum autorisé est de 16.'
+                  );
+                  setContextMenu(null);
+                  return;
+                }
+                setShowGeoEtab(true);
+                setContextMenu(null);
+                djangoGet(
+                  `/sig/etablissements-non-geolocalises/${selectedDren}/${selectedCisco}/`
+                )
+                  .then((data) =>
+                    setEtabNonPointe(Array.isArray(data) ? data : [])
+                  )
+                  .catch(() => {});
+              }}
+            >
+              <MapPin className="w-4 h-4" /> Géolocaliser Établissement
+            </button>
+            <button
+              className="w-full text-left px-4 py-2 text-sm hover:bg-blue-50 flex items-center gap-2"
+              onClick={() => {
+                if (zoomLevel < 15) {
+                  toast.warning(
+                    'Le niveau de zoom est trop bas. Le zoom minimum autorisé est de 16.'
+                  );
+                  setContextMenu(null);
+                  return;
+                }
+                setShowGeoVillage(true);
+                setContextMenu(null);
+              }}
+            >
+              <MapPin className="w-4 h-4" /> Géolocaliser Village
+            </button>
+            <hr className="my-1" />
+            <button
+              className="w-full text-left px-4 py-2 text-sm hover:bg-blue-50 flex items-center gap-2"
+              onClick={() => {
+                mapRef.current?.setZoom((mapRef.current?.getZoom() || 6) + 0.5);
+                setContextMenu(null);
+              }}
+            >
+              <ZoomIn className="w-4 h-4" /> Zoom +
+            </button>
+            <button
+              className="w-full text-left px-4 py-2 text-sm hover:bg-blue-50 flex items-center gap-2"
+              onClick={() => {
+                mapRef.current?.zoomOut();
+                setContextMenu(null);
+              }}
+            >
+              <ZoomIn className="w-4 h-4 rotate-180" /> Zoom -
+            </button>
+            <button
+              className="w-full text-left px-4 py-2 text-sm hover:bg-blue-50 flex items-center gap-2"
+              onClick={() => {
+                if (contextMenu)
+                  mapRef.current?.flyTo([contextMenu.lat, contextMenu.lng], 16);
+                setContextMenu(null);
+              }}
+            >
+              <MapPin className="w-4 h-4" /> Aller vers cet endroit
+            </button>
+          </div>
+        )}
+
+        <Dialog open={showFilters} onOpenChange={setShowFilters}>
+          <DialogContent className="sm:max-w-lg z-[10000]">
+            <DialogHeader>
+              <DialogTitle>Paramètres</DialogTitle>
+              <DialogDescription>
+                Sélectionnez les filtres DREN et CISCO pour afficher les données
+                SIG.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label className="font-semibold">Filtres</Label>
+                <Select
+                  value={selectedDren === 0 ? '' : String(selectedDren)}
+                  onValueChange={(value) => {
+                    const dren = Number(value);
+                    setSelectedDren(dren);
+                    setSelectedCisco(0);
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Toutes les DREN" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="0">Toutes les DREN</SelectItem>
+                    {drens.map((d) => (
+                      <SelectItem
+                        key={d.CODE_DREN}
+                        value={d.CODE_DREN.toString()}
+                      >
+                        {d.DREN}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-            ) : (
-              <div className="overflow-auto flex-1">
-                <table className="w-full text-sm border">
-                  <thead className="sticky top-0 bg-gray-100 z-10">
+              <div className="space-y-2">
+                <Select
+                  value={selectedCisco === 0 ? '' : String(selectedCisco)}
+                  onValueChange={(value) => setSelectedCisco(Number(value))}
+                  disabled={selectedDren === 0}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Toutes les CISCO" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="0">Toutes les CISCO</SelectItem>
+                    {ciscos.map((c) => (
+                      <SelectItem
+                        key={c.CODE_CISCO}
+                        value={c.CODE_CISCO.toString()}
+                      >
+                        {c.CISCO}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {searchItems.length > 0 && (
+                <div className="space-y-2">
+                  <Label className="font-semibold">Recherche</Label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Rechercher écoles ou villages..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+                  {searchResults.length > 0 && (
+                    <div className="border rounded-lg max-h-48 overflow-y-auto">
+                      {searchResults.map((item, i) => (
+                        <button
+                          key={`modal-sr-${item.id}-${i}`}
+                          className="w-full text-left px-3 py-2 text-xs hover:bg-muted/50 border-b"
+                          onClick={() => {
+                            handleSearchSelect(item);
+                            setShowFilters(false);
+                          }}
+                        >
+                          {item.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button onClick={handleApplyFilters} disabled={loading}>
+                {loading ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Filter className="w-4 h-4 mr-2" />
+                )}
+                Appliquer
+              </Button>
+              <Button variant="outline" onClick={() => setShowFilters(false)}>
+                Fermer
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <div ref={mapContainerRef} className="h-full w-full" />
+
+        <Dialog
+          open={!!selectedSchool}
+          onOpenChange={() => setSelectedSchool(null)}
+        >
+          <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto z-[10000]">
+            <DialogHeader>
+              <DialogTitle>
+                Fiche école — {selectedSchool?.NOM_ETAB}
+              </DialogTitle>
+              <DialogDescription>
+                Informations détaillées de l'établissement scolaire.
+              </DialogDescription>
+            </DialogHeader>
+            {selectedSchool && (
+              <div className="space-y-4">
+                <Card>
+                  <CardContent className="p-4">
+                    <h4 className="font-semibold text-sm uppercase mb-3 text-primary">
+                      Informations générales
+                    </h4>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm border-collapse">
+                        <tbody>
+                          <tr>
+                            <td
+                              rowSpan={8}
+                              className="w-[200px] p-2 align-top border bg-gray-100 rounded"
+                            >
+                              <div className="w-full h-[150px] flex items-center justify-center bg-gray-100 rounded border border-dashed border-gray-300 overflow-hidden">
+                                <img
+                                  src="/img/etablissements/000000000.jpeg"
+                                  alt="Photo de l'établissement"
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => {
+                                    const target = e.target as HTMLImageElement;
+                                    target.style.display = 'none';
+                                    const parent = target.parentElement;
+                                    if (parent)
+                                      parent.innerHTML = `<div class="flex flex-col items-center justify-center h-full text-gray-400"><span class="text-5xl mb-2">📷</span><span class="text-sm font-medium">Photo indisponible</span></div>`;
+                                  }}
+                                />
+                              </div>
+                            </td>
+                            <td className="border p-2">
+                              <strong>CODE ÉTABLISSEMENT :</strong>{' '}
+                              {selectedSchool.CODE_ETAB}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="border p-2">
+                              <strong>SECTEUR :</strong>{' '}
+                              {selectedSchool.SECTEUR === 0
+                                ? 'PUBLIQUE'
+                                : 'PRIVÉE'}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="border p-2">
+                              <strong>DREN :</strong>{' '}
+                              {selectedSchool.DREN || '-'}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="border p-2">
+                              <strong>CISCO :</strong>{' '}
+                              {selectedSchool.CISCO || '-'}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="border p-2">
+                              <strong>COMMUNE :</strong>{' '}
+                              {selectedSchool.COMMUNE || '-'}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="border p-2">
+                              <strong>ZAP :</strong> {selectedSchool.ZAP || '-'}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="border p-2">
+                              <strong>FOKONTANY :</strong>{' '}
+                              {selectedSchool.FOKONTANY || '-'}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="border p-2">
+                              <strong>COORDONNÉES GÉO :</strong>{' '}
+                              <span className="font-mono text-blue-600">
+                                {parseFloat(
+                                  selectedSchool.latitude || 0
+                                ).toFixed(6)}
+                                ,{' '}
+                                {parseFloat(
+                                  selectedSchool.longitude || 0
+                                ).toFixed(6)}
+                              </span>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {getElevesChartData(selectedSchool).length > 0 && (
+                  <Card>
+                    <CardContent className="p-4">
+                      <h4 className="font-semibold text-sm uppercase mb-3 text-primary">
+                        Statistiques sur les élèves
+                      </h4>
+                      <ResponsiveContainer width="100%" height={200}>
+                        <LineChart data={getElevesChartData(selectedSchool)}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="annee" fontSize={11} />
+                          <YAxis fontSize={11} />
+                          <Tooltip />
+                          <Line
+                            type="monotone"
+                            dataKey="effectif"
+                            stroke="rgb(75,192,192)"
+                            strokeWidth={2}
+                            name="ELEVES"
+                            dot
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {teacherStats && (
+                  <Card>
+                    <CardContent className="p-4">
+                      <h4 className="font-semibold text-sm uppercase mb-3 text-primary">
+                        Statistiques enseignants - {teacherStats.niveau}
+                      </h4>
+                      <table className="w-full text-xs border-collapse">
+                        <thead>
+                          <tr className="bg-muted/50">
+                            <th className="border p-1.5">TOTAL</th>
+                            <th className="border p-1.5">EN CLASSE</th>
+                            <th className="border p-1.5">FONCTIONNAIRES</th>
+                            <th className="border p-1.5">FRAM SUB</th>
+                            <th className="border p-1.5">FRAM NON SUB</th>
+                            <th className="border p-1.5">AUTRES</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr className="text-center">
+                            <td className="border p-1.5 font-semibold">
+                              {teacherStats.total}
+                            </td>
+                            <td className="border p-1.5">
+                              {teacherStats.en_classe}
+                            </td>
+                            <td className="border p-1.5">
+                              {teacherStats.fonctionnaire}
+                            </td>
+                            <td className="border p-1.5">
+                              {teacherStats.fram_sub}
+                            </td>
+                            <td className="border p-1.5">
+                              {teacherStats.fram_nonsub}
+                            </td>
+                            <td className="border p-1.5">
+                              {teacherStats.autres}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </CardContent>
+                  </Card>
+                )}
+
+                <Card>
+                  <CardContent className="p-4">
+                    <h4 className="font-semibold text-sm uppercase mb-3 text-primary">
+                      Infrastructures scolaires
+                    </h4>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs border-collapse">
+                        <thead>
+                          <tr className="bg-muted/50">
+                            <th className="border p-1.5 text-center">Type</th>
+                            <th className="border p-1.5 text-center">Total</th>
+                            <th className="border p-1.5 text-center">
+                              Bon état
+                            </th>
+                            <th className="border p-1.5 text-center">
+                              Mauvais état
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr className="text-center">
+                            <td className="border p-1.5 font-medium">
+                              Salles de classe
+                            </td>
+                            <td className="border p-1.5 font-semibold">
+                              {sdc.total}
+                            </td>
+                            <td className="border p-1.5">{sdc.bon}</td>
+                            <td className="border p-1.5">{sdc.mauvais}</td>
+                          </tr>
+                          <tr className="text-center">
+                            <td className="border p-1.5 font-medium">
+                              Tables-bancs
+                            </td>
+                            <td className="border p-1.5 font-semibold">
+                              {tbc.total}
+                            </td>
+                            <td className="border p-1.5">{tbc.bon}</td>
+                            <td className="border p-1.5">{tbc.mauvais}</td>
+                          </tr>
+                          <tr>
+                            <td
+                              colSpan={4}
+                              className="bg-slate-100 font-semibold text-center p-2"
+                            >
+                              Eau, Assainissement et Hygiène (EAH)
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="border p-1.5 font-medium">
+                              Électricité
+                            </td>
+                            <td
+                              className="border p-1.5 text-center"
+                              colSpan={3}
+                            >
+                              {elec
+                                ? `OUI (${selectedSchool?.TYPE_SOURCE_ELECTRICITE || '-'})`
+                                : 'NON'}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="border p-1.5 font-medium">
+                              Point d'eau
+                            </td>
+                            <td
+                              className="border p-1.5 text-center"
+                              colSpan={3}
+                            >
+                              {eau
+                                ? `OUI (${selectedSchool?.TYPE_SOURCE_EAU || '-'})`
+                                : 'NON'}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="border p-1.5 font-medium">
+                              Latrine garçons
+                            </td>
+                            <td
+                              className="border p-1.5 text-center"
+                              colSpan={3}
+                            >
+                              {latrineG ? 'OUI' : 'NON'}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="border p-1.5 font-medium">
+                              Latrine filles
+                            </td>
+                            <td
+                              className="border p-1.5 text-center"
+                              colSpan={3}
+                            >
+                              {latrineF ? 'OUI' : 'NON'}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="border p-1.5 font-medium">
+                              Latrine commune
+                            </td>
+                            <td
+                              className="border p-1.5 text-center"
+                              colSpan={3}
+                            >
+                              {latrineC ? 'OUI' : 'NON'}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={showGeoEtab} onOpenChange={setShowGeoEtab}>
+          <DialogContent className="sm:max-w-3xl max-h-[80vh] overflow-y-auto z-[10000]">
+            <DialogHeader>
+              <DialogTitle>Géolocaliser un établissement</DialogTitle>
+              <DialogDescription>
+                Sélectionnez un établissement dans la liste et enregistrez sa
+                position.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Code établissement"
+                  value={selectedEtabGeo?.CODE_ETAB || ''}
+                  readOnly
+                  className="w-1/3"
+                />
+                <Input
+                  placeholder="Rechercher : établissement"
+                  value={filterEtabName}
+                  onChange={(e) => setFilterEtabName(e.target.value)}
+                  className="flex-1"
+                />
+                <Button
+                  onClick={handleSaveGeoEtab}
+                  disabled={!selectedEtabGeo}
+                  variant="destructive"
+                  size="sm"
+                >
+                  Enregistrer
+                </Button>
+              </div>
+              <div className="border rounded max-h-64 overflow-y-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted sticky top-0">
                     <tr>
-                      <th className="p-3 border">Code</th>
-                      <th className="p-3 border">Type</th>
-                      <th className="p-3 border">Demandé par</th>
-                      <th className="p-3 border">Ancienne Position</th>
-                      <th className="p-3 border">Nouvelle Position</th>
-                      <th className="p-3 border">Date</th>
-                      <th className="p-3 border text-center">Doublons</th>
-                      <th className="p-3 border text-center">Actions</th>
+                      <th className="p-2 text-left">#CODE</th>
+                      <th className="p-2 text-left">NOM ÉTABLISSEMENT</th>
+                      <th className="p-2 text-left">SECTEUR</th>
+                      <th className="p-2 text-left">ZAP</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {deplacements.map((item) => {
-                      const typeLabel =
-                        item.type_objet === 'ETAB'
-                          ? 'Établissement'
-                          : item.type_objet === 'VILLAGE'
-                            ? 'Village'
-                            : item.type_objet;
-
-                      return (
-                        <tr
-                          key={`dep-${item.type_objet}-${item.id}`}
-                          className="border-t hover:bg-gray-50"
-                        >
-                          <td className="p-3 border font-medium">
-                            {item.code}
-                          </td>
-                          <td className="p-3 border">
-                            <Badge variant="outline">{typeLabel}</Badge>
-                          </td>
-                          <td className="p-3 border">
-                            {item.demande_par || '-'}
-                          </td>
-
-                          {/* Ancienne Position */}
-                          <td className="p-3 border text-xs font-mono text-muted-foreground">
-                            {item.ancien_lat?.toFixed(6)},{' '}
-                            {item.ancien_lng?.toFixed(6)}
-                          </td>
-
-                          {/* Nouvelle Position */}
-                          <td className="p-3 border text-xs font-mono text-blue-600">
-                            {item.nouveau_lat?.toFixed(6)},{' '}
-                            {item.nouveau_lng?.toFixed(6)}
-                          </td>
-
-                          <td className="p-3 border text-xs text-muted-foreground">
-                            {item.date_demande
-                              ? new Date(item.date_demande).toLocaleString(
-                                  'fr-FR'
-                                )
-                              : '-'}
-                          </td>
-
-                          <td className="p-3 border text-center">
-                            {item.is_duplicate ? (
-                              <Badge variant="destructive">Doublon</Badge>
-                            ) : (
-                              <span className="text-emerald-600">✓ Unique</span>
-                            )}
-                          </td>
-
-                          <td className="p-3 border">
-                            <div className="flex gap-2 flex-wrap justify-center">
-                              {sigConfig.modules.validationDeplacement && (
-                                <>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => handleVerifier(item)}
-                                  >
-                                    Vérifier
-                                  </Button>
-
-                                  <Button
-                                    size="sm"
-                                    className="bg-green-600 hover:bg-green-700 text-white"
-                                    onClick={() => handleValider(item)}
-                                  >
-                                    Valider
-                                  </Button>
-
-                                  <Button
-                                    size="sm"
-                                    variant="destructive"
-                                    onClick={() => handleRejeter(item)}
-                                  >
-                                    Rejeter
-                                  </Button>
-
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="text-red-600 hover:bg-red-50"
-                                    onClick={() => handleSupprimer(item)}
-                                  >
-                                    Supprimer
-                                  </Button>
-                                </>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {filteredEtabNonPointe.map((etab, i) => (
+                      <tr
+                        key={`geo-${etab.CODE_ETAB}-${i}`}
+                        className={`cursor-pointer hover:bg-muted/50 ${
+                          selectedEtabGeo?.CODE_ETAB === etab.CODE_ETAB
+                            ? 'bg-green-100'
+                            : ''
+                        }`}
+                        onClick={() => {
+                          setSelectedEtabGeo(etab);
+                          setFilterEtabName(etab.NOM_ETAB);
+                        }}
+                      >
+                        <td className="p-2 border-t">{etab.CODE_ETAB}</td>
+                        <td className="p-2 border-t">{etab.NOM_ETAB}</td>
+                        <td className="p-2 border-t">
+                          {etab.SECTEUR === 1 ? 'Privée' : 'Public'}
+                        </td>
+                        <td className="p-2 border-t">{etab.ZAP}</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Modal Téléchargement */}
-      <Dialog open={showDownloadModal} onOpenChange={setShowDownloadModal}>
-        <DialogContent className="sm:max-w-xl z-[10000]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-3">
-              <Download className="h-5 w-5" />
-              Exporter les données SIG
-            </DialogTitle>
-            <DialogDescription>
-              Choisissez le format d'export ou téléchargez tout en une fois.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="py-6 space-y-6">
-            {/* Récapitulatif */}
-            <div className="bg-muted/50 rounded-xl p-5 text-sm">
-              <div className="grid grid-cols-3 gap-4 text-center">
-                <div>
-                  <div className="text-2xl font-semibold text-primary">
-                    {collectActiveMarkers().etabs.length}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    Établissements
-                  </div>
-                </div>
-                <div>
-                  <div className="text-2xl font-semibold text-primary">
-                    {collectActiveMarkers().villages.length}
-                  </div>
-                  <div className="text-xs text-muted-foreground">Villages</div>
-                </div>
-                <div>
-                  <div className="text-2xl font-semibold text-primary">
-                    {collectActiveMarkers().total}
-                  </div>
-                  <div className="text-xs text-muted-foreground">Total</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Formats individuels */}
-            <div>
-              <p className="text-sm font-medium text-muted-foreground mb-3">
-                FORMATS INDIVIDUELS
+              <p className="text-xs text-muted-foreground">
+                Coordonnées: {geoCoords.lat.toFixed(6)},{' '}
+                {geoCoords.lng.toFixed(6)}
               </p>
-              <div className="grid grid-cols-2 gap-3">
-                <Button
-                  onClick={() => downloadData('csv')}
-                  variant="outline"
-                  className="h-20 justify-start"
-                >
-                  <Download className="mr-3 h-5 w-5" />
-                  <div className="text-left">
-                    <div>CSV</div>
-                    <div className="text-xs text-muted-foreground">Tableur</div>
-                  </div>
-                </Button>
-
-                <Button
-                  onClick={() => downloadData('excel')}
-                  variant="outline"
-                  className="h-20 justify-start"
-                >
-                  <Download className="mr-3 h-5 w-5" />
-                  <div className="text-left">
-                    <div>Excel</div>
-                    <div className="text-xs text-muted-foreground">.xlsx</div>
-                  </div>
-                </Button>
-
-                <Button
-                  onClick={() => downloadData('json')}
-                  variant="outline"
-                  className="h-20 justify-start"
-                >
-                  <Download className="mr-3 h-5 w-5" />
-                  <div className="text-left">
-                    <div>JSON</div>
-                    <div className="text-xs text-muted-foreground">
-                      Données brutes
-                    </div>
-                  </div>
-                </Button>
-
-                <Button
-                  onClick={() => downloadData('geojson')}
-                  variant="outline"
-                  className="h-20 justify-start"
-                >
-                  <Download className="mr-3 h-5 w-5" />
-                  <div className="text-left">
-                    <div>GeoJSON</div>
-                    <div className="text-xs text-muted-foreground">
-                      Format cartographique
-                    </div>
-                  </div>
-                </Button>
-              </div>
             </div>
+          </DialogContent>
+        </Dialog>
 
-            {/* Actions groupées */}
-            <div>
-              <p className="text-sm font-medium text-muted-foreground mb-3">
-                ACTIONS GROUPÉES
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                <Button
-                  onClick={downloadAllFormats}
-                  variant="default"
-                  className="h-20 flex-col gap-1"
-                >
-                  <Archive className="h-6 w-6" />
-                  Tout télécharger (ZIP)
-                </Button>
-
-                <Button
-                  onClick={captureMapAsPNG}
-                  variant="default"
-                  className="h-20 flex-col gap-1"
-                >
-                  <FileImage className="h-6 w-6" />
-                  Capturer la carte (PNG)
-                </Button>
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowDownloadModal(false)}
-            >
-              Fermer
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Chargement */}
-      {loading && (
-        <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-[1001] flex items-center justify-center">
-          <div className="text-center">
-            <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-2" />
-            <p className="text-sm text-muted-foreground">
-              Chargement des données SIG...
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Menu contextuel */}
-      {contextMenu && (
-        <div
-          className="absolute z-[2000] bg-white rounded-lg shadow-xl border py-1 min-w-[220px]"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-        >
-          <button
-            className="w-full text-left px-4 py-2 text-sm hover:bg-blue-50 flex items-center gap-2"
-            onClick={() => {
-              if (zoomLevel < 15) {
-                toast.warning(
-                  'Le niveau de zoom est trop bas. Le zoom minimum autorisé est de 16.'
-                );
-                setContextMenu(null);
-                return;
-              }
-              setShowGeoEtab(true);
-              setContextMenu(null);
-              // Rafraîchir la liste des établissements non géolocalisés
-              djangoGet(
-                `/sig/etablissements-non-geolocalises/${selectedDren}/${selectedCisco}/`
-              )
-                .then((data) =>
-                  setEtabNonPointe(Array.isArray(data) ? data : [])
-                )
-                .catch(() => {});
-            }}
-          >
-            <MapPin className="w-4 h-4" /> Géolocaliser Établissement
-          </button>
-          <button
-            className="w-full text-left px-4 py-2 text-sm hover:bg-blue-50 flex items-center gap-2"
-            onClick={() => {
-              if (zoomLevel < 15) {
-                toast.warning(
-                  'Le niveau de zoom est trop bas. Le zoom minimum autorisé est de 16.'
-                );
-                setContextMenu(null);
-                return;
-              }
-              setShowGeoVillage(true);
-              setContextMenu(null);
-            }}
-          >
-            <MapPin className="w-4 h-4" /> Géolocaliser Village
-          </button>
-          <hr className="my-1" />
-          <button
-            className="w-full text-left px-4 py-2 text-sm hover:bg-blue-50 flex items-center gap-2"
-            onClick={() => {
-              mapRef.current?.setZoom((mapRef.current?.getZoom() || 6) + 0.5);
-              setContextMenu(null);
-            }}
-          >
-            <ZoomIn className="w-4 h-4" /> Zoom +
-          </button>
-          <button
-            className="w-full text-left px-4 py-2 text-sm hover:bg-blue-50 flex items-center gap-2"
-            onClick={() => {
-              mapRef.current?.zoomOut();
-              setContextMenu(null);
-            }}
-          >
-            <ZoomIn className="w-4 h-4 rotate-180" /> Zoom -
-          </button>
-          <button
-            className="w-full text-left px-4 py-2 text-sm hover:bg-blue-50 flex items-center gap-2"
-            onClick={() => {
-              if (contextMenu)
-                mapRef.current?.flyTo([contextMenu.lat, contextMenu.lng], 16);
-              setContextMenu(null);
-            }}
-          >
-            <MapPin className="w-4 h-4" /> Aller vers cet endroit
-          </button>
-        </div>
-      )}
-
-      {/* Modal Filtres */}
-      <Dialog open={showFilters} onOpenChange={setShowFilters}>
-        <DialogContent className="sm:max-w-lg z-[10000]">
-          <DialogHeader>
-            <DialogTitle>Paramètres</DialogTitle>
-            <DialogDescription>
-              Sélectionnez les filtres DREN et CISCO pour afficher les données
-              SIG.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label className="font-semibold">Filtres</Label>
-              <Select
-                value={selectedDren === 0 ? '' : String(selectedDren)}
-                onValueChange={(value) => {
-                  const dren = Number(value);
-                  setSelectedDren(dren);
-                  setSelectedCisco(0); // reset obligatoire
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Toutes les DREN" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="0">Toutes les DREN</SelectItem>
-                  {drens.map((d) => (
-                    <SelectItem
-                      key={d.CODE_DREN}
-                      value={d.CODE_DREN.toString()}
-                    >
-                      {d.DREN}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Select
-                value={selectedCisco === 0 ? '' : String(selectedCisco)}
-                onValueChange={(value) => setSelectedCisco(Number(value))}
-                disabled={selectedDren === 0}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Toutes les CISCO" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="0">Toutes les CISCO</SelectItem>
-                  {ciscos.map((c) => (
-                    <SelectItem
-                      key={c.CODE_CISCO}
-                      value={c.CODE_CISCO.toString()}
-                    >
-                      {c.CISCO}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {searchItems.length > 0 && (
-              <div className="space-y-2">
-                <Label className="font-semibold">Recherche</Label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Rechercher écoles ou villages..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-                {searchResults.length > 0 && (
-                  <div className="border rounded-lg max-h-48 overflow-y-auto">
-                    {searchResults.map((item, i) => (
-                      <button
-                        key={`modal-sr-${item.id}-${i}`}
-                        className="w-full text-left px-3 py-2 text-xs hover:bg-muted/50 border-b"
-                        onClick={() => {
-                          handleSearchSelect(item);
-                          setShowFilters(false);
-                        }}
-                      >
-                        {item.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button onClick={handleApplyFilters} disabled={loading}>
-              {loading ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Filter className="w-4 h-4 mr-2" />
-              )}
-              Appliquer
-            </Button>
-            <Button variant="outline" onClick={() => setShowFilters(false)}>
-              Fermer
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Carte Leaflet */}
-      <div ref={mapContainerRef} className="h-full w-full" />
-
-      {/* Modal Fiche École */}
-      <Dialog
-        open={!!selectedSchool}
-        onOpenChange={() => setSelectedSchool(null)}
-      >
-        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto z-[10000]">
-          <DialogHeader>
-            <DialogTitle>Fiche école — {selectedSchool?.NOM_ETAB}</DialogTitle>
-            <DialogDescription>
-              Informations détaillées de l'établissement scolaire.
-            </DialogDescription>
-          </DialogHeader>
-          {selectedSchool && (
-            <div className="space-y-4">
-              <Card>
-                <CardContent className="p-4">
-                  <h4 className="font-semibold text-sm uppercase mb-3 text-primary">
-                    Informations générales
-                  </h4>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm border-collapse">
-                      <tbody>
-                        <tr>
-                          <td
-                            rowSpan={8}
-                            className="w-[200px] p-2 align-top border bg-gray-100 rounded"
-                          >
-                            <div className="w-full h-[150px] flex items-center justify-center bg-gray-100 rounded border border-dashed border-gray-300 overflow-hidden">
-                              <img
-                                src="/img/etablissements/000000000.jpeg"
-                                alt="Photo de l'établissement"
-                                className="w-full h-full object-cover"
-                                onError={(e) => {
-                                  const target = e.target as HTMLImageElement;
-                                  target.style.display = 'none';
-                                  const parent = target.parentElement;
-                                  if (parent)
-                                    parent.innerHTML = `<div class="flex flex-col items-center justify-center h-full text-gray-400"><span class="text-5xl mb-2">📷</span><span class="text-sm font-medium">Photo indisponible</span></div>`;
-                                }}
-                              />
-                            </div>
-                          </td>
-                          <td className="border p-2">
-                            <strong>CODE ÉTABLISSEMENT :</strong>{' '}
-                            {selectedSchool.CODE_ETAB}
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="border p-2">
-                            <strong>SECTEUR :</strong>{' '}
-                            {selectedSchool.SECTEUR === 0
-                              ? 'PUBLIQUE'
-                              : 'PRIVÉE'}
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="border p-2">
-                            <strong>DREN :</strong> {selectedSchool.DREN || '-'}
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="border p-2">
-                            <strong>CISCO :</strong>{' '}
-                            {selectedSchool.CISCO || '-'}
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="border p-2">
-                            <strong>COMMUNE :</strong>{' '}
-                            {selectedSchool.COMMUNE || '-'}
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="border p-2">
-                            <strong>ZAP :</strong> {selectedSchool.ZAP || '-'}
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="border p-2">
-                            <strong>FOKONTANY :</strong>{' '}
-                            {selectedSchool.FOKONTANY || '-'}
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="border p-2">
-                            <strong>COORDONNÉES GÉO :</strong>{' '}
-                            <span className="font-mono text-blue-600">
-                              {parseFloat(selectedSchool.latitude || 0).toFixed(
-                                6
-                              )}
-                              ,{' '}
-                              {parseFloat(
-                                selectedSchool.longitude || 0
-                              ).toFixed(6)}
-                            </span>
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {getElevesChartData(selectedSchool).length > 0 && (
-                <Card>
-                  <CardContent className="p-4">
-                    <h4 className="font-semibold text-sm uppercase mb-3 text-primary">
-                      Statistiques sur les élèves
-                    </h4>
-                    <ResponsiveContainer width="100%" height={200}>
-                      <LineChart data={getElevesChartData(selectedSchool)}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="annee" fontSize={11} />
-                        <YAxis fontSize={11} />
-                        <Tooltip />
-                        <Line
-                          type="monotone"
-                          dataKey="effectif"
-                          stroke="rgb(75,192,192)"
-                          strokeWidth={2}
-                          name="ELEVES"
-                          dot
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-              )}
-
-              {teacherStats && (
-                <Card>
-                  <CardContent className="p-4">
-                    <h4 className="font-semibold text-sm uppercase mb-3 text-primary">
-                      Statistiques enseignants - {teacherStats.niveau}
-                    </h4>
-                    <table className="w-full text-xs border-collapse">
-                      <thead>
-                        <tr className="bg-muted/50">
-                          <th className="border p-1.5">TOTAL</th>
-                          <th className="border p-1.5">EN CLASSE</th>
-                          <th className="border p-1.5">FONCTIONNAIRES</th>
-                          <th className="border p-1.5">FRAM SUB</th>
-                          <th className="border p-1.5">FRAM NON SUB</th>
-                          <th className="border p-1.5">AUTRES</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr className="text-center">
-                          <td className="border p-1.5 font-semibold">
-                            {teacherStats.total}
-                          </td>
-                          <td className="border p-1.5">
-                            {teacherStats.en_classe}
-                          </td>
-                          <td className="border p-1.5">
-                            {teacherStats.fonctionnaire}
-                          </td>
-                          <td className="border p-1.5">
-                            {teacherStats.fram_sub}
-                          </td>
-                          <td className="border p-1.5">
-                            {teacherStats.fram_nonsub}
-                          </td>
-                          <td className="border p-1.5">
-                            {teacherStats.autres}
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </CardContent>
-                </Card>
-              )}
-
-              <Card>
-                <CardContent className="p-4">
-                  <h4 className="font-semibold text-sm uppercase mb-3 text-primary">
-                    Infrastructures scolaires
-                  </h4>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs border-collapse">
-                      <thead>
-                        <tr className="bg-muted/50">
-                          <th className="border p-1.5 text-center">Type</th>
-                          <th className="border p-1.5 text-center">Total</th>
-                          <th className="border p-1.5 text-center">Bon état</th>
-                          <th className="border p-1.5 text-center">
-                            Mauvais état
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr className="text-center">
-                          <td className="border p-1.5 font-medium">
-                            Salles de classe
-                          </td>
-                          <td className="border p-1.5 font-semibold">
-                            {sdc.total}
-                          </td>
-                          <td className="border p-1.5">{sdc.bon}</td>
-                          <td className="border p-1.5">{sdc.mauvais}</td>
-                        </tr>
-                        <tr className="text-center">
-                          <td className="border p-1.5 font-medium">
-                            Tables-bancs
-                          </td>
-                          <td className="border p-1.5 font-semibold">
-                            {tbc.total}
-                          </td>
-                          <td className="border p-1.5">{tbc.bon}</td>
-                          <td className="border p-1.5">{tbc.mauvais}</td>
-                        </tr>
-                        <tr>
-                          <td
-                            colSpan={4}
-                            className="bg-slate-100 font-semibold text-center p-2"
-                          >
-                            Eau, Assainissement et Hygiène (EAH)
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="border p-1.5 font-medium">
-                            Électricité
-                          </td>
-                          <td className="border p-1.5 text-center" colSpan={3}>
-                            {elec
-                              ? `OUI (${selectedSchool?.TYPE_SOURCE_ELECTRICITE || '-'})`
-                              : 'NON'}
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="border p-1.5 font-medium">
-                            Point d'eau
-                          </td>
-                          <td className="border p-1.5 text-center" colSpan={3}>
-                            {eau
-                              ? `OUI (${selectedSchool?.TYPE_SOURCE_EAU || '-'})`
-                              : 'NON'}
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="border p-1.5 font-medium">
-                            Latrine garçons
-                          </td>
-                          <td className="border p-1.5 text-center" colSpan={3}>
-                            {latrineG ? 'OUI' : 'NON'}
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="border p-1.5 font-medium">
-                            Latrine filles
-                          </td>
-                          <td className="border p-1.5 text-center" colSpan={3}>
-                            {latrineF ? 'OUI' : 'NON'}
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="border p-1.5 font-medium">
-                            Latrine commune
-                          </td>
-                          <td className="border p-1.5 text-center" colSpan={3}>
-                            {latrineC ? 'OUI' : 'NON'}
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Modal Géolocaliser Établissement */}
-      <Dialog open={showGeoEtab} onOpenChange={setShowGeoEtab}>
-        <DialogContent className="sm:max-w-3xl max-h-[80vh] overflow-y-auto z-[10000]">
-          <DialogHeader>
-            <DialogTitle>Géolocaliser un établissement</DialogTitle>
-            <DialogDescription>
-              Sélectionnez un établissement dans la liste et enregistrez sa
-              position.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="flex gap-2">
+        <Dialog open={showGeoVillage} onOpenChange={setShowGeoVillage}>
+          <DialogContent className="sm:max-w-md z-[10000]">
+            <DialogHeader>
+              <DialogTitle>Géolocaliser un village</DialogTitle>
+              <DialogDescription>
+                Entrez les informations du village à géolocaliser.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
               <Input
-                placeholder="Code établissement"
-                value={selectedEtabGeo?.CODE_ETAB || ''}
-                readOnly
-                className="w-1/3"
+                placeholder="Nom du village"
+                value={villageForm.name}
+                onChange={(e) =>
+                  setVillageForm((prev) => ({ ...prev, name: e.target.value }))
+                }
               />
               <Input
-                placeholder="Rechercher : établissement"
-                value={filterEtabName}
-                onChange={(e) => setFilterEtabName(e.target.value)}
-                className="flex-1"
+                placeholder="Population du village"
+                type="number"
+                min="10"
+                value={villageForm.population}
+                onChange={(e) =>
+                  setVillageForm((prev) => ({
+                    ...prev,
+                    population: e.target.value,
+                  }))
+                }
               />
+              <div className="grid grid-cols-3 gap-3">
+                {(['airtel', 'orange', 'telma'] as const).map((field) => (
+                  <label
+                    key={field}
+                    className="flex items-center gap-2 text-sm capitalize"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={villageForm[field]}
+                      onChange={(e) =>
+                        setVillageForm((prev) => ({
+                          ...prev,
+                          [field]: e.target.checked,
+                        }))
+                      }
+                    />
+                    {field} ?
+                  </label>
+                ))}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {(['elec', 'eau'] as const).map((field) => (
+                  <label
+                    key={field}
+                    className="flex items-center gap-2 text-sm"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={villageForm[field]}
+                      onChange={(e) =>
+                        setVillageForm((prev) => ({
+                          ...prev,
+                          [field]: e.target.checked,
+                        }))
+                      }
+                    />
+                    {field === 'elec' ? 'Électricité' : 'Eau potable'} ?
+                  </label>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Coordonnées: {geoCoords.lat.toFixed(6)},{' '}
+                {geoCoords.lng.toFixed(6)}
+              </p>
+            </div>
+            <DialogFooter>
               <Button
-                onClick={handleSaveGeoEtab}
-                disabled={!selectedEtabGeo}
-                variant="destructive"
-                size="sm"
+                onClick={handleSaveGeoVillage}
+                className="bg-green-600 hover:bg-green-700"
               >
                 Enregistrer
               </Button>
-            </div>
-            <div className="border rounded max-h-64 overflow-y-auto">
-              <table className="w-full text-xs">
-                <thead className="bg-muted sticky top-0">
-                  <tr>
-                    <th className="p-2 text-left">#CODE</th>
-                    <th className="p-2 text-left">NOM ÉTABLISSEMENT</th>
-                    <th className="p-2 text-left">SECTEUR</th>
-                    <th className="p-2 text-left">ZAP</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredEtabNonPointe.map((etab, i) => (
-                    <tr
-                      key={`geo-${etab.CODE_ETAB}-${i}`}
-                      className={`cursor-pointer hover:bg-muted/50 ${
-                        selectedEtabGeo?.CODE_ETAB === etab.CODE_ETAB
-                          ? 'bg-green-100'
-                          : ''
-                      }`}
-                      onClick={() => {
-                        setSelectedEtabGeo(etab);
-                        setFilterEtabName(etab.NOM_ETAB);
-                      }}
-                    >
-                      <td className="p-2 border-t">{etab.CODE_ETAB}</td>
-                      <td className="p-2 border-t">{etab.NOM_ETAB}</td>
-                      <td className="p-2 border-t">
-                        {etab.SECTEUR === 1 ? 'Privée' : 'Public'}
-                      </td>
-                      <td className="p-2 border-t">{etab.ZAP}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Coordonnées: {geoCoords.lat.toFixed(6)},{' '}
-              {geoCoords.lng.toFixed(6)}
-            </p>
-          </div>
-        </DialogContent>
-      </Dialog>
+              <Button
+                variant="outline"
+                onClick={() => setShowGeoVillage(false)}
+              >
+                Annuler
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
-      {/* Modal Géolocaliser Village */}
-      <Dialog open={showGeoVillage} onOpenChange={setShowGeoVillage}>
-        <DialogContent className="sm:max-w-md z-[10000]">
-          <DialogHeader>
-            <DialogTitle>Géolocaliser un village</DialogTitle>
-            <DialogDescription>
-              Entrez les informations du village à géolocaliser.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <Input
-              placeholder="Nom du village"
-              value={villageForm.name}
-              onChange={(e) =>
-                setVillageForm((prev) => ({ ...prev, name: e.target.value }))
-              }
-            />
-            <Input
-              placeholder="Population du village"
-              type="number"
-              min="10"
-              value={villageForm.population}
-              onChange={(e) =>
-                setVillageForm((prev) => ({
-                  ...prev,
-                  population: e.target.value,
-                }))
-              }
-            />
-            <div className="grid grid-cols-3 gap-3">
-              {(['airtel', 'orange', 'telma'] as const).map((field) => (
-                <label
-                  key={field}
-                  className="flex items-center gap-2 text-sm capitalize"
-                >
-                  <input
-                    type="checkbox"
-                    checked={villageForm[field]}
-                    onChange={(e) =>
-                      setVillageForm((prev) => ({
-                        ...prev,
-                        [field]: e.target.checked,
-                      }))
-                    }
-                  />
-                  {field} ?
-                </label>
-              ))}
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              {(['elec', 'eau'] as const).map((field) => (
-                <label key={field} className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={villageForm[field]}
-                    onChange={(e) =>
-                      setVillageForm((prev) => ({
-                        ...prev,
-                        [field]: e.target.checked,
-                      }))
-                    }
-                  />
-                  {field === 'elec' ? 'Électricité' : 'Eau potable'} ?
-                </label>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Coordonnées: {geoCoords.lat.toFixed(6)},{' '}
-              {geoCoords.lng.toFixed(6)}
-            </p>
-          </div>
-          <DialogFooter>
-            <Button
-              onClick={handleSaveGeoVillage}
-              className="bg-green-600 hover:bg-green-700"
-            >
-              Enregistrer
-            </Button>
-            <Button variant="outline" onClick={() => setShowGeoVillage(false)}>
-              Annuler
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Info survol établissement */}
-      {hoveredEtab && (
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[1000] bg-white/95 backdrop-blur-md border shadow-xl rounded-lg px-6 py-3 text-sm flex items-center gap-4 pointer-events-none">
-          <div className="flex items-center gap-2">
-            <MapPin className="w-5 h-5 text-primary" />
-            <div>
-              <div className="font-semibold text-primary truncate max-w-[280px]">
-                {hoveredEtab.NOM_ETAB || hoveredEtab.name}
-              </div>
-              <div className="text-xs text-muted-foreground font-mono">
-                {parseFloat(hoveredEtab.latitude).toFixed(6)},{' '}
-                {parseFloat(hoveredEtab.longitude).toFixed(6)}
+        {hoveredEtab && (
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[1000] bg-white/95 backdrop-blur-md border shadow-xl rounded-lg px-6 py-3 text-sm flex items-center gap-4 pointer-events-none">
+            <div className="flex items-center gap-2">
+              <MapPin className="w-5 h-5 text-primary" />
+              <div>
+                <div className="font-semibold text-primary truncate max-w-[280px]">
+                  {hoveredEtab.NOM_ETAB || hoveredEtab.name}
+                </div>
+                <div className="text-xs text-muted-foreground font-mono">
+                  {parseFloat(hoveredEtab.latitude).toFixed(6)},{' '}
+                  {parseFloat(hoveredEtab.longitude).toFixed(6)}
+                </div>
               </div>
             </div>
+            {hoveredEtab.SECTEUR !== undefined && (
+              <div className="text-xs text-muted-foreground border-l pl-4">
+                {hoveredEtab.SECTEUR === 0 ? 'Public' : 'Privé'} •{' '}
+                {hoveredEtab.FOKONTANY || '—'}
+              </div>
+            )}
           </div>
-          {hoveredEtab.SECTEUR !== undefined && (
-            <div className="text-xs text-muted-foreground border-l pl-4">
-              {hoveredEtab.SECTEUR === 0 ? 'Public' : 'Privé'} •{' '}
-              {hoveredEtab.FOKONTANY || '—'}
-            </div>
-          )}
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };
