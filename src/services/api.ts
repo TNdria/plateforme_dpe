@@ -153,6 +153,26 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> 
   }
 }
 
+export async function fetchDjangoOrFallback<T>(
+  endpoint: string,
+  action: string,
+  params: Record<string, string | number> = {}
+): Promise<T> {
+  try {
+    return await fetchAPI<T>(endpoint);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const isNotFound = /404|Not Found/i.test(errorMessage);
+
+    if (!isNotFound) {
+      throw error;
+    }
+
+    console.warn(`Django endpoint ${endpoint} returned 404; falling back to Supabase action ${action}.`);
+    return fetchDB<T>(action, params);
+  }
+}
+
 // Direct fetch for downloads (bypass proxy for file downloads)
 function getDirectUrl(endpoint: string): string {
   return `${DJANGO_BACKEND_URL}${endpoint}`;
@@ -532,7 +552,7 @@ export const datavizApi = {
   getDataCommune: (code: number, niveau: number) => fetchDB<any[]>('getDatavizDataCommune', { code, niveau }),
   getDataEtab: (code: number, niveau: number) => fetchDB<any[]>('getDatavizDataEtab', { code, niveau }),
 };
-
+/*
 // Donnees API - Uses direct database connection
 export const donneesApi = {
   getDrens: () => fetchDB<Dren[]>('getDrens'),
@@ -541,6 +561,7 @@ export const donneesApi = {
     fetchDB<Zap[]>('getZaps', { code_dren: codeDren, code_cisco: codeCisco, code_commune: codeCommune }),
   getCommunes: (codeDren: number, codeCisco: number, codeZap: number = 0) =>
     fetchDB<any[]>('getCommunes', { code_dren: codeDren, code_cisco: codeCisco, code_zap: codeZap }),
+  
   // Données par niveau
   getEtabN0: (codeDren: number, codeCisco: number, codeCommune: number, codeZap: number, secteur: number) =>
     fetchDB<any[]>('getDataPrescolaire', { code_dren: codeDren, code_cisco: codeCisco, code_commune: codeCommune, code_zap: codeZap, secteur }),
@@ -550,6 +571,147 @@ export const donneesApi = {
     fetchDB<any[]>('getDataCollege', { code_dren: codeDren, code_cisco: codeCisco, code_commune: codeCommune, code_zap: codeZap, secteur }),
   getEtabN3: (codeDren: number, codeCisco: number, codeCommune: number, codeZap: number, secteur: number) =>
     fetchDB<any[]>('getDataLycee', { code_dren: codeDren, code_cisco: codeCisco, code_commune: codeCommune, code_zap: codeZap, secteur }),
+};*/
+
+// ==================== DONNEES API - DJANGO DIRECT ====================
+export const donneesApi = {
+  getDrens: () => fetchDB<Dren[]>('getDrens'),
+
+  getCiscos: (codeDren: number) =>
+    fetchDB<Cisco[]>('getCiscos', {
+      code_dren: codeDren,
+    }),
+
+  getZaps: (
+    codeDren: number,
+    codeCisco: number,
+    codeCommune: number = 0
+  ) =>
+    fetchDB<Zap[]>('getZaps', {
+      code_dren: codeDren,
+      code_cisco: codeCisco,
+      code_commune: codeCommune,
+    }),
+
+  getCommunes: (
+    codeDren: number,
+    codeCisco: number,
+    codeZap: number = 0
+  ) =>
+    fetchDB<any[]>('getCommunes', {
+      code_dren: codeDren,
+      code_cisco: codeCisco,
+      code_zap: codeZap,
+    }),
+
+  // ==================== DONNÉES PAR NIVEAU ====================
+
+  getEtabN0: (
+    codeDren: number,
+    codeCisco: number,
+    codeCommune: number = 0,
+    codeZap: number = 0,
+    secteur: number = 2,
+    annee: number | string = 2025
+  ) =>
+    fetchDjangoOrFallback<any[]>(
+      `/donnees/dataPrescolaire/${codeDren}/${codeCisco}/${codeCommune}/${codeZap}/${secteur}?annee=${annee}`,
+      'getDataPrescolaire',
+      {
+        code_dren: codeDren,
+        code_cisco: codeCisco,
+        code_commune: codeCommune,
+        code_zap: codeZap,
+        secteur,
+        annee,
+      }
+    ),
+
+  getEtabN1: (
+    codeDren: number,
+    codeCisco: number,
+    codeCommune: number = 0,
+    codeZap: number = 0,
+    secteur: number = 2,
+    annee: number | string = 2025
+  ) =>
+    fetchDjangoOrFallback<any[]>(
+      `/donnees/dataPrimaire/${codeDren}/${codeCisco}/${codeCommune}/${codeZap}/${secteur}?annee=${annee}`,
+      'getDataPrimaire',
+      {
+        code_dren: codeDren,
+        code_cisco: codeCisco,
+        code_commune: codeCommune,
+        code_zap: codeZap,
+        secteur,
+        annee,
+      }
+    ),
+
+  getEtabN2: (
+    codeDren: number,
+    codeCisco: number,
+    codeCommune: number = 0,
+    codeZap: number = 0,
+    secteur: number = 2,
+    annee: number | string = 2025
+  ) =>
+    fetchDjangoOrFallback<any[]>(
+      `/donnees/dataCollege/${codeDren}/${codeCisco}/${codeCommune}/${codeZap}/${secteur}?annee=${annee}`,
+      'getDataCollege',
+      {
+        code_dren: codeDren,
+        code_cisco: codeCisco,
+        code_commune: codeCommune,
+        code_zap: codeZap,
+        secteur,
+        annee,
+      }
+    ),
+
+  getEtabN3: (
+    codeDren: number,
+    codeCisco: number,
+    codeCommune: number = 0,
+    codeZap: number = 0,
+    secteur: number = 2,
+    annee: number | string = 2025
+  ) =>
+    fetchDjangoOrFallback<any[]>(
+      `/donnees/dataLycee/${codeDren}/${codeCisco}/${codeCommune}/${codeZap}/${secteur}?annee=${annee}`,
+      'getDataLycee',
+      {
+        code_dren: codeDren,
+        code_cisco: codeCisco,
+        code_commune: codeCommune,
+        code_zap: codeZap,
+        secteur,
+        annee,
+      }
+    ),
+
+  getListeEtablissements: (
+    codeDren: number,
+    codeCisco: number,
+    codeCommune: number,
+    codeZap: number,
+    niveau: number,
+    secteur: number,
+    annee: number = 2025
+  ) =>
+    fetchDjangoOrFallback<any[]>(
+      `/donnees/listeEtablissements/${codeDren}/${codeCisco}/${codeCommune}/${codeZap}/${niveau}/${secteur}?annee=${annee}`,
+      'getListeEtablissements',
+      {
+        code_dren: codeDren,
+        code_cisco: codeCisco,
+        code_commune: codeCommune,
+        code_zap: codeZap,
+        niveau,
+        secteur,
+        annee,
+      }
+    ),
 };
 
 // Besoins API - jointure besoins_<niveau> ↔ fpe_a1

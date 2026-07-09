@@ -32,6 +32,8 @@ import {
   Download,
   FileImage,
   Archive,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
@@ -186,6 +188,12 @@ const VILLAGE_CONFIG = {
   rayon: 5,
 };
 
+// Zoom minimum requis pour autoriser le déplacement (drag & drop) et la
+// géolocalisation manuelle des marqueurs. Centralisé ici pour éviter les
+// incohérences (auparavant la valeur 16 était dupliquée à 3 endroits et le
+// menu contextuel testait à tort la valeur 15).
+const MOVE_MIN_ZOOM = 16;
+
 // ====================== COMPOSANT PRINCIPAL ======================
 const SIG = () => {
   const { user } = useAuth();
@@ -211,6 +219,17 @@ const SIG = () => {
   const markersRef = useRef<any[]>([]);
   const tempMarkersRef = useRef<any[]>([]);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
+  // Miroir de `sigMoveEnabled` dans une ref : les marqueurs Leaflet sont créés
+  // une seule fois (hors du cycle de rendu React) et leurs handlers `dragend`
+  // gardaient donc une closure obsolète sur l'état. On lit désormais cette
+  // ref à jour au lieu d'interroger le DOM (`document.getElementById('check-move')`).
+  const sigMoveEnabledRef = useRef(false);
+  // Panneau latéral (filtres / récap / recherche) repliable — ouvert par
+  // défaut sur desktop, replié par défaut sur mobile pour laisser la place à
+  // la carte.
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= 768 : true
+  );
 
   // ====================== STATE ======================
   const [drens, setDrens] = useState<Dren[]>([]);
@@ -287,6 +306,25 @@ const SIG = () => {
     },
     villages: 0,
   });
+
+  // Garde la ref `sigMoveEnabledRef` synchronisée avec l'état React à chaque
+  // changement, pour que les handlers `dragend` (attachés une seule fois par
+  // marqueur) lisent toujours la valeur courante.
+  useEffect(() => {
+    sigMoveEnabledRef.current = sigMoveEnabled;
+  }, [sigMoveEnabled]);
+
+  // Le panneau latéral change la largeur disponible pour la carte Leaflet.
+  // Sans `invalidateSize()`, la carte garde ses anciennes dimensions internes
+  // le temps d'une interaction manuelle (pan/zoom), ce qui laisse des zones
+  // grises après un repli/déploiement du panneau. On attend la fin de la
+  // transition CSS (300ms) avant de recalculer.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      mapRef.current?.invalidateSize();
+    }, 320);
+    return () => clearTimeout(t);
+  }, [sidebarOpen]);
 
   // ====================== INIT MAP ======================
   useEffect(() => {
@@ -531,10 +569,16 @@ const SIG = () => {
       document
         .querySelectorAll<HTMLElement>('.label-village')
         .forEach((el) => (el.style.fontSize = fontSize));
-      const moveCheckbox = document.getElementById(
-        'check-move'
-      ) as HTMLInputElement;
-      if (moveCheckbox?.checked && z < 16) moveCheckbox.checked = false;
+      // ⚠️ Correctif : la case "Déplacer" est un input React contrôlé
+      // (`checked={sigMoveEnabled}`). La modifier directement via le DOM
+      // (`moveCheckbox.checked = false`) ne fonctionnait pas de façon fiable :
+      // React réaffiche l'état précédent (`true`) au prochain rendu, ce qui
+      // désynchronisait visuellement la case de l'état réel. On met
+      // désormais à jour l'état React lui-même, qui pilote à la fois la case
+      // à cocher et la ref utilisée par les handlers de drag.
+      if (sigMoveEnabledRef.current && z < MOVE_MIN_ZOOM) {
+        setSigMoveEnabled(false);
+      }
     });
 
     map.on('baselayerchange', (e: any) => {
@@ -749,30 +793,36 @@ const SIG = () => {
     positionAvantDeplacementRef.current = event.target.getLatLng();
   };
 
-  const onDragEtabEnd = async (event: any) => {
-    const moveCheckbox = document.getElementById(
-      'check-move'
-    ) as HTMLInputElement | null;
-    const isEnabled = moveCheckbox?.checked ?? sigMoveEnabled;
-    const zoom = mapRef.current?.getZoom() ?? 0;
-
-    // Cas 1 : Le mode déplacement n'est pas activé
-    if (!isEnabled) {
-      if (positionAvantDeplacementRef.current) {
-        event.target.setLatLng(positionAvantDeplacementRef.current);
-      }
-      toast.warning(
-        "Activez le mode 'Déplacer' pour pouvoir modifier la position"
-      );
-      return;
+  // Centralise la vérification d'autorisation de déplacement (mode activé +
+  // zoom suffisant) pour les marqueurs établissement et village. Utilise la
+  // ref `sigMoveEnabledRef` (toujours à jour) plutôt qu'une lecture directe
+  // du DOM ou de l'état React (susceptible d'être obsolète dans la closure
+  // du handler `dragend`, attaché une seule fois à la création du marqueur).
+  const isMoveAuthorized = (): { ok: boolean; reason?: string } => {
+    if (!sigMoveEnabledRef.current) {
+      return {
+        ok: false,
+        reason: "Activez le mode 'Déplacer' pour pouvoir modifier la position",
+      };
     }
+    const zoom = mapRef.current?.getZoom() ?? 0;
+    if (zoom < MOVE_MIN_ZOOM) {
+      return {
+        ok: false,
+        reason: `Déplacement autorisé uniquement à partir du zoom ${MOVE_MIN_ZOOM}`,
+      };
+    }
+    return { ok: true };
+  };
 
-    // Cas 2 : Zoom insuffisant
-    if (zoom < 16) {
+  const onDragEtabEnd = async (event: any) => {
+    const { ok, reason } = isMoveAuthorized();
+
+    if (!ok) {
       if (positionAvantDeplacementRef.current) {
         event.target.setLatLng(positionAvantDeplacementRef.current);
       }
-      toast.warning('Déplacement autorisé uniquement à partir du zoom 16');
+      if (reason) toast.warning(reason);
       return;
     }
 
@@ -798,37 +848,38 @@ const SIG = () => {
   };
 
   const onDragVillageEnd = async (event: any) => {
-    const moveCheckbox = document.getElementById(
-      'check-move'
-    ) as HTMLInputElement | null;
-    const isEnabled = moveCheckbox?.checked ?? sigMoveEnabled;
-    const zoom = mapRef.current?.getZoom() ?? 0;
+    const { ok, reason } = isMoveAuthorized();
 
-    // Cas 1 : Le mode déplacement n'est pas activé
-    if (!isEnabled) {
+    if (!ok) {
       if (positionAvantDeplacementRef.current) {
         event.target.setLatLng(positionAvantDeplacementRef.current);
       }
-      toast.warning(
-        "Activez le mode 'Déplacer' pour pouvoir modifier la position"
-      );
+      if (reason) toast.warning(reason);
       return;
     }
 
-    // Cas 2 : Zoom insuffisant
-    if (zoom < 16) {
-      if (positionAvantDeplacementRef.current) {
-        event.target.setLatLng(positionAvantDeplacementRef.current);
-      }
-      toast.warning('Déplacement autorisé uniquement à partir du zoom 16');
-      return;
-    }
-
+    // ⚠️ Correctif important : le marqueur village stockait auparavant ses
+    // données via `(marker as any).properties = v` (propriété directe sur
+    // l'instance), alors que ce handler lisait `event.target.options.properties`
+    // (jamais renseigné pour les villages). Résultat : `id` était toujours
+    // `undefined` et la fonction s'arrêtait silencieusement avant le moindre
+    // appel réseau — la position déplacée n'était donc JAMAIS enregistrée en
+    // base, malgré un marqueur visuellement déplacé sur la carte. La création
+    // du marqueur (voir `createLayerEtab`/chargement villages) renseigne
+    // désormais `properties` dans les options, comme pour les établissements.
     const props = event.target.options.properties;
     const id = props?.id;
     const { lat, lng } = event.target.getLatLng();
 
-    if (!id) return;
+    if (!id) {
+      toast.error(
+        "Impossible d'identifier ce village (données manquantes) — déplacement annulé"
+      );
+      if (positionAvantDeplacementRef.current) {
+        event.target.setLatLng(positionAvantDeplacementRef.current);
+      }
+      return;
+    }
 
     try {
       await djangoPostJSON('/sig/deplacements/update-position-village/', {
@@ -866,6 +917,10 @@ const SIG = () => {
     const config = NIVEAU_CONFIG[niveauKey];
     const nIdx = niveauKey.replace('n', '');
     const items: SearchItem[] = [];
+    // Le marqueur n'est réellement déplaçable que si le module "déplacement"
+    // est activé pour l'utilisateur — évite un drag visuel suivi d'un
+    // snap-back systématique quand la fonctionnalité est désactivée.
+    const canDrag = Boolean(user) && sigConfig.modules.deplacement;
 
     data.forEach((dataEtab) => {
       const lat = parseFloat(dataEtab.latitude);
@@ -896,7 +951,7 @@ const SIG = () => {
 
       const marker = L.marker(latLng, {
         icon,
-        draggable: true,
+        draggable: canDrag,
         properties: dataEtab,
       } as any);
 
@@ -1087,6 +1142,7 @@ const SIG = () => {
 
       villageLayerRef.current.clearLayers();
       const villageItems: SearchItem[] = [];
+      const canDragVillage = Boolean(user) && sigConfig.modules.deplacement;
 
       (villagesData as any[]).forEach((v: any) => {
         const lat = parseFloat(v.latitude);
@@ -1099,8 +1155,17 @@ const SIG = () => {
           html: `<i class="${VILLAGE_CONFIG.fa}" style="color:${VILLAGE_CONFIG.aireColor}; font-size:18px;"></i>`,
         });
 
-        const marker = L.marker([lat, lng], { icon, draggable: true });
-        (marker as any).properties = v;
+        // ⚠️ Correctif : les propriétés du village doivent être posées dans
+        // `options.properties` (comme pour les marqueurs établissement), et
+        // non directement sur l'instance (`marker.properties = v`). Sinon
+        // `onDragVillageEnd` — qui lit `event.target.options.properties` —
+        // ne trouve jamais l'`id` du village et annule silencieusement
+        // l'enregistrement de la nouvelle position.
+        const marker = L.marker([lat, lng], {
+          icon,
+          draggable: canDragVillage,
+          properties: v,
+        } as any);
 
         marker.bindTooltip(`Village: ${v.name}`, {
           permanent: false,
@@ -1522,8 +1587,8 @@ const SIG = () => {
 
     if (villageLayerRef.current && map.hasLayer(villageLayerRef.current)) {
       villageLayerRef.current.eachLayer((layer: any) => {
-        if (layer instanceof L.Marker && layer.properties) {
-          villages.push(layer.properties);
+        if (layer instanceof L.Marker && layer.options?.properties) {
+          villages.push(layer.options.properties);
         }
       });
     }
@@ -1778,190 +1843,282 @@ const SIG = () => {
 
   // ====================== RENDU ======================
   return (
-    <div className="h-[calc(100vh-4rem)] relative flex flex-row w-full overflow-hidden">
-      <div className="w-[280px] shrink-0 bg-background/95 backdrop-blur border-r flex flex-col">
-        <div className="px-4 py-3 border-b flex flex-wrap items-center gap-2">
-          <Button
-            onClick={() => setShowFilters(true)}
-            size="sm"
-            className="shadow-lg"
+    <div className="h-[calc(100vh-4rem)] relative flex w-full overflow-hidden bg-muted/20">
+      {/* Panneau latéral repliable (filtres, récapitulatif, recherche).
+          Repose sur `sidebarOpen` : ouvert par défaut sur desktop (>= 768px),
+          replié par défaut sur mobile pour laisser toute la place à la carte.
+          Le bouton rond accroché au bord droit permet de le réduire/étendre
+          à tout moment, sur tous les appareils. */}
+      <div
+        className={`
+    ${sidebarOpen ? 'w-[88vw] sm:w-[320px]' : 'w-0'}
+    shrink-0 h-full
+    bg-background/80
+    backdrop-blur-xl
+    border-r
+    shadow-xl
+    flex flex-col
+    overflow-hidden
+    transition-all duration-300 ease-in-out
+  `}
+      >
+        <div className="w-[85vw] max-w-[300px] h-full flex flex-col">
+          <div
+            className="
+  px-4 py-3
+  border-b
+  bg-background/60
+  backdrop-blur-md
+  flex flex-col gap-3
+"
           >
-            <Filter className="h-4 w-4 mr-2" />
-            Filtres
-          </Button>
-
-          {selectedDren > 0 && stats.total > 0 && (
-            <div className="bg-card border rounded-xl shadow-sm w-full overflow-hidden">
-              <div
-                className="flex items-center justify-between px-4 py-3 border-b cursor-pointer hover:bg-muted/50 transition-colors"
-                onClick={() => setShowRecap(!showRecap)}
-              >
-                <span className="font-semibold text-sm">Récapitulatif</span>
-                <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                  {showRecap ? '−' : '+'}
-                </Button>
-              </div>
-
-              {showRecap && (
-                <div className="p-4 text-xs space-y-3">
-                  {' '}
-                  {/* Taille réduite */}
-                  {/* Zone sélectionnée */}
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>Zone</span>
-                    <strong className="text-foreground text-right">
-                      {drens.find((d) => d.CODE_DREN === selectedDren)?.DREN ||
-                        `DREN ${selectedDren}`}
-
-                      {selectedCisco > 0 && ciscos.length > 0 && (
-                        <>
-                          {' '}
-                          —{' '}
-                          {ciscos.find((c) => c.CODE_CISCO === selectedCisco)
-                            ?.CISCO || `CISCO ${selectedCisco}`}
-                        </>
-                      )}
-                    </strong>
-                  </div>
-                  <hr className="my-2" />
-                  {/* Établissements */}
-                  <div className="flex justify-between items-center">
-                    <span className="font-semibold">Établissements</span>
-                    <Badge variant="secondary" className="tabular-nums">
-                      {(stats.public?.total || 0) + (stats.private?.total || 0)}
-                    </Badge>
-                  </div>
-                  {/* Public */}
-                  <div className="pl-2 space-y-1">
-                    <div className="flex justify-between items-center">
-                      <span className="text-muted-foreground">Public</span>
-                      <span className="font-medium text-blue-700 tabular-nums">
-                        {stats.public?.total || 0}
-                      </span>
-                    </div>
-
-                    <div className="pl-3 space-y-0.5 text-[10px] text-muted-foreground">
-                      <div className="flex justify-between">
-                        <span>Préscolaire</span>
-                        <span className="tabular-nums">
-                          {stats.public?.prescolaire || 0}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Primaire</span>
-                        <span className="tabular-nums">
-                          {stats.public?.primaire || 0}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Collège</span>
-                        <span className="tabular-nums">
-                          {stats.public?.college || 0}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Lycée</span>
-                        <span className="tabular-nums">
-                          {stats.public?.lycee || 0}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  {/* Privé */}
-                  <div className="pl-2 space-y-1">
-                    <div className="flex justify-between items-center">
-                      <span className="text-muted-foreground">Privé</span>
-                      <span className="font-medium text-amber-700 tabular-nums">
-                        {stats.private?.total || 0}
-                      </span>
-                    </div>
-
-                    <div className="pl-3 space-y-0.5 text-[10px] text-muted-foreground">
-                      <div className="flex justify-between">
-                        <span>Préscolaire</span>
-                        <span className="tabular-nums">
-                          {stats.private?.prescolaire || 0}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Primaire</span>
-                        <span className="tabular-nums">
-                          {stats.private?.primaire || 0}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Collège</span>
-                        <span className="tabular-nums">
-                          {stats.private?.college || 0}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Lycée</span>
-                        <span className="tabular-nums">
-                          {stats.private?.lycee || 0}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  {/* Villages */}
-                  <div className="flex justify-between items-center pt-2 border-t">
-                    <span className="font-semibold">Villages</span>
-                    <Badge
-                      variant="outline"
-                      className="bg-emerald-50 text-emerald-700 tabular-nums"
-                    >
-                      {stats.villages || 0}
-                    </Badge>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {sigConfig.modules.validationDeplacement && (
             <Button
-              size="sm"
-              variant="outline"
-              onClick={async () => {
-                if (!selectedDren) {
-                  toast.error('Veuillez sélectionner un DREN');
-                  return;
-                }
-                await loadDeplacements();
-                setShowDeplacementsModal(true);
-              }}
+              onClick={() => setShowFilters(true)}
+              className="
+    w-full
+    h-10
+    justify-center
+    shadow-md
+    bg-primary
+  "
             >
-              Liste des déplacements
+              <Filter className="h-4 w-4 mr-2" />
+              Filtres
             </Button>
-          )}
-        </div>
 
-        <div className="px-4 py-3 flex flex-col gap-3 min-w-0">
-          <div className="relative w-full">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="écoles ou villages..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 bg-background shadow-lg"
-            />
-          </div>
-          {searchResults.length > 0 && (
-            <div className="mt-1 bg-background border rounded-lg shadow-xl max-h-60 overflow-y-auto">
-              {searchResults.map((item, i) => (
-                <button
-                  key={`sr-${item.id}-${i}`}
-                  className="w-full text-left px-3 py-2 text-xs hover:bg-muted/50 border-b last:border-b-0 flex items-center gap-2"
-                  onClick={() => handleSearchSelect(item)}
+            {selectedDren > 0 && stats.total > 0 && (
+              <div
+                className="
+   bg-background/70
+   backdrop-blur-xl
+   border
+   rounded-2xl
+   shadow-lg
+   overflow-hidden
+ "
+              >
+                <div
+                  className="flex items-center justify-between px-4 py-3 border-b cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => setShowRecap(!showRecap)}
                 >
-                  <MapPin className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-                  <span className="truncate">{item.name}</span>
-                </button>
-              ))}
+                  <span className="font-semibold text-sm">Récapitulatif</span>
+                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                    {showRecap ? '−' : '+'}
+                  </Button>
+                </div>
+
+                {showRecap && (
+                  <div className="p-4 text-xs space-y-3">
+                    {' '}
+                    {/* Taille réduite */}
+                    {/* Zone sélectionnée */}
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>Zone</span>
+                      <strong className="text-foreground text-right">
+                        {drens.find((d) => d.CODE_DREN === selectedDren)
+                          ?.DREN || `DREN ${selectedDren}`}
+
+                        {selectedCisco > 0 && ciscos.length > 0 && (
+                          <>
+                            {' '}
+                            —{' '}
+                            {ciscos.find((c) => c.CODE_CISCO === selectedCisco)
+                              ?.CISCO || `CISCO ${selectedCisco}`}
+                          </>
+                        )}
+                      </strong>
+                    </div>
+                    <hr className="my-2" />
+                    {/* Établissements */}
+                    <div className="flex justify-between items-center">
+                      <span className="font-semibold">Établissements</span>
+                      <Badge variant="secondary" className="tabular-nums">
+                        {(stats.public?.total || 0) +
+                          (stats.private?.total || 0)}
+                      </Badge>
+                    </div>
+                    {/* Public */}
+                    <div className="pl-2 space-y-1">
+                      <div className="flex justify-between items-center">
+                        <span className="text-muted-foreground">Public</span>
+                        <span className="font-medium text-blue-700 tabular-nums">
+                          {stats.public?.total || 0}
+                        </span>
+                      </div>
+
+                      <div className="pl-3 space-y-0.5 text-[10px] text-muted-foreground">
+                        <div className="flex justify-between">
+                          <span>Préscolaire</span>
+                          <span className="tabular-nums">
+                            {stats.public?.prescolaire || 0}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Primaire</span>
+                          <span className="tabular-nums">
+                            {stats.public?.primaire || 0}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Collège</span>
+                          <span className="tabular-nums">
+                            {stats.public?.college || 0}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Lycée</span>
+                          <span className="tabular-nums">
+                            {stats.public?.lycee || 0}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    {/* Privé */}
+                    <div className="pl-2 space-y-1">
+                      <div className="flex justify-between items-center">
+                        <span className="text-muted-foreground">Privé</span>
+                        <span className="font-medium text-amber-700 tabular-nums">
+                          {stats.private?.total || 0}
+                        </span>
+                      </div>
+
+                      <div className="pl-3 space-y-0.5 text-[10px] text-muted-foreground">
+                        <div className="flex justify-between">
+                          <span>Préscolaire</span>
+                          <span className="tabular-nums">
+                            {stats.private?.prescolaire || 0}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Primaire</span>
+                          <span className="tabular-nums">
+                            {stats.private?.primaire || 0}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Collège</span>
+                          <span className="tabular-nums">
+                            {stats.private?.college || 0}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Lycée</span>
+                          <span className="tabular-nums">
+                            {stats.private?.lycee || 0}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    {/* Villages */}
+                    <div className="flex justify-between items-center pt-2 border-t">
+                      <span className="font-semibold">Villages</span>
+                      <Badge
+                        variant="outline"
+                        className="bg-emerald-50 text-emerald-700 tabular-nums"
+                      >
+                        {stats.villages || 0}
+                      </Badge>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {user && sigConfig.modules.validationDeplacement && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={async () => {
+                  if (!selectedDren) {
+                    toast.error('Veuillez sélectionner un DREN');
+                    return;
+                  }
+                  await loadDeplacements();
+                  setShowDeplacementsModal(true);
+                }}
+              >
+                Liste des déplacements
+              </Button>
+            )}
+          </div>
+
+          <div
+            className="
+ px-4 py-4
+ space-y-3
+ border-t
+ bg-background/40
+ "
+          >
+            <div className="relative w-full">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="écoles ou villages..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="
+ pl-10
+ h-11
+ bg-background/80
+ backdrop-blur
+ border
+ shadow-sm
+ rounded-xl
+"
+              />
             </div>
-          )}
+            {searchResults.length > 0 && (
+              <div className="mt-1 bg-background border rounded-lg shadow-xl max-h-60 overflow-y-auto">
+                {searchResults.map((item, i) => (
+                  <button
+                    key={`sr-${item.id}-${i}`}
+                    className="w-full text-left px-3 py-2 text-xs hover:bg-muted/50 border-b last:border-b-0 flex items-center gap-2"
+                    onClick={() => handleSearchSelect(item)}
+                  >
+                    <MapPin className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                    <span className="truncate">{item.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Bouton pour développer / réduire le panneau latéral. Position
+          calculée avec clamp() pour toujours "coller" au bord droit du
+          panneau, qu'il soit à sa largeur mobile (85vw) ou desktop (300px). */}
+      <button
+        type="button"
+        onClick={() => setSidebarOpen((v) => !v)}
+        title={sidebarOpen ? 'Réduire le panneau' : 'Développer le panneau'}
+        className="
+absolute
+top-1/2
+-translate-y-1/2
+-ml-4
+z-[1500]
+bg-background
+border
+shadow-xl
+rounded-full
+w-9
+h-9
+flex
+items-center
+justify-center
+hover:bg-muted
+transition-all
+"
+        style={{ left: sidebarOpen ? 'clamp(0px, 85vw, 300px)' : '0px' }}
+      >
+        {sidebarOpen ? (
+          <PanelLeftClose className="w-4 h-4" />
+        ) : (
+          <PanelLeftOpen className="w-4 h-4" />
+        )}
+      </button>
+
       {/* Zone MAP */}
       <div className="relative flex-1 min-w-0 overflow-hidden">
         <div className="absolute top-3 left-3 z-[1000] bg-background/90 backdrop-blur rounded-md shadow-lg px-1.5 py-0.5">
@@ -1972,31 +2129,37 @@ const SIG = () => {
           />
         </div>
 
-        {sigConfig.modules.deplacement && (
-          <div className="absolute top-4 left-14 z-[1100] flex items-center gap-2 bg-background/90 backdrop-blur rounded-md shadow-lg px-3 py-1.5 border border-border">
-            <input
-              id="check-move"
-              type="checkbox"
-              className="w-5 h-5 accent-orange-500 cursor-pointer"
-              checked={sigMoveEnabled}
-              onChange={(e) => {
-                const zoom = mapRef.current?.getZoom() || 0;
-                if (e.target.checked && zoom < 16) {
-                  toast.warning(
-                    "Zoom 16 requis afin d'avoir la meilleure précision possible pour le déplacement. Zoomez davantage et réessayez."
-                  );
-                  return;
-                }
-                setSigMoveEnabled(e.target.checked);
-              }}
-            />
-            <label
-              htmlFor="check-move"
-              className="flex items-center gap-1.5 text-sm font-medium cursor-pointer select-none"
-            >
-              <i className="fas fa-arrows-alt text-orange-600"></i>
-              Déplacer
-            </label>
+        {/* Bouton Déplacer - Positionné comme contrôle Leaflet */}
+        {user && sigConfig.modules.deplacement && (
+          <div className="absolute top-[15px] left-14 z-[999]">
+            <div className="leaflet-bar leaflet-control bg-background/95 backdrop-blur border border-border shadow-md rounded-md overflow-hidden">
+              <label
+                htmlFor="check-move"
+                className="flex items-center gap-2.5 px-3 py-2 text-sm font-medium cursor-pointer hover:bg-muted transition-colors select-none"
+                title={`Activer le mode déplacement (zoom ≥ ${MOVE_MIN_ZOOM} requis)`}
+              >
+                <input
+                  id="check-move"
+                  type="checkbox"
+                  className="w-4 h-4 accent-orange-600 cursor-pointer"
+                  checked={sigMoveEnabled}
+                  onChange={(e) => {
+                    const zoom = mapRef.current?.getZoom() || 0;
+                    if (e.target.checked && zoom < MOVE_MIN_ZOOM) {
+                      toast.warning(
+                        `Le mode déplacement nécessite un zoom minimum de ${MOVE_MIN_ZOOM} pour plus de précision.`
+                      );
+                      return;
+                    }
+                    setSigMoveEnabled(e.target.checked);
+                  }}
+                />
+                <span className="flex items-center gap-1.5">
+                  <i className="fas fa-arrows-alt text-orange-600"></i>
+                  Déplacer
+                </span>
+              </label>
+            </div>
           </div>
         )}
 
@@ -2314,9 +2477,9 @@ const SIG = () => {
             <button
               className="w-full text-left px-4 py-2 text-sm hover:bg-blue-50 flex items-center gap-2"
               onClick={() => {
-                if (zoomLevel < 15) {
+                if (zoomLevel < MOVE_MIN_ZOOM) {
                   toast.warning(
-                    'Le niveau de zoom est trop bas. Le zoom minimum autorisé est de 16.'
+                    `Le niveau de zoom est trop bas. Le zoom minimum autorisé est de ${MOVE_MIN_ZOOM}.`
                   );
                   setContextMenu(null);
                   return;
@@ -2337,9 +2500,9 @@ const SIG = () => {
             <button
               className="w-full text-left px-4 py-2 text-sm hover:bg-blue-50 flex items-center gap-2"
               onClick={() => {
-                if (zoomLevel < 15) {
+                if (zoomLevel < MOVE_MIN_ZOOM) {
                   toast.warning(
-                    'Le niveau de zoom est trop bas. Le zoom minimum autorisé est de 16.'
+                    `Le niveau de zoom est trop bas. Le zoom minimum autorisé est de ${MOVE_MIN_ZOOM}.`
                   );
                   setContextMenu(null);
                   return;

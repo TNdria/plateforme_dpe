@@ -1,5 +1,11 @@
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Filter, Loader2 } from 'lucide-react';
 import { Dren, Cisco, Zap } from '@/services/api';
 
@@ -47,8 +53,14 @@ const DonneesFilters = ({
   onSecteurChange,
   onFilter,
 }: DonneesFiltersProps) => {
+  const getOptionKey = (
+    prefix: string,
+    value: string | number,
+    index: number
+  ) => `${prefix}-${String(value)}-${index}`;
+
   return (
-    <div className="p-4 border-b border-border bg-card">
+    <div className="p-5 bg-card">
       <div className="flex flex-wrap gap-4 items-end">
         <div className="space-y-1">
           <label className="text-sm font-medium">DREN</label>
@@ -58,8 +70,11 @@ const DonneesFilters = ({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="0">-- Sélectionner --</SelectItem>
-              {drens.map((d) => (
-                <SelectItem key={d.CODE_DREN} value={d.CODE_DREN.toString()}>
+              {drens.map((d, index) => (
+                <SelectItem
+                  key={getOptionKey('dren', d.CODE_DREN, index)}
+                  value={d.CODE_DREN.toString()}
+                >
                   {d.DREN}
                 </SelectItem>
               ))}
@@ -69,14 +84,21 @@ const DonneesFilters = ({
 
         <div className="space-y-1">
           <label className="text-sm font-medium">CISCO</label>
-          <Select value={selectedCisco} onValueChange={onCiscoChange} disabled={selectedDren === '0' || loadingFilters}>
+          <Select
+            value={selectedCisco}
+            onValueChange={onCiscoChange}
+            disabled={selectedDren === '0' || loadingFilters}
+          >
             <SelectTrigger className="w-52">
               <SelectValue placeholder="Tous les CISCOs" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="0">Tous les CISCOs</SelectItem>
-              {ciscos.map((c) => (
-                <SelectItem key={c.CODE_CISCO} value={c.CODE_CISCO.toString()}>
+              {ciscos.map((c, index) => (
+                <SelectItem
+                  key={getOptionKey('cisco', c.CODE_CISCO, index)}
+                  value={c.CODE_CISCO.toString()}
+                >
                   {c.CISCO}
                 </SelectItem>
               ))}
@@ -86,14 +108,21 @@ const DonneesFilters = ({
 
         <div className="space-y-1">
           <label className="text-sm font-medium">ZAP</label>
-          <Select value={selectedZap} onValueChange={onZapChange} disabled={selectedCisco === '0' || loadingFilters}>
+          <Select
+            value={selectedZap}
+            onValueChange={onZapChange}
+            disabled={selectedCisco === '0' || loadingFilters}
+          >
             <SelectTrigger className="w-44">
               <SelectValue placeholder="Tous les ZAPs" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="0">Tous les ZAPs</SelectItem>
-              {zaps.map((z) => (
-                <SelectItem key={z.CODE_ZAP} value={z.CODE_ZAP.toString()}>
+              {zaps.map((z, index) => (
+                <SelectItem
+                  key={getOptionKey('zap', z.CODE_ZAP, index)}
+                  value={z.CODE_ZAP.toString()}
+                >
                   {z.ZAP}
                 </SelectItem>
               ))}
@@ -103,14 +132,21 @@ const DonneesFilters = ({
 
         <div className="space-y-1">
           <label className="text-sm font-medium">Commune</label>
-          <Select value={selectedCommune} onValueChange={onCommuneChange} disabled={selectedCisco === '0' || loadingFilters}>
+          <Select
+            value={selectedCommune}
+            onValueChange={onCommuneChange}
+            disabled={selectedCisco === '0' || loadingFilters}
+          >
             <SelectTrigger className="w-44">
               <SelectValue placeholder="Toutes" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="0">Toutes les communes</SelectItem>
-              {communes.map((c) => (
-                <SelectItem key={c.CODE_COMMUNE} value={c.CODE_COMMUNE.toString()}>
+              {communes.map((c, index) => (
+                <SelectItem
+                  key={getOptionKey('commune', c.CODE_COMMUNE, index)}
+                  value={c.CODE_COMMUNE.toString()}
+                >
                   {c.COMMUNE}
                 </SelectItem>
               ))}
@@ -132,8 +168,16 @@ const DonneesFilters = ({
           </Select>
         </div>
 
-        <Button onClick={onFilter} disabled={loading || selectedDren === '0'}>
-          {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Filter className="w-4 h-4 mr-2" />}
+        <Button
+          onClick={onFilter}
+          disabled={loading || selectedDren === '0'}
+          className="h-10 px-4"
+        >
+          {loading ? (
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          ) : (
+            <Filter className="w-4 h-4 mr-2" />
+          )}
           Filtrer
         </Button>
       </div>
