@@ -426,43 +426,43 @@ async function aggregateCandidatesBepc(
       etabFilter = `AND "CODE_ETAB" = ANY($${params.length}::bigint[])`;
     }
 
+    // Les notes BEPC sont stockées en "points" (note/20 × coefficient).
+    // On déduit le coefficient de chaque matière à partir du maximum observé sur l'année
+    // (max_points / 20, arrondi, minimum 1) pour ramener tous les scores sur 20.
     const sql = `
-      WITH per_etab AS (
+      WITH coefs AS (
         SELECT
-          "CODE_ETAB",
-          COUNT(*) AS total,
-          COUNT(*) FILTER (WHERE upper("GENRE")='G') AS nbr_g,
-          COUNT(*) FILTER (WHERE upper("GENRE")='F') AS nbr_f,
-          COUNT(*) FILTER (WHERE upper("GENRE")='G' AND upper("BEPC")='A') AS admis_g,
-          COUNT(*) FILTER (WHERE upper("GENRE")='F' AND upper("BEPC")='A') AS admis_f,
-          AVG("MALAGASY")::numeric AS sm_mlg,
-          AVG("FRANCAIS")::numeric AS sm_frs,
-          AVG("ANGLAIS")::numeric AS sm_ang,
-          AVG("MATHEMATIQUE")::numeric AS sm_math,
-          AVG("PHYSIQUE")::numeric AS sm_phys,
-          AVG("SVT")::numeric AS sm_svt,
-          AVG("HISTO_GEO"::numeric)::numeric AS sm_hg,
-          COUNT(*) FILTER (WHERE "MALAGASY" >= 10) AS mlg_sup10,
-          COUNT(*) FILTER (WHERE "FRANCAIS" >= 10) AS frs_sup10,
-          COUNT(*) FILTER (WHERE "ANGLAIS" >= 10) AS ang_sup10,
-          COUNT(*) FILTER (WHERE "MATHEMATIQUE" >= 10) AS math_sup10,
-          COUNT(*) FILTER (WHERE "PHYSIQUE" >= 10) AS phys_sup10,
-          COUNT(*) FILTER (WHERE "SVT" >= 10) AS svt_sup10,
-          COUNT(*) FILTER (WHERE "HISTO_GEO"::numeric >= 10) AS hg_sup10
-        FROM examen_bepc_candidates
-        WHERE "ANNEE_SCOLAIRE"=$1 ${etabFilter}
-        GROUP BY "CODE_ETAB"
+          GREATEST(1, ROUND(MAX("MALAGASY"::numeric)/20.0)) AS c_mlg,
+          GREATEST(1, ROUND(MAX("FRANCAIS"::numeric)/20.0)) AS c_frs,
+          GREATEST(1, ROUND(MAX("ANGLAIS"::numeric)/20.0)) AS c_ang,
+          GREATEST(1, ROUND(MAX("MATHEMATIQUE"::numeric)/20.0)) AS c_math,
+          GREATEST(1, ROUND(MAX("PHYSIQUE"::numeric)/20.0)) AS c_phys,
+          GREATEST(1, ROUND(MAX("SVT"::numeric)/20.0)) AS c_svt,
+          GREATEST(1, ROUND(MAX("HISTO_GEO"::numeric)/20.0)) AS c_hg
+        FROM examen_bepc_candidates WHERE "ANNEE_SCOLAIRE"=$1
       )
       SELECT
-        SUM(total) AS total, SUM(nbr_g) AS nbr_g, SUM(nbr_f) AS nbr_f,
-        SUM(admis_g) AS admis_g, SUM(admis_f) AS admis_f,
-        AVG(sm_mlg) AS sm_mlg, AVG(sm_frs) AS sm_frs, AVG(sm_ang) AS sm_ang,
-        AVG(sm_math) AS sm_math, AVG(sm_phys) AS sm_phys,
-        AVG(sm_svt) AS sm_svt, AVG(sm_hg) AS sm_hg,
-        SUM(mlg_sup10) AS mlg_sup10, SUM(frs_sup10) AS frs_sup10, SUM(ang_sup10) AS ang_sup10,
-        SUM(math_sup10) AS math_sup10, SUM(phys_sup10) AS phys_sup10,
-        SUM(svt_sup10) AS svt_sup10, SUM(hg_sup10) AS hg_sup10
-      FROM per_etab
+        COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE upper(c."GENRE")='G') AS nbr_g,
+        COUNT(*) FILTER (WHERE upper(c."GENRE")='F') AS nbr_f,
+        COUNT(*) FILTER (WHERE upper(c."GENRE")='G' AND upper(c."BEPC")='A') AS admis_g,
+        COUNT(*) FILTER (WHERE upper(c."GENRE")='F' AND upper(c."BEPC")='A') AS admis_f,
+        AVG(c."MALAGASY"::numeric / k.c_mlg) AS sm_mlg,
+        AVG(c."FRANCAIS"::numeric / k.c_frs) AS sm_frs,
+        AVG(c."ANGLAIS"::numeric / k.c_ang) AS sm_ang,
+        AVG(c."MATHEMATIQUE"::numeric / k.c_math) AS sm_math,
+        AVG(c."PHYSIQUE"::numeric / k.c_phys) AS sm_phys,
+        AVG(c."SVT"::numeric / k.c_svt) AS sm_svt,
+        AVG(c."HISTO_GEO"::numeric / k.c_hg) AS sm_hg,
+        COUNT(*) FILTER (WHERE c."MALAGASY"::numeric / k.c_mlg >= 10) AS mlg_sup10,
+        COUNT(*) FILTER (WHERE c."FRANCAIS"::numeric / k.c_frs >= 10) AS frs_sup10,
+        COUNT(*) FILTER (WHERE c."ANGLAIS"::numeric / k.c_ang >= 10) AS ang_sup10,
+        COUNT(*) FILTER (WHERE c."MATHEMATIQUE"::numeric / k.c_math >= 10) AS math_sup10,
+        COUNT(*) FILTER (WHERE c."PHYSIQUE"::numeric / k.c_phys >= 10) AS phys_sup10,
+        COUNT(*) FILTER (WHERE c."SVT"::numeric / k.c_svt >= 10) AS svt_sup10,
+        COUNT(*) FILTER (WHERE c."HISTO_GEO"::numeric / k.c_hg >= 10) AS hg_sup10
+      FROM examen_bepc_candidates c CROSS JOIN coefs k
+      WHERE c."ANNEE_SCOLAIRE"=$1 ${etabFilter}
     `;
     const r = await djangoClient.queryObject(sql, params);
     const a: any = r.rows[0];
@@ -2204,7 +2204,7 @@ serve(async (req: Request) => {
           'population','population_2025','caisse_ecole','examen_cepe_old',
           'sig_village','sig_etablissement',
           'screening_categorized','screening_commentaires',
-          'cepe','login_customuser'
+          'cepe','login_customuser','examen_cepe','examen_bepc_candidates','examen_cepe_candidates'
         ];
         if (!allowedAny.includes(table)) {
           await client.end();
@@ -2666,7 +2666,7 @@ async function executeTdbDrenData(client: Client, codeDren: number, annee: numbe
     try { const q = `SELECT SUM(COALESCE(c."Nbre",0)) AS total_candidats, SUM(COALESCE(c."nbrG",0)) AS nbr_g, SUM(COALESCE(c."nbrF",0)) AS nbr_f, SUM(COALESCE(c."admisG",0)) AS admis_g, SUM(COALESCE(c."admisF",0)) AS admis_f, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."mlg"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."ml_fahazoana_lahatsoratra"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg_fahazoana, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."ml_fitsipika"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg_fitsipika, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."ml_fanazarana_hanoratra"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg_fanazarana, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."frs"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."fr_comprehension"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs_comprehension, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."fr_grammaire"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs_grammaire, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."fr_expression_ecrite"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs_expression, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."operation"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mths_operation, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."probleme"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mths_probleme, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM((COALESCE(c."operation",0)+COALESCE(c."probleme",0))/2.0*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mths, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."moyenne"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_total, SUM(COALESCE(c."malagasy_sup_10",0)) AS mlg_sup10, SUM(COALESCE(c."malagasy_compo_sup_10",0)) AS mlg_compo_sup10, SUM(COALESCE(c."malagasy_gram_sup_10",0)) AS mlg_gram_sup10, SUM(COALESCE(c."malagasy_exp_10",0)) AS mlg_exp_sup10, SUM(COALESCE(c."francais_sup_10",0)) AS frs_sup10, SUM(COALESCE(c."francais_compo_sup_10",0)) AS frs_compo_sup10, SUM(COALESCE(c."francais_gram_sup_10",0)) AS frs_gram_sup10, SUM(COALESCE(c."francais_exp_10",0)) AS frs_exp_sup10, SUM(COALESCE(c."math_sup_10",0)) AS mths_sup10, SUM(COALESCE(c."op_sup_10",0)) AS op_sup10, SUM(COALESCE(c."probleme_sup_10",0)) AS prob_sup10, SUM(COALESCE(c."autres_sup_10",0)) AS autres_sup10 FROM examen_cepe c INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=c."code_etab" AND a1."ANNEE_SCOLAIRE"=c."id_annee_scolaire" WHERE c."id_annee_scolaire"=${annee} AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
   }
   async function getCaisseEcole(where: string) {
-    try { const q = `SELECT SUM(COALESCE(ce."FCE",0)) AS total_fce FROM caisse_ecole ce INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=ce."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=ce."ANNEE_SCOLAIRE" WHERE ce."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
+    try { const q = `SELECT SUM(COALESCE(ce."FCE",0)) AS total_fce FROM caisse_ecole ce INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=ce."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=${annee} WHERE ce."ANNEE_SCOLAIRE"=(SELECT MAX("ANNEE_SCOLAIRE") FROM caisse_ecole WHERE "ANNEE_SCOLAIRE"<=${annee}) AND a1."EXISTE_PRIMAIRE"=1 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
   }
   async function getManuels(where: string) {
     try { const q = `SELECT SUM(${si('l1."MALAGASY_T1"')}+${si('l1."MALAGASY_T2"')}+${si('l1."MALAGASY_T3"')}+${si('l1."MALAGASY_T4"')}+${si('l1."MALAGASY_T5"')}) AS malagasy, SUM(${si('l1."MATHS_T1"')}+${si('l1."MATHS_T2"')}+${si('l1."MATHS_T3"')}+${si('l1."MATHS_T4"')}+${si('l1."MATHS_T5"')}) AS maths, SUM(${si('l1."FRANCAIS_T1"')}+${si('l1."FRANCAIS_T2"')}+${si('l1."FRANCAIS_T3"')}+${si('l1."FRANCAIS_T4"')}+${si('l1."FRANCAIS_T5"')}) AS francais FROM fpe_l1 l1 INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=l1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=l1."ANNEE_SCOLAIRE" WHERE l1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
@@ -2858,8 +2858,8 @@ async function executeTdbCiscoData(client: Client, codeCisco: number, codeDren: 
           SUM(COALESCE(ce."FCE",0)) AS total_fce,
           SUM(COALESCE(ce."TOTAL_A_DOTER",0)) AS total_a_doter
         FROM caisse_ecole ce
-        INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB" = ce."CODE_ETAB" AND a1."ANNEE_SCOLAIRE" = ce."ANNEE_SCOLAIRE"
-        WHERE ce."ANNEE_SCOLAIRE" = ${annee} AND a1."EXISTE_PRIMAIRE" = 1 ${where}
+        INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB" = ce."CODE_ETAB" AND a1."ANNEE_SCOLAIRE" = ${annee}
+        WHERE ce."ANNEE_SCOLAIRE" = (SELECT MAX("ANNEE_SCOLAIRE") FROM caisse_ecole WHERE "ANNEE_SCOLAIRE"<=${annee}) AND a1."EXISTE_PRIMAIRE" = 1 ${where}
       `;
       return (await client.queryObject(q)).rows[0] || {};
     } catch(e) { console.error('getCaisseEcole error:', e); return {}; }
@@ -2884,14 +2884,16 @@ async function executeTdbCiscoData(client: Client, codeCisco: number, codeDren: 
     try {
       const q = `
         SELECT 
-          SUM(${si('m1."PARTICIPATION_FRAM_PRIMAIRE"')}) AS fram,
-          SUM(${si('m1."SUBVENTION_ENS_PRIMAIRE"')}) AS subvention,
-          SUM(${si('m1."DONS_PRIMAIRE"')} + ${si('m1."ALLEGEMENT_PRIMAIRE"')}) AS autres,
-          SUM(${si('m1."PARTICIPATION_FRAM_PRIMAIRE"')}+${si('m1."SUBVENTION_ENS_PRIMAIRE"')}+${si('m1."DONS_PRIMAIRE"')}+${si('m1."ALLEGEMENT_PRIMAIRE"')}) AS total
-        FROM fpe_m1 m1
-        INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=m1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=m1."ANNEE_SCOLAIRE"
-        WHERE m1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 ${where}
+          0 AS fram,
+          SUM(COALESCE(ce."FCE",0)) AS subvention,
+          0 AS autres,
+          SUM(COALESCE(ce."FCE",0)) AS total,
+          SUM(COALESCE(ce."TOTAL_A_DOTER",0)) AS total_a_doter
+        FROM caisse_ecole ce
+        INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=ce."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=${annee}
+        WHERE ce."ANNEE_SCOLAIRE"=(SELECT MAX("ANNEE_SCOLAIRE") FROM caisse_ecole WHERE "ANNEE_SCOLAIRE"<=${annee}) AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 ${where}
       `;
+
       return (await client.queryObject(q)).rows[0] || {};
     } catch(e) { console.error('getRessourcesFin error:', e); return {}; }
   }
@@ -3092,8 +3094,8 @@ async function executeTdbZapData(client: Client, codeZap: number, codeCisco: num
           SUM(COALESCE(ce."FCE",0)) AS total_fce,
           SUM(COALESCE(ce."TOTAL_A_DOTER",0)) AS total_a_doter
         FROM caisse_ecole ce
-        INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB" = ce."CODE_ETAB" AND a1."ANNEE_SCOLAIRE" = ce."ANNEE_SCOLAIRE"
-        WHERE ce."ANNEE_SCOLAIRE" = ${annee} AND a1."EXISTE_PRIMAIRE" = 1 ${where}
+        INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB" = ce."CODE_ETAB" AND a1."ANNEE_SCOLAIRE" = ${annee}
+        WHERE ce."ANNEE_SCOLAIRE" = (SELECT MAX("ANNEE_SCOLAIRE") FROM caisse_ecole WHERE "ANNEE_SCOLAIRE"<=${annee}) AND a1."EXISTE_PRIMAIRE" = 1 ${where}
       `;
       return (await client.queryObject(q)).rows[0] || {};
     } catch(e) { console.error('getCaisseEcole error:', e); return {}; }
@@ -3118,14 +3120,16 @@ async function executeTdbZapData(client: Client, codeZap: number, codeCisco: num
     try {
       const q = `
         SELECT 
-          SUM(${si('m1."PARTICIPATION_FRAM_PRIMAIRE"')}) AS fram,
-          SUM(${si('m1."SUBVENTION_ENS_PRIMAIRE"')}) AS subvention,
-          SUM(${si('m1."DONS_PRIMAIRE"')} + ${si('m1."ALLEGEMENT_PRIMAIRE"')}) AS autres,
-          SUM(${si('m1."PARTICIPATION_FRAM_PRIMAIRE"')}+${si('m1."SUBVENTION_ENS_PRIMAIRE"')}+${si('m1."DONS_PRIMAIRE"')}+${si('m1."ALLEGEMENT_PRIMAIRE"')}) AS total
-        FROM fpe_m1 m1
-        INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=m1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=m1."ANNEE_SCOLAIRE"
-        WHERE m1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 ${where}
+          0 AS fram,
+          SUM(COALESCE(ce."FCE",0)) AS subvention,
+          0 AS autres,
+          SUM(COALESCE(ce."FCE",0)) AS total,
+          SUM(COALESCE(ce."TOTAL_A_DOTER",0)) AS total_a_doter
+        FROM caisse_ecole ce
+        INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=ce."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=${annee}
+        WHERE ce."ANNEE_SCOLAIRE"=(SELECT MAX("ANNEE_SCOLAIRE") FROM caisse_ecole WHERE "ANNEE_SCOLAIRE"<=${annee}) AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 ${where}
       `;
+
       return (await client.queryObject(q)).rows[0] || {};
     } catch(e) { console.error('getRessourcesFin error:', e); return {}; }
   }
@@ -3248,7 +3252,8 @@ async function executeTdbEcoleCollegeData(client: Client, codeEtab: number, code
         SUM(${si('e4."T9_G"')}) AS eff_t4_g, SUM(${si('e4."T9_F"')}) AS eff_t4_f,
         COUNT(DISTINCT CASE WHEN a1."EST_ALIMENTE_EAU"='1' THEN a1."CODE_ETAB" END) AS etab_eau,
         COUNT(DISTINCT CASE WHEN a1."EST_ELECTRIFIE"='1' THEN a1."CODE_ETAB" END) AS etab_elec,
-        0 AS etab_tice, 0 AS etab_biblio, 0 AS eleve_5km
+        0 AS etab_tice, 0 AS etab_biblio,
+        SUM(${si('e4."T6_G_5KM"')}+${si('e4."T6_F_5KM"')}+${si('e4."T7_G_5KM"')}+${si('e4."T7_F_5KM"')}+${si('e4."T8_G_5KM"')}+${si('e4."T8_F_5KM"')}+${si('e4."T9_G_5KM"')}+${si('e4."T9_F_5KM"')}) AS eleve_5km
       FROM fpe_a1 a1
       LEFT JOIN fpe_e4 e4 ON e4."CODE_ETAB"=a1."CODE_ETAB" AND e4."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND e4."SECTEUR"=a1."SECTEUR"
       WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."SECTEUR"=0 AND a1."EXISTE_COLLEGE"=1 ${where}`;
@@ -3272,8 +3277,9 @@ async function executeTdbEcoleCollegeData(client: Client, codeEtab: number, code
     try { const q = `SELECT SUM((${si('k1."COLLEGE_TABLES_BANCS_1PL_BON_ETAT"')}+${si('k1."COLLEGE_TABLES_BANCS_1PL_MAUVAIS_ETAT"')})+(${si('k1."COLLEGE_TABLES_BANCS_2PL_BON_ETAT"')}+${si('k1."COLLEGE_TABLES_BANCS_2PL_MAUVAIS_ETAT"')})*2+(${si('k1."COLLEGE_TABLES_BANCS_3PL_BON_ETAT"')}+${si('k1."COLLEGE_TABLES_BANCS_3PL_MAUVAIS_ETAT"')})*3+(${si('k1."COLLEGE_TABLES_BANCS_4PL_BON_ETAT"')}+${si('k1."COLLEGE_TABLES_BANCS_4PL_MAUVAIS_ETAT"')})*4+(${si('k1."COLLEGE_TABLES_BANCS_5PL_PLUS_BON_ETAT"')}+${si('k1."COLLEGE_TABLES_BANCS_5PL_PLUS_MAUVAIS_ETAT"')})*5) AS places_assises, SUM(${si('j2."WC_LATRINES_COMMUNES_BON_ETAT"')}+${si('j2."WC_LATRINES_COMMUNES_MAUVAIS_ETAT"')}+${si('j2."WC_LATRINES_FILLES_BON_ETAT"')}+${si('j2."WC_LATRINES_FILLES_MAUVAIS_ETAT"')}+${si('j2."WC_LATRINES_GARCONS_BON_ETAT"')}+${si('j2."WC_LATRINES_GARCONS_MAUVAIS_ETAT"')}) AS latrines, SUM(${si('j2."WC_LATRINES_FILLES_BON_ETAT"')}+${si('j2."WC_LATRINES_FILLES_MAUVAIS_ETAT"')}) AS latrines_fille FROM fpe_a1 a1 LEFT JOIN fpe_k1 k1 ON k1."CODE_ETAB"=a1."CODE_ETAB" AND k1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" LEFT JOIN fpe_j2 j2 ON j2."CODE_ETAB"=a1."CODE_ETAB" AND j2."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_COLLEGE"=1 AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
   }
   async function getCaisse(where: string) {
-    try { const q = `SELECT SUM(${si('m1."SUBVENTION_ENS_COLLEGE"')}+${si('m1."PARTICIPATION_FRAM_COLLEGE"')}) AS total_fce, SUM(${si('m1."DONS_COLLEGE"')}+${si('m1."ALLEGEMENT_COLLEGE"')}) AS autres FROM fpe_m1 m1 INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=m1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=m1."ANNEE_SCOLAIRE" WHERE m1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_COLLEGE"=1 AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
+    try { const q = `SELECT SUM(COALESCE(ce."FCE",0)) AS total_fce, SUM(COALESCE(ce."TOTAL_A_DOTER",0)) AS total_a_doter, 0 AS autres FROM caisse_ecole ce INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=ce."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=${annee} WHERE ce."ANNEE_SCOLAIRE"=(SELECT MAX("ANNEE_SCOLAIRE") FROM caisse_ecole WHERE "ANNEE_SCOLAIRE"<=${annee}) AND a1."EXISTE_COLLEGE"=1 AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { console.error('college getCaisse error', e); return {}; }
   }
+
 
   const [resEcole,resZap,resCisco,persEcole,persZap,persCisco,secEcole,secZap,secCisco,plEcole,plZap,plCisco,ceEcole,ceZap,ceCisco] = await Promise.all([
     getRessources(whereEcole), getRessources(whereZap), getRessources(whereCisco), getPersonnel(whereEcole), getPersonnel(whereZap), getPersonnel(whereCisco), getSections(whereEcole), getSections(whereZap), getSections(whereCisco), getPlaces(whereEcole), getPlaces(whereZap), getPlaces(whereCisco), getCaisse(whereEcole), getCaisse(whereZap), getCaisse(whereCisco)
@@ -3345,13 +3351,13 @@ async function executeTdbEcoleData(client: Client, codeEtab: number, codeZap: nu
     try { const q = `SELECT SUM(COALESCE(c."Nbre",0)) AS total_candidats, SUM(COALESCE(c."nbrG",0)) AS nbr_g, SUM(COALESCE(c."nbrF",0)) AS nbr_f, SUM(COALESCE(c."admisG",0)) AS admis_g, SUM(COALESCE(c."admisF",0)) AS admis_f, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."mlg"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."ml_fahazoana_lahatsoratra"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg_fahazoana, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."ml_fitsipika"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg_fitsipika, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."ml_fanazarana_hanoratra"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg_fanazarana, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."frs"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."fr_comprehension"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs_comprehension, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."fr_grammaire"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs_grammaire, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."fr_expression_ecrite"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs_expression, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."operation"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mths_operation, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."probleme"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mths_probleme, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM((COALESCE(c."operation",0)+COALESCE(c."probleme",0))/2.0*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mths, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."moyenne"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_total, SUM(COALESCE(c."malagasy_sup_10",0)) AS mlg_sup10, SUM(COALESCE(c."malagasy_compo_sup_10",0)) AS mlg_compo_sup10, SUM(COALESCE(c."malagasy_gram_sup_10",0)) AS mlg_gram_sup10, SUM(COALESCE(c."malagasy_exp_10",0)) AS mlg_exp_sup10, SUM(COALESCE(c."francais_sup_10",0)) AS frs_sup10, SUM(COALESCE(c."francais_compo_sup_10",0)) AS frs_compo_sup10, SUM(COALESCE(c."francais_gram_sup_10",0)) AS frs_gram_sup10, SUM(COALESCE(c."francais_exp_10",0)) AS frs_exp_sup10, SUM(COALESCE(c."math_sup_10",0)) AS mths_sup10, SUM(COALESCE(c."op_sup_10",0)) AS op_sup10, SUM(COALESCE(c."probleme_sup_10",0)) AS prob_sup10, SUM(COALESCE(c."autres_sup_10",0)) AS autres_sup10 FROM examen_cepe c INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=c."code_etab" AND a1."ANNEE_SCOLAIRE"=c."id_annee_scolaire" WHERE c."id_annee_scolaire"=${annee} AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
   }
   async function getCaisseEcole(where: string) {
-    try { const q = `SELECT SUM(COALESCE(ce."FCE",0)) AS total_fce, SUM(COALESCE(ce."TOTAL_A_DOTER",0)) AS total_a_doter FROM caisse_ecole ce INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=ce."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=ce."ANNEE_SCOLAIRE" WHERE ce."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
+    try { const q = `SELECT SUM(COALESCE(ce."FCE",0)) AS total_fce, SUM(COALESCE(ce."TOTAL_A_DOTER",0)) AS total_a_doter FROM caisse_ecole ce INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=ce."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=${annee} WHERE ce."ANNEE_SCOLAIRE"=(SELECT MAX("ANNEE_SCOLAIRE") FROM caisse_ecole WHERE "ANNEE_SCOLAIRE"<=${annee}) AND a1."EXISTE_PRIMAIRE"=1 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
   }
   async function getManuels(where: string) {
     try { const q = `SELECT SUM(${si('l1."MALAGASY_T1"')}+${si('l1."MALAGASY_T2"')}+${si('l1."MALAGASY_T3"')}+${si('l1."MALAGASY_T4"')}+${si('l1."MALAGASY_T5"')}) AS malagasy, SUM(${si('l1."MATHS_T1"')}+${si('l1."MATHS_T2"')}+${si('l1."MATHS_T3"')}+${si('l1."MATHS_T4"')}+${si('l1."MATHS_T5"')}) AS maths, SUM(${si('l1."FRANCAIS_T1"')}+${si('l1."FRANCAIS_T2"')}+${si('l1."FRANCAIS_T3"')}+${si('l1."FRANCAIS_T4"')}+${si('l1."FRANCAIS_T5"')}) AS francais FROM fpe_l1 l1 INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=l1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=l1."ANNEE_SCOLAIRE" WHERE l1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
   }
   async function getRessourcesFin(where: string) {
-    try { const q = `SELECT SUM(${si('m1."PARTICIPATION_FRAM_PRIMAIRE"')}) AS fram, SUM(${si('m1."SUBVENTION_ENS_PRIMAIRE"')}) AS subvention, SUM(${si('m1."DONS_PRIMAIRE"')}+${si('m1."ALLEGEMENT_PRIMAIRE"')}) AS autres, SUM(${si('m1."PARTICIPATION_FRAM_PRIMAIRE"')}+${si('m1."SUBVENTION_ENS_PRIMAIRE"')}+${si('m1."DONS_PRIMAIRE"')}+${si('m1."ALLEGEMENT_PRIMAIRE"')}) AS total FROM fpe_m1 m1 INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=m1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=m1."ANNEE_SCOLAIRE" WHERE m1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
+    try { const q = `SELECT 0 AS fram, SUM(COALESCE(ce."FCE",0)) AS subvention, 0 AS autres, SUM(COALESCE(ce."FCE",0)) AS total, SUM(COALESCE(ce."FCE",0)) AS total_fce, SUM(COALESCE(ce."TOTAL_A_DOTER",0)) AS total_a_doter FROM caisse_ecole ce INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=ce."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=${annee} WHERE ce."ANNEE_SCOLAIRE"=(SELECT MAX("ANNEE_SCOLAIRE") FROM caisse_ecole WHERE "ANNEE_SCOLAIRE"<=${annee}) AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { console.error('ecole getCaisseEcole error', e); return {}; }
   }
 
   const [

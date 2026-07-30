@@ -1578,8 +1578,9 @@ const SIG = () => {
       const layerGroup = etabLayersRef.current[key];
       if (layerGroup && map.hasLayer(layerGroup)) {
         layerGroup.eachLayer((layer: any) => {
-          if (layer instanceof L.Marker && layer.options?.properties) {
-            etabs.push(layer.options.properties);
+          const props = (layer?.options as any)?.properties;
+          if (layer instanceof L.Marker && props) {
+            etabs.push(props);
           }
         });
       }
@@ -1587,8 +1588,9 @@ const SIG = () => {
 
     if (villageLayerRef.current && map.hasLayer(villageLayerRef.current)) {
       villageLayerRef.current.eachLayer((layer: any) => {
-        if (layer instanceof L.Marker && layer.options?.properties) {
-          villages.push(layer.options.properties);
+        const props = (layer?.options as any)?.properties;
+        if (layer instanceof L.Marker && props) {
+          villages.push(props);
         }
       });
     }
