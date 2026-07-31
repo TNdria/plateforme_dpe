@@ -228,7 +228,7 @@ const TDBCisco = () => {
                   {(() => {
                     const red_ensemble = pctVal(Number(c.ressources?.red_g||0)+Number(c.ressources?.red_f||0), c.ressources?.nbr_eleve);
                     const txRetentionTotal = pctVal(c.ressources?.eff_t5, c.ressources?.eff_t1);
-                    const TPA = Number(c.ressources?.tpa || 0);
+                    const TPA = Number(c.ressources?.tpa ?? c.indicateurs?.TPA ?? 0);
                     const tx_admis = pctVal(Number(c.cepe?.admis_g||0)+Number(c.cepe?.admis_f||0), Number(c.cepe?.nbr_g||0)+Number(c.cepe?.nbr_f||0));
                     const y = computeScoreY({ red_ensemble, txRetentionTotal, TPA, tx_admis });
                     return (

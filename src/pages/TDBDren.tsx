@@ -152,7 +152,7 @@ const TDBDren = () => {
               {(() => {
                 const red_ensemble = pctVal(Number(d.ressources?.red_g||0)+Number(d.ressources?.red_f||0), d.ressources?.nbr_eleve);
                 const txRetentionTotal = pctVal(d.ressources?.eff_t5, d.ressources?.eff_t1);
-                const TPA = Number(d.ressources?.tpa || 0);
+                const TPA = Number(d.ressources?.tpa ?? d.indicateurs?.TPA ?? 0);
                 const tx_admis = pctVal(Number(d.cepe?.admis_g||0)+Number(d.cepe?.admis_f||0), Number(d.cepe?.nbr_g||0)+Number(d.cepe?.nbr_f||0));
                 const y = computeScoreY({ red_ensemble, txRetentionTotal, TPA, tx_admis });
                 return (
@@ -182,12 +182,12 @@ const TDBDren = () => {
           </thead>
           <tbody>
             {[
-              ['Nombre d\'écoles fonctionnelles', fmt(d.ressources?.nbr_etab), fmt(d.ressources?.nbr_etab_pub || '-')],
-              ['Nombre de salles', fmt(d.sections?.nbr_sdc), fmt(d.sections?.nbr_sdc_pub || '-')],
-              ['Nombre de sections', fmt(d.sections?.nbr_section), fmt(d.sections?.nbr_section_pub || '-')],
-              ['Nombre de places assises', fmt(d.places?.places_assises), fmt(d.places?.places_assises_pub || '-')],
-              ['Effectif des élèves', fmt(d.ressources?.nbr_eleve), fmt(d.ressources?.nbr_eleve_pub || '-')],
-              ['Dont filles', fmt(d.ressources?.nbr_eleve_f), fmt(d.ressources?.nbr_eleve_f_pub || '-')],
+              ['Nombre d\'écoles fonctionnelles', fmt(d.ressources?.nbr_etab), fmt(d.ressources?.nbr_etab_pub ?? d.ressources?.nbr_etab)],
+              ['Nombre de salles', fmt(d.sections?.nbr_sdc), fmt(d.sections?.nbr_sdc_pub ?? d.sections?.nbr_sdc)],
+              ['Nombre de sections', fmt(d.sections?.nbr_section), fmt(d.sections?.nbr_section_pub ?? d.sections?.nbr_section)],
+              ['Nombre de places assises', fmt(d.places?.places_assises), fmt(d.places?.places_assises_pub ?? d.places?.places_assises)],
+              ['Effectif des élèves', fmt(d.ressources?.nbr_eleve), fmt(d.ressources?.nbr_eleve_pub ?? d.ressources?.nbr_eleve)],
+              ['Dont filles', fmt(d.ressources?.nbr_eleve_f), fmt(d.ressources?.nbr_eleve_f_pub ?? d.ressources?.nbr_eleve_f)],
             ].map(([label, ens, pub]) => (
               <tr key={label as string}><td style={{ ...st.td, textAlign: 'left' }}>{label}</td><td style={{ ...st.td, textAlign: 'right' }}>{ens}</td><td style={{ ...st.td, textAlign: 'right' }}>{pub}</td></tr>
             ))}
@@ -195,8 +195,8 @@ const TDBDren = () => {
         </table>
         <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '5px' }} border={1} cellPadding={3} cellSpacing={0}>
           <tbody>
-            <tr><td style={{ ...st.td, textAlign: 'left' }}>Nombre des CISCOs</td><td style={{ ...st.td, textAlign: 'right' }}>{fmt(d.ressources?.nbr_cisco || '-')}</td></tr>
-            <tr><td style={{ ...st.td, textAlign: 'left' }}>Nombre des ZAPs</td><td style={{ ...st.td, textAlign: 'right' }}>{fmt(d.ressources?.nbr_zap || '-')}</td></tr>
+            <tr><td style={{ ...st.td, textAlign: 'left' }}>Nombre des CISCOs</td><td style={{ ...st.td, textAlign: 'right' }}>{fmt(d.ressources?.nbr_cisco)}</td></tr>
+            <tr><td style={{ ...st.td, textAlign: 'left' }}>Nombre des ZAPs</td><td style={{ ...st.td, textAlign: 'right' }}>{fmt(d.ressources?.nbr_zap)}</td></tr>
           </tbody>
         </table>
         <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '5px' }} border={1} cellPadding={3} cellSpacing={0}>
@@ -205,10 +205,10 @@ const TDBDren = () => {
           </thead>
           <tbody>
             {[
-              ['Nombre enseignants en classe', fmt(d.personnel?.pers_en_classe), fmt(d.personnel?.pers_en_classe_pub || '-')],
-              ['Fonctionnaire et contractuels', fmt(d.personnel?.fonctionnaire), fmt(d.personnel?.fonctionnaire_pub || '-')],
-              ['FRAM subventionnés', fmt(d.personnel?.sub), fmt(d.personnel?.sub_pub || '-')],
-              ['FRAM non subventionnés', fmt(d.personnel?.non_sub), fmt(d.personnel?.non_sub_pub || '-')],
+              ['Nombre enseignants en classe', fmt(d.personnel?.pers_en_classe), fmt(d.personnel?.pers_en_classe_pub ?? d.personnel?.pers_en_classe)],
+              ['Fonctionnaire et contractuels', fmt(d.personnel?.fonctionnaire), fmt(d.personnel?.fonctionnaire_pub ?? d.personnel?.fonctionnaire)],
+              ['FRAM subventionnés', fmt(d.personnel?.sub), fmt(d.personnel?.sub_pub ?? d.personnel?.sub)],
+              ['FRAM non subventionnés', fmt(d.personnel?.non_sub), fmt(d.personnel?.non_sub_pub ?? d.personnel?.non_sub)],
             ].map(([label, ens, pub]) => (
               <tr key={label as string}><td style={{ ...st.td, textAlign: 'left' }}>{label}</td><td style={{ ...st.td, textAlign: 'right' }}>{ens}</td><td style={{ ...st.td, textAlign: 'right' }}>{pub}</td></tr>
             ))}

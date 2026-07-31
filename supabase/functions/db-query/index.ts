@@ -214,6 +214,49 @@ function completeCepe(row: any): any {
   };
 }
 
+// The df_*.csv imports are already-calculated TDB snapshots.  The live SQL
+// queries remain the primary source, but imported values must fill fields that
+// are absent from the survey tables (or whose source table is unavailable).
+function mergeImportedTdbSnapshot(level: any, imported: any): any {
+  if (!level || !imported) return level;
+  const fill = (current: any, aliases: string[]) => {
+    if (current !== null && current !== undefined && current !== '') return current;
+    return pickNumber(imported, aliases) ?? current;
+  };
+
+  const ressources = level.ressources || {};
+  const personnel = level.personnel || {};
+  const sections = level.sections || {};
+  const caisse = level.caisse || {};
+
+  return {
+    ...level,
+    ressources: {
+      ...ressources,
+      nbr_eleve: fill(ressources.nbr_eleve, ['nombre_eleves', 'nbr_eleve']),
+      tpa: fill(ressources.tpa, ['TPA', 'tpa']),
+      red_g: fill(ressources.red_g, ['red_garcons', 'red_g']),
+      red_f: fill(ressources.red_f, ['red_fille', 'red_f']),
+    },
+    personnel: {
+      ...personnel,
+      pers_en_classe: fill(personnel.pers_en_classe, ['ens_classe', 'pers_en_classe']),
+      fonctionnaire: fill(personnel.fonctionnaire, ['ens_im', 'fonctionnaire']),
+      sub: fill(personnel.sub, ['fram_sub', 'sub']),
+      non_sub: fill(personnel.non_sub, ['fram_nonsub', 'non_sub']),
+    },
+    sections: {
+      ...sections,
+      nbr_section: fill(sections.nbr_section, ['nombre_section', 'nbr_section']),
+    },
+    caisse: {
+      ...caisse,
+      total_fce: fill(caisse.total_fce, ['montant_ce', 'total_fce']),
+    },
+    indicateurs: { ...(level.indicateurs || {}), ...imported },
+  };
+}
+
 // Merge candidate-aggregated counts into CSV-imported cepe row so frontend can
 // compute Note>=10 percentages. CSV imports miss nbr_g/nbr_f/total_candidats;
 // the candidates aggregation provides them.
@@ -837,6 +880,9 @@ serve(async (req: Request) => {
           rawData.cisco.cepe = completeCepe(mergeCepeWithCounts(normalizeImportedCepe(csvCisco), candCisco) ?? rawData.cisco.cepe);
           rawData.dren.cepe = completeCepe(mergeCepeWithCounts(normalizeImportedCepe(csvDren), candDren) ?? rawData.dren.cepe);
           rawData.mada.cepe = completeCepe(mergeCepeWithCounts(normalizeImportedCepe(csvMada), candMada) ?? rawData.mada.cepe);
+          rawData.cisco = mergeImportedTdbSnapshot(rawData.cisco, csvCisco);
+          rawData.dren = mergeImportedTdbSnapshot(rawData.dren, csvDren);
+          rawData.mada = mergeImportedTdbSnapshot(rawData.mada, csvMada);
           await client.end();
           return new Response(
             JSON.stringify({ ...serializeData(rawData), examen_annee: annee }),
@@ -865,6 +911,8 @@ serve(async (req: Request) => {
           ]);
           rawData.dren.cepe = completeCepe(mergeCepeWithCounts(normalizeImportedCepe(csvDren), candDren) ?? rawData.dren.cepe);
           rawData.mada.cepe = completeCepe(mergeCepeWithCounts(normalizeImportedCepe(csvMada), candMada) ?? rawData.mada.cepe);
+          rawData.dren = mergeImportedTdbSnapshot(rawData.dren, csvDren);
+          rawData.mada = mergeImportedTdbSnapshot(rawData.mada, csvMada);
           await client.end();
           return new Response(JSON.stringify({ ...serializeData(rawData), examen_annee: annee }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         } catch (tdbErr: any) {
@@ -891,6 +939,9 @@ serve(async (req: Request) => {
           rawData.zap.cepe = completeCepe(mergeCepeWithCounts(normalizeImportedCepe(csvZap), candZap) ?? rawData.zap.cepe);
           rawData.cisco.cepe = completeCepe(mergeCepeWithCounts(normalizeImportedCepe(csvCisco), candCisco) ?? rawData.cisco.cepe);
           rawData.dren.cepe = completeCepe(mergeCepeWithCounts(normalizeImportedCepe(csvDren), candDren) ?? rawData.dren.cepe);
+          rawData.zap = mergeImportedTdbSnapshot(rawData.zap, csvZap);
+          rawData.cisco = mergeImportedTdbSnapshot(rawData.cisco, csvCisco);
+          rawData.dren = mergeImportedTdbSnapshot(rawData.dren, csvDren);
           await client.end();
           return new Response(
             JSON.stringify({ ...serializeData(rawData), examen_annee: annee }),
@@ -941,6 +992,9 @@ serve(async (req: Request) => {
           rawData.ecole.cepe = completeCepe(mergeCepeWithCounts(normalizeImportedCepe(csvEcole), candEcole) ?? rawData.ecole.cepe);
           rawData.zap.cepe = completeCepe(mergeCepeWithCounts(normalizeImportedCepe(csvZap), candZap) ?? rawData.zap.cepe);
           rawData.cisco.cepe = completeCepe(mergeCepeWithCounts(normalizeImportedCepe(csvCisco), candCisco) ?? rawData.cisco.cepe);
+          rawData.ecole = mergeImportedTdbSnapshot(rawData.ecole, csvEcole);
+          rawData.zap = mergeImportedTdbSnapshot(rawData.zap, csvZap);
+          rawData.cisco = mergeImportedTdbSnapshot(rawData.cisco, csvCisco);
 
           if (niveau === 'college') {
             const [bepcE, bepcZ, bepcC] = await Promise.all([
@@ -2686,12 +2740,20 @@ async function executeTdbDrenData(client: Client, codeDren: number, annee: numbe
     getEfficience(),
   ]);
 
-  const namesResult = await client.queryObject(`SELECT "DREN" FROM v_dren WHERE "CODE_DREN"=${codeDren}`);
+  const [namesResult, adminCountsResult] = await Promise.all([
+    client.queryObject(`SELECT "DREN" FROM v_dren WHERE "CODE_DREN"=${codeDren}`),
+    client.queryObject(`SELECT
+      COUNT(DISTINCT "CODE_CISCO") AS nbr_cisco,
+      COUNT(DISTINCT "CODE_ZAP") AS nbr_zap
+      FROM fpe_a1
+      WHERE "ANNEE_SCOLAIRE"=${annee} AND "CODE_DREN"=${codeDren} AND "SECTEUR"=0 AND "EXISTE_PRIMAIRE"=1`),
+  ]);
   const names = namesResult.rows[0] || { DREN: '' };
+  const adminCounts = adminCountsResult.rows[0] || {};
 
   return {
     version: VERSION, names, annee,
-    dren: { ressources: resDren, personnel: persDren, sections: secDren, places: plDren, cepe: cepeDren, caisse: ceDren, manuels: manDren },
+    dren: { ressources: { ...resDren, ...adminCounts }, personnel: persDren, sections: secDren, places: plDren, cepe: cepeDren, caisse: ceDren, manuels: manDren },
     mada: { ressources: resMada, personnel: persMada, sections: secMada, places: plMada, cepe: cepeMada, caisse: ceMada, manuels: manMada },
     efficience,
   };
