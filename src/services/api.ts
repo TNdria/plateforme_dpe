@@ -352,7 +352,8 @@ export const dashboardApi = {
   getStatsDiplomes: (codeDren: number, codeCisco: number, secteur: number) =>
     fetchDB<any[]>('getStatsDiplomes', { code_dren: codeDren, code_cisco: codeCisco, secteur }),
   getZapCount: () => fetchDB<any[]>('getZapCount'),
-  getAvailableYears: () => fetchDB<Array<{ annee: number }>>('getAvailableYears'),
+  getAvailableYears: (filters: { code_dren?: number; code_cisco?: number; code_zap?: number; code_etab?: number; niveau?: 'primaire' | 'college' | 'lycee' } = {}) =>
+    fetchDB<Array<{ annee: number }>>('getAvailableYears', filters),
 };
 
 // TDB API - Uses direct database connection to avoid SSL issues

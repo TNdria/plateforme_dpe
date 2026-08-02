@@ -87,12 +87,21 @@ const TDBEcole = () => {
 
   useEffect(() => {
     dashboardApi.getDrens().then(setDrens).catch(() => toast.error('Erreur DRENs'));
-    dashboardApi.getAvailableYears().then((data) => {
-      const years = data.map((d: any) => Number(d.annee)).filter((y: number) => !isNaN(y));
-      setAvailableYears(years);
-      if (years.length > 0) setSelectedAnnee(String(years[0]));
-    }).catch(() => toast.error('Erreur années'));
   }, []);
+
+  useEffect(() => {
+    dashboardApi.getAvailableYears({
+      code_dren: Number(selectedDren),
+      code_cisco: Number(selectedCisco),
+      code_zap: Number(selectedZap),
+      code_etab: Number(selectedEcole),
+      niveau: selectedNiveau,
+    }).then((data) => {
+      const years = data.map((d: any) => Number(d.annee)).filter((y: number) => Number.isFinite(y));
+      setAvailableYears(years);
+      setSelectedAnnee((current) => years.includes(Number(current)) ? current : (years[0] ? String(years[0]) : ''));
+    }).catch(() => toast.error('Erreur années'));
+  }, [selectedDren, selectedCisco, selectedZap, selectedEcole, selectedNiveau]);
 
   const handleDrenChange = async (value: string) => {
     setSelectedDren(value); setSelectedCisco('0'); setSelectedZap('0'); setSelectedEcole('0'); setTdbData(null);
@@ -109,14 +118,22 @@ const TDBEcole = () => {
   };
   const handleZapChange = async (value: string) => {
     setSelectedZap(value); setSelectedEcole('0'); setTdbData(null); setEcoles([]);
-    if (value !== '0' && selectedAnnee) {
-      try { setEcoles(await tdbApi.getEcolesByZap(Number(value), Number(selectedAnnee), selectedNiveau)); } catch { toast.error('Erreur écoles'); }
+    if (value !== '0') {
+      try {
+        const yearRows = await dashboardApi.getAvailableYears({ code_zap: Number(value), niveau: selectedNiveau });
+        const year = Number(yearRows[0]?.annee);
+        if (year) setEcoles(await tdbApi.getEcolesByZap(Number(value), year, selectedNiveau));
+      } catch { toast.error('Erreur écoles'); }
     }
   };
   const handleNiveauChange = async (value: 'primaire' | 'college' | 'lycee') => {
     setSelectedNiveau(value); setSelectedEcole('0'); setTdbData(null); setEcoles([]);
-    if (selectedZap !== '0' && selectedAnnee) {
-      try { setEcoles(await tdbApi.getEcolesByZap(Number(selectedZap), Number(selectedAnnee), value)); } catch { toast.error('Erreur écoles'); }
+    if (selectedZap !== '0') {
+      try {
+        const yearRows = await dashboardApi.getAvailableYears({ code_zap: Number(selectedZap), niveau: value });
+        const year = Number(yearRows[0]?.annee);
+        if (year) setEcoles(await tdbApi.getEcolesByZap(Number(selectedZap), year, value));
+      } catch { toast.error('Erreur écoles'); }
     }
   };
 

@@ -220,38 +220,62 @@ function completeCepe(row: any): any {
 function mergeImportedTdbSnapshot(level: any, imported: any): any {
   if (!level || !imported) return level;
   const fill = (current: any, aliases: string[]) => {
-    if (current !== null && current !== undefined && current !== '') return current;
-    return pickNumber(imported, aliases) ?? current;
+    const importedValue = pickNumber(imported, aliases);
+    if (current !== null && current !== undefined && current !== '' && Number(current) !== 0) return current;
+    return importedValue ?? current;
   };
 
   const ressources = level.ressources || {};
   const personnel = level.personnel || {};
   const sections = level.sections || {};
+  const places = level.places || {};
   const caisse = level.caisse || {};
+  const finances = level.finances || {};
 
   return {
     ...level,
     ressources: {
       ...ressources,
       nbr_eleve: fill(ressources.nbr_eleve, ['nombre_eleves', 'nbr_eleve']),
+      nbr_etab: fill(ressources.nbr_etab, ['nbr_etab']),
       tpa: fill(ressources.tpa, ['TPA', 'tpa']),
       red_g: fill(ressources.red_g, ['red_garcons', 'red_g']),
       red_f: fill(ressources.red_f, ['red_fille', 'red_f']),
+      eleve_2km: fill(ressources.eleve_2km, ['eleve_2km']),
+      ecole_continue: fill(ressources.ecole_continue, ['ecole_continue']),
+      etab_eau: fill(ressources.etab_eau, ['point_eau', 'etab_eau']),
+      etab_elec: fill(ressources.etab_elec, ['electricite', 'etab_elec']),
     },
     personnel: {
       ...personnel,
+      nbr_pers: fill(personnel.nbr_pers, ['nbr_pers']),
       pers_en_classe: fill(personnel.pers_en_classe, ['ens_classe', 'pers_en_classe']),
       fonctionnaire: fill(personnel.fonctionnaire, ['ens_im', 'fonctionnaire']),
       sub: fill(personnel.sub, ['fram_sub', 'sub']),
       non_sub: fill(personnel.non_sub, ['fram_nonsub', 'non_sub']),
+      sans_diplome_ped: fill(personnel.sans_diplome_ped, ['sans_diplome_ped']),
     },
     sections: {
       ...sections,
       nbr_section: fill(sections.nbr_section, ['nombre_section', 'nbr_section']),
+      nbr_sdc: fill(sections.nbr_sdc, ['nbr_sdc']),
+    },
+    places: {
+      ...places,
+      places_assises: fill(places.places_assises, ['places_assises']),
+      latrines: fill(places.latrines, ['latrines']),
+      latrines_fille: fill(places.latrines_fille, ['latrines_fille']),
     },
     caisse: {
       ...caisse,
       total_fce: fill(caisse.total_fce, ['montant_ce', 'total_fce']),
+      total_a_doter: fill(caisse.total_a_doter, ['total_a_doter']),
+    },
+    finances: {
+      ...finances,
+      subvention: fill(finances.subvention, ['montant_ce', 'subvention', 'total_fce']),
+      total: fill(finances.total, ['montant_ce', 'total', 'total_fce']),
+      total_a_doter: fill(finances.total_a_doter, ['total_a_doter']),
     },
     indicateurs: { ...(level.indicateurs || {}), ...imported },
   };
@@ -853,12 +877,22 @@ serve(async (req: Request) => {
 
       // ============ Available years ============
       case "getAvailableYears": {
-        // Only return years that actually have data (EXISTE_PRIMAIRE / COLLEGE / LYCEE)
+        const codeZapParam = parseInt(url.searchParams.get("code_zap") || "0");
+        const codeEtabParam = parseInt(url.searchParams.get("code_etab") || "0");
+        const niveau = (url.searchParams.get("niveau") || "").toLowerCase();
+        const niveauCol = niveau === "college" ? "EXISTE_COLLEGE" : niveau === "lycee" ? "EXISTE_LYCEE" : niveau === "primaire" ? "EXISTE_PRIMAIRE" : null;
+        const scope = [
+          codeDren > 0 ? `"CODE_DREN" = ${codeDren}` : '',
+          codeCisco > 0 ? `"CODE_CISCO" = ${codeCisco}` : '',
+          codeZapParam > 0 ? `"CODE_ZAP" = ${codeZapParam}` : '',
+          codeEtabParam > 0 ? `"CODE_ETAB" = ${codeEtabParam}` : '',
+          niveauCol ? `"${niveauCol}" = 1` : '("EXISTE_PRIMAIRE" = 1 OR "EXISTE_COLLEGE" = 1 OR "EXISTE_LYCEE" = 1)',
+        ].filter(Boolean).join(' AND ');
         result = await client.queryObject(`
           SELECT DISTINCT "ANNEE_SCOLAIRE" AS annee
           FROM fpe_a1
           WHERE "ANNEE_SCOLAIRE" > 2000
-            AND ("EXISTE_PRIMAIRE" = 1 OR "EXISTE_COLLEGE" = 1 OR "EXISTE_LYCEE" = 1)
+            AND ${scope}
           ORDER BY "ANNEE_SCOLAIRE" DESC
         `);
         break;
@@ -883,6 +917,14 @@ serve(async (req: Request) => {
           rawData.cisco = mergeImportedTdbSnapshot(rawData.cisco, csvCisco);
           rawData.dren = mergeImportedTdbSnapshot(rawData.dren, csvDren);
           rawData.mada = mergeImportedTdbSnapshot(rawData.mada, csvMada);
+          const currentEfficience = Array.isArray(rawData.efficience)
+            ? rawData.efficience.find((row: any) => Number(row.CODE_CISCO ?? row.code_cisco) === codeCisco)
+            : null;
+          if (currentEfficience && rawData.cisco?.cepe) {
+            currentEfficience.admis = Number(rawData.cisco.cepe.admis_g || 0) + Number(rawData.cisco.cepe.admis_f || 0);
+            currentEfficience.inscrits_cepe = Number(rawData.cisco.cepe.nbr_g || 0) + Number(rawData.cisco.cepe.nbr_f || 0);
+            currentEfficience.tpa = Number(rawData.cisco.ressources?.tpa || rawData.cisco.indicateurs?.TPA || 0);
+          }
           await client.end();
           return new Response(
             JSON.stringify({ ...serializeData(rawData), examen_annee: annee }),
@@ -3443,7 +3485,7 @@ async function executeTdbEcoleData(client: Client, codeEtab: number, codeZap: nu
   ]);
 
   const namesResult = await client.queryObject(`
-    SELECT a1."NOM_ETAB", a1."CODE_ETAB", z."ZAP", z."CODE_ZAP", c."CISCO", d."DREN"
+    SELECT a1."NOM_ETAB", a1."CODE_ETAB", a1."SECTEUR", z."ZAP", z."CODE_ZAP", c."CISCO", d."DREN"
     FROM fpe_a1 a1
     INNER JOIN v_zap z ON z."CODE_ZAP" = a1."CODE_ZAP"
     INNER JOIN v_cisco c ON c."CODE_CISCO" = z."CODE_CISCO"

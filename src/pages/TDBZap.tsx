@@ -98,12 +98,15 @@ const TDBZap = () => {
 
   useEffect(() => {
     dashboardApi.getDrens().then(setDrens).catch(() => toast.error('Erreur DRENs'));
-    dashboardApi.getAvailableYears().then((data) => {
+  }, []);
+
+  useEffect(() => {
+    dashboardApi.getAvailableYears({ code_dren: Number(selectedDren), code_cisco: Number(selectedCisco), code_zap: Number(selectedZap), niveau: 'primaire' }).then((data) => {
       const years = data.map((d: any) => Number(d.annee)).filter((y: number) => !isNaN(y));
       setAvailableYears(years);
       if (years.length > 0) setSelectedAnnee(String(years[0]));
     }).catch(() => toast.error('Erreur années'));
-  }, []);
+  }, [selectedDren, selectedCisco, selectedZap]);
 
   const handleDrenChange = async (value: string) => {
     setSelectedDren(value); setSelectedCisco('0'); setSelectedZap('0'); setTdbData(null);

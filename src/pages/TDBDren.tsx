@@ -60,12 +60,15 @@ const TDBDren = () => {
 
   useEffect(() => {
     dashboardApi.getDrens().then(setDrens).catch(() => toast.error('Erreur DRENs'));
-    dashboardApi.getAvailableYears().then((data) => {
+  }, []);
+
+  useEffect(() => {
+    dashboardApi.getAvailableYears({ code_dren: Number(selectedDren), niveau: 'primaire' }).then((data) => {
       const years = data.map((d: any) => Number(d.annee)).filter((y: number) => !isNaN(y));
       setAvailableYears(years);
       if (years.length > 0) setSelectedAnnee(String(years[0]));
     }).catch(() => toast.error('Erreur années'));
-  }, []);
+  }, [selectedDren]);
 
   const loadTdb = async () => {
     if (selectedDren === '0' || !selectedAnnee) return;

@@ -78,12 +78,15 @@ const TDBCisco = () => {
 
   useEffect(() => {
     dashboardApi.getDrens().then(setDrens).catch(() => toast.error('Erreur DRENs'));
-    dashboardApi.getAvailableYears().then((data) => {
+  }, []);
+
+  useEffect(() => {
+    dashboardApi.getAvailableYears({ code_dren: Number(selectedDren), code_cisco: Number(selectedCisco), niveau: 'primaire' }).then((data) => {
       const years = data.map((d: any) => Number(d.annee)).filter((y: number) => !isNaN(y));
       setAvailableYears(years);
-      if (years.length > 0) setSelectedAnnee(String(years[0]));
+      setSelectedAnnee((current) => years.includes(Number(current)) ? current : (years[0] ? String(years[0]) : ''));
     }).catch(() => toast.error('Erreur années'));
-  }, []);
+  }, [selectedDren, selectedCisco]);
 
   const handleDrenChange = async (value: string) => {
     setSelectedDren(value); setSelectedCisco('0'); setTdbData(null);
@@ -189,10 +192,19 @@ const TDBCisco = () => {
     const efficienceData = (tdbData.efficience || []).map((item: any) => {
       const nbrEleve = Number(item.nbr_eleve || 0);
       const persEnClasse = Number(item.pers_en_classe || 0);
+      const rem = nbrEleve > 0 && persEnClasse > 0 ? nbrEleve / persEnClasse : 0;
+      const remScore = rem > 0 ? (rem <= 45 ? 100 : rem >= 60 ? 0 : ((60 - rem) / 15) * 100) : 0;
+      const nbrEtab = Number(item.nbr_etab || 0);
+      const eau = nbrEtab > 0 ? Number(item.etab_eau || 0) / nbrEtab * 100 : 0;
+      const elec = nbrEtab > 0 ? Number(item.etab_elec || 0) / nbrEtab * 100 : 0;
+      const ressourcesScore = (remScore + eau + elec) / 3;
+      const red = nbrEleve > 0 ? (Number(item.red_g || 0) + Number(item.red_f || 0)) / nbrEleve * 100 : 0;
+      const retention = Number(item.eff_t1 || 0) > 0 ? Number(item.eff_t5 || 0) / Number(item.eff_t1) * 100 : 0;
       const admis = Number(item.admis || 0);
       const inscrits = Number(item.inscrits_cepe || 0);
-      const ressourcesScore = persEnClasse > 0 && nbrEleve > 0 ? (persEnClasse / nbrEleve * 100) : 0;
-      const resultatsScore = inscrits > 0 ? (admis / inscrits * 100) : 0;
+      const txAdmis = inscrits > 0 ? admis / inscrits * 100 : 0;
+      const tpa = Number(item.tpa || txAdmis || 0);
+      const resultatsScore = ((100 - Math.min(red, 100)) + retention + tpa + txAdmis) / 4;
       return {
         name: item.CISCO || '',
         code: item.CODE_CISCO,
