@@ -48,6 +48,7 @@ import DataActionsBar from '@/components/admin/DataActionsBar';
 import { cn } from '@/lib/utils';
 import logoMen from '@/assets/logoMen.jpg';
 import logoDpe from '@/assets/logoDpe.jpg';
+import { useDonneesFilters } from '@/hooks/useDonneesFilters';
 import {
   Dialog,
   DialogContent,
@@ -101,6 +102,13 @@ const NIVEAU_META: Record<
     ring: 'ring-violet-500/30',
   },
 };
+
+const secteurLabel: Record<string, string> = {
+  '2': 'Tous',
+  '0': 'Public',
+  '1': 'Privé',
+};
+const getSecteurLabel = (value: string) => secteurLabel[value] ?? 'Tous';
 
 // Ratios standards MEN Madagascar (fallback si effectifs détaillés indisponibles)
 const RATIOS: Record<
@@ -364,10 +372,12 @@ const Besoins = () => {
   const drenLocked = !isAdmin && userDren > 0;
   const ciscoLocked = !isAdmin && userCisco > 0;
 
+  const filters = useDonneesFilters();
   const [drens, setDrens] = useState<Dren[]>([]);
   const [ciscos, setCiscos] = useState<Cisco[]>([]);
   const [zaps, setZaps] = useState<Zap[]>([]);
   const [annee, setAnnee] = useState<number>(2025); // Année par défaut
+  const selectedSecteur = filters.selectedSecteur;
   const [codeDren, setCodeDren] = useState<string>(
     drenLocked ? String(userDren) : '0'
   );
@@ -380,11 +390,7 @@ const Besoins = () => {
   const [loadingFilters, setLoadingFilters] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [categorie, setCategorie] = useState<Categorie>('salles');
-  const activeCat = useMemo(
-    () => CATEGORIES.find((c) => c.id === categorie)!,
-    [categorie]
-  );
-
+  const activeCat = CATEGORIES.find((c) => c.id === categorie)!;
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportFormat, setExportFormat] = useState<ExportFormat>('xlsx');
 
@@ -510,6 +516,33 @@ const Besoins = () => {
     }
   }, [annee, codeDren, codeCisco, codeZap, fetchData]);
 
+  // Chargement automatique des ZAP quand DREN et CISCO sont figés (restriction utilisateur)
+  useEffect(() => {
+    if (drenLocked && ciscoLocked && codeCisco !== '0') {
+      const loadLockedZaps = async () => {
+        setLoadingFilters(true);
+        try {
+          const z = await besoinsApi.getZaps(userDren, userCisco);
+          const uniqueZaps = z
+            ? Array.from(
+                new Map(
+                  z.map((item: any) => [String(item.CODE_ZAP).trim(), item])
+                ).values()
+              )
+            : [];
+          setZaps(uniqueZaps);
+        } catch (error) {
+          console.error('Erreur ZAP restreint:', error);
+          setZaps([]);
+        } finally {
+          setLoadingFilters(false);
+        }
+      };
+
+      loadLockedZaps();
+    }
+  }, [drenLocked, ciscoLocked, codeCisco, userDren, userCisco]);
+
   const handleDrenChange = async (value: string) => {
     if (drenLocked) return;
 
@@ -551,12 +584,16 @@ const Besoins = () => {
     setLoadingFilters(true);
 
     try {
-      const z = await besoinsApi.getZaps(parseInt(codeDren), parseInt(value));
+      const currentDren = parseInt(codeDren) || 0;
+      const currentCisco = parseInt(value);
 
-      // Suppression des doublons éventuels
+      const z = await besoinsApi.getZaps(currentDren, currentCisco);
+
       const uniqueZaps = z
         ? Array.from(
-            new Map(z.map((item: any) => [item.CODE_ZAP, item])).values()
+            new Map(
+              z.map((item: any) => [String(item.CODE_ZAP).trim(), item])
+            ).values()
           )
         : [];
 
@@ -594,7 +631,6 @@ const Besoins = () => {
     fetchData(0, 0, 0, 2025);
   };
 
-  // Enriched rows: compute requis/existant/besoin/excedent for active category
   const enrichedData = useMemo(() => {
     return data.map((row) => {
       const c = computeRow(row, activeCat, niveau);
@@ -613,40 +649,64 @@ const Besoins = () => {
     });
   }, [data, activeCat, niveau]);
 
+  const filteredData = useMemo(() => {
+    return enrichedData.filter((row) => {
+      const rowSecteur = String(row.SECTEUR ?? row.secteur ?? '').trim();
+
+      if (selectedSecteur === '2') return true;
+      if (selectedSecteur === '0')
+        return rowSecteur === '0' || rowSecteur === '';
+      if (selectedSecteur === '1') return rowSecteur === '1';
+
+      return true;
+    });
+  }, [enrichedData, selectedSecteur]);
+
   const stats = useMemo(() => {
-    const ecoles = new Set(data.map((e) => e.CODE_ETAB)).size;
+    const ecoles = new Set(filteredData.map((e) => e.CODE_ETAB)).size;
+
     let requis = 0,
       existant = 0,
       besoins = 0,
       excedent = 0;
+
     let correcte = 0,
       moderes = 0,
       critiques = 0;
-    for (const row of data) {
-      const c = computeRow(row, activeCat, niveau);
-      requis += c.requis;
-      existant += c.existant;
-      besoins += c.besoin;
-      excedent += c.excedent;
-      if (c.requis <= 0) {
-        correcte++;
-        continue;
+
+    for (const row of filteredData) {
+      requis += row.REQUIS;
+      existant += row.EXISTANT;
+      besoins += row.BESOIN;
+      excedent += row.EXCEDENT;
+
+      switch (row.STATUT) {
+        case 'correcte':
+          correcte++;
+          break;
+
+        case 'moderes':
+          moderes++;
+          break;
+
+        case 'critiques':
+          critiques++;
+          break;
       }
-      const cov = ((c.requis - c.besoin) / c.requis) * 100;
-      if (cov >= 80) correcte++;
-      else if (cov >= 50) moderes++;
-      else critiques++;
     }
+
     const couverture =
       requis > 0
         ? Math.max(0, Math.min(100, ((requis - besoins) / requis) * 100))
         : 0;
+
     const status: 'correcte' | 'moderes' | 'critiques' =
       couverture >= 80
         ? 'correcte'
         : couverture >= 50
           ? 'moderes'
           : 'critiques';
+
     return {
       ecoles,
       requis,
@@ -659,147 +719,177 @@ const Besoins = () => {
       critiques,
       status,
     };
-  }, [data, activeCat, niveau]);
+  }, [filteredData]);
 
-// === À METTRE AVANT le useMemo des columns ===
-const zapMap = useMemo(() => {
-  const map = new Map<string, string>();
-  zaps.forEach((z: any) => {
-    if (z.CODE_ZAP) {
-      map.set(String(z.CODE_ZAP).trim(), z.ZAP || z.zap || '');
-    }
-  });
-  return map;
-}, [zaps]);
+  // === À METTRE AVANT le useMemo des columns ===
+  const zapMap = useMemo(() => {
+    const map = new Map<string, string>();
+    zaps.forEach((z: any) => {
+      if (z.CODE_ZAP) {
+        map.set(String(z.CODE_ZAP).trim(), z.ZAP || z.zap || '');
+      }
+    });
+    return map;
+  }, [zaps]);
 
-// === Ensuite le columns ===
-const columns = useMemo(() => {
-  const getStatutColor = (statut: string) => {
-    switch (statut?.toLowerCase()) {
-      case 'correcte':
-        return 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800';
-      case 'moderes':
-        return 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800';
-      case 'critiques':
-        return 'bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800';
-      default:
-        return 'bg-muted text-muted-foreground border-border';
-    }
-  };
+  // === Ensuite le columns ===
+  const columns = useMemo(() => {
+    const getStatutColor = (statut: string) => {
+      switch (statut?.toLowerCase()) {
+        case 'correcte':
+          return 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800';
+        case 'moderes':
+          return 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800';
+        case 'critiques':
+          return 'bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800';
+        default:
+          return 'bg-muted text-muted-foreground border-border';
+      }
+    };
 
-  const getCouvertureColor = (couverture: number) => {
-    if (couverture >= 80) return 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300';
-    if (couverture >= 50) return 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300';
-    return 'bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-300';
-  };
+    const getCouvertureColor = (couverture: number) => {
+      if (couverture >= 80)
+        return 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300';
+      if (couverture >= 50)
+        return 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300';
+      return 'bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-300';
+    };
 
-  return [
-    { key: 'DREN', label: 'DREN', width: 140, sortable: true, align: 'left' as const },
-    { key: 'CISCO', label: 'CISCO', width: 140, sortable: true, align: 'left' as const },
-    {
-      key: 'ZAP',
-      label: 'ZAP',
-      width: 180,
-      sortable: true,
-      align: 'left' as const,
-      render: (value: any, row: any) => {
-        const zapName = zapMap.get(String(row?.CODE_ZAP || value)) || value || '—';
-        return <span className="font-medium text-sm">{zapName}</span>;
+    return [
+      {
+        key: 'DREN',
+        label: 'DREN',
+        width: 140,
+        sortable: true,
+        align: 'left' as const,
       },
-    },
-    { key: 'NOM_ETAB', label: 'Nom Établissement', width: 260, sortable: true, align: 'left' as const },
-    { key: 'CODE_ETAB', label: 'Code', width: 110, sortable: true, align: 'left' as const },
-    {
-      key: 'ZONE',
-      label: 'Zone',
-      width: 110,
-      sortable: true,
-      align: 'center' as const,
-      render: (value: string) => (
-        <Badge variant="outline" className="bg-violet-50 border-violet-200 text-violet-700 dark:bg-violet-950/60 dark:border-violet-800 dark:text-violet-300">
-          {value}
-        </Badge>
-      ),
-    },
-    {
-      key: 'EFFECTIFS',
-      label: 'Effectifs',
-      width: 110,
-      sortable: true,
-      align: 'center' as const,
-      render: (v: any) => formatNumber(Number(v) || 0),
-    },
-    {
-      key: 'REQUIS',
-      label: 'Requis',
-      width: 110,
-      sortable: true,
-      align: 'center' as const,
-      render: (v: any) => formatNumber(Number(v) || 0),
-    },
-    {
-      key: 'EXISTANT',
-      label: 'Existant',
-      width: 110,
-      sortable: true,
-      align: 'center' as const,
-      render: (v: any) => formatNumber(Number(v) || 0),
-    },
-    {
-      key: 'BESOIN',
-      label: 'Besoin',
-      width: 110,
-      sortable: true,
-      align: 'center' as const,
-      render: (v: any) => formatNumber(Number(v) || 0),
-    },
-    {
-      key: 'EXCEDENT',
-      label: 'Excédent',
-      width: 110,
-      sortable: true,
-      align: 'center' as const,
-      render: (v: any) => formatNumber(Number(v) || 0),
-    },
-    {
-      key: 'COUVERTURE',
-      label: 'Couverture',
-      width: 120,
-      sortable: true,
-      align: 'center' as const,
-      render: (value: number) => {
-        const cov = Number(value) || 0;
-        return (
+      {
+        key: 'CISCO',
+        label: 'CISCO',
+        width: 140,
+        sortable: true,
+        align: 'left' as const,
+      },
+      {
+        key: 'ZAP',
+        label: 'ZAP',
+        width: 180,
+        sortable: true,
+        align: 'left' as const,
+        render: (value: any, row: any) => {
+          const zapName =
+            zapMap.get(String(row?.CODE_ZAP || value)) || value || '—';
+          return <span className="font-medium text-sm">{zapName}</span>;
+        },
+      },
+      {
+        key: 'NOM_ETAB',
+        label: 'Nom Établissement',
+        width: 260,
+        sortable: true,
+        align: 'left' as const,
+      },
+      {
+        key: 'CODE_ETAB',
+        label: 'Code',
+        width: 110,
+        sortable: true,
+        align: 'left' as const,
+      },
+      {
+        key: 'ZONE',
+        label: 'Zone',
+        width: 110,
+        sortable: true,
+        align: 'center' as const,
+        render: (value: string) => (
           <Badge
             variant="outline"
-            className={cn('font-semibold', getCouvertureColor(cov))}
+            className="bg-violet-50 border-violet-200 text-violet-700 dark:bg-violet-950/60 dark:border-violet-800 dark:text-violet-300"
           >
-            {cov.toFixed(0)}%
+            {value}
           </Badge>
-        );
+        ),
       },
-    },
-    {
-      key: 'STATUT',
-      label: 'Statut',
-      width: 130,
-      sortable: true,
-      align: 'center' as const,
-      render: (value: string) => (
-        <Badge
-          variant="outline"
-          className={cn('font-medium capitalize', getStatutColor(value))}
-        >
-          {value}
-        </Badge>
-      ),
-    },
-  ];
-}, [zapMap]);   // ← dépendance sur zapMap (pas sur zaps directement)
+      {
+        key: 'EFFECTIFS',
+        label: 'Effectifs',
+        width: 110,
+        sortable: true,
+        align: 'center' as const,
+        render: (v: any) => formatNumber(Number(v) || 0),
+      },
+      {
+        key: 'REQUIS',
+        label: 'Requis',
+        width: 110,
+        sortable: true,
+        align: 'center' as const,
+        render: (v: any) => formatNumber(Number(v) || 0),
+      },
+      {
+        key: 'EXISTANT',
+        label: 'Existant',
+        width: 110,
+        sortable: true,
+        align: 'center' as const,
+        render: (v: any) => formatNumber(Number(v) || 0),
+      },
+      {
+        key: 'BESOIN',
+        label: 'Besoin',
+        width: 110,
+        sortable: true,
+        align: 'center' as const,
+        render: (v: any) => formatNumber(Number(v) || 0),
+      },
+      {
+        key: 'EXCEDENT',
+        label: 'Excédent',
+        width: 110,
+        sortable: true,
+        align: 'center' as const,
+        render: (v: any) => formatNumber(Number(v) || 0),
+      },
+      {
+        key: 'COUVERTURE',
+        label: 'Couverture',
+        width: 120,
+        sortable: true,
+        align: 'center' as const,
+        render: (value: number) => {
+          const cov = Number(value) || 0;
+          return (
+            <Badge
+              variant="outline"
+              className={cn('font-semibold', getCouvertureColor(cov))}
+            >
+              {cov.toFixed(0)}%
+            </Badge>
+          );
+        },
+      },
+      {
+        key: 'STATUT',
+        label: 'Statut',
+        width: 130,
+        sortable: true,
+        align: 'center' as const,
+        render: (value: string) => (
+          <Badge
+            variant="outline"
+            className={cn('font-medium capitalize', getStatutColor(value))}
+          >
+            {value}
+          </Badge>
+        ),
+      },
+    ];
+  }, [zapMap]); // ← dépendance sur zapMap (pas sur zaps directement)
 
   const handleExportCategory = (catId: Categorie) => {
-    const filtered = enrichedData;
-    const filename = `besoins_${catId}_${niveau}_${annee}_${new Date().toISOString().slice(0, 10)}`;
+    const filtered = filteredData;
+    const filename = `besoins_${catId}_${niveau}_${getSecteurLabel(selectedSecteur)}_${annee}_${new Date().toISOString().slice(0, 10)}`;
 
     if (exportFormat === 'xlsx') {
       const wb = XLSX.utils.book_new();
@@ -979,6 +1069,7 @@ const columns = useMemo(() => {
                       `, ${ciscos.find((c) => String(c.CODE_CISCO) === codeCisco)?.CISCO}`}
                     {codeZap !== '0' &&
                       `, ${zaps.find((z) => String(z.CODE_ZAP) === codeZap)?.ZAP}`}
+                    {`, ${getSecteurLabel(selectedSecteur)}`}
                   </>
                 )}
               </Badge>
@@ -1048,6 +1139,25 @@ const columns = useMemo(() => {
                         {z.ZAP}
                       </SelectItem>
                     ))}
+                  </SelectContent>
+                </Select>
+              </FilterField>
+
+              {/* Secteur */}
+              <FilterField label="Secteur">
+                <Select
+                  value={filters.selectedSecteur}
+                  onValueChange={(value) => {
+                    filters.setSelectedSecteur(value);
+                  }}
+                >
+                  <SelectTrigger className="bg-background h-10">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent side="bottom" position="popper">
+                    <SelectItem value="2">Tous</SelectItem>
+                    <SelectItem value="0">Public</SelectItem>
+                    <SelectItem value="1">Privé</SelectItem>
                   </SelectContent>
                 </Select>
               </FilterField>
@@ -1182,9 +1292,10 @@ const columns = useMemo(() => {
               <h3 className="text-sm font-semibold text-foreground">
                 {activeCat.label} — Détail par établissement
               </h3>
-              {data.length > 0 && (
+              {filteredData.length > 0 && (
                 <Badge variant="secondary" className="font-normal">
-                  {formatNumber(data.length)} ligne{data.length > 1 ? 's' : ''}
+                  {formatNumber(filteredData.length)} ligne
+                  {filteredData.length > 1 ? 's' : ''}
                 </Badge>
               )}
             </div>
@@ -1219,7 +1330,7 @@ const columns = useMemo(() => {
                   Chargement des données…
                 </p>
               </div>
-            ) : enrichedData.length === 0 ? (
+            ) : filteredData.length === 0 ? (
               <div className="text-center py-24 px-6">
                 <div className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-muted mb-4">
                   <Filter className="h-6 w-6 text-muted-foreground" />
@@ -1235,7 +1346,7 @@ const columns = useMemo(() => {
             ) : (
               <div className="h-[600px]">
                 <DataTable
-                  data={enrichedData}
+                  data={filteredData}
                   columns={columns}
                   title={`${activeCat.label} — ${meta.label}`}
                   exportFilename={`besoins_${categorie}_${niveau}.csv`}
@@ -1333,6 +1444,9 @@ const columns = useMemo(() => {
                     ? zaps.find((z) => String(z.CODE_ZAP) === codeZap)?.ZAP ||
                       'Toutes'
                     : 'Toutes'}
+                </div>
+                <div>
+                  <strong>Secteur :</strong> {getSecteurLabel(selectedSecteur)}
                 </div>
                 <div className="mt-2 pt-1 border-t font-medium text-foreground">
                   {formatNumber(stats.ecoles)} établissements
@@ -1528,10 +1642,12 @@ const StatCard = ({
   const s = styles[accent];
 
   return (
-    <Card className={cn(
-      'group relative overflow-hidden shadow-sm hover:shadow-md transition-all h-full flex flex-col border-2',
-      s.ring
-    )}>
+    <Card
+      className={cn(
+        'group relative overflow-hidden shadow-sm hover:shadow-md transition-all h-full flex flex-col border-2',
+        s.ring
+      )}
+    >
       {/* Header */}
       <div className="px-4 pt-4 pb-2 border-b border-border/40">
         <p className="text-[11px] uppercase tracking-[0.18em] font-semibold text-muted-foreground text-center">

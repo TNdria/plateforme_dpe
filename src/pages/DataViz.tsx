@@ -23,17 +23,31 @@ import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import {
   Loader2,
   Filter,
   RotateCcw,
   Map,
   MapPin,
-  Camera,
   Info,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Download,
+  FileSpreadsheet,
+  FileJson,
+  FileImage,
 } from 'lucide-react';
 import { datavizApi, dashboardApi, Dren } from '@/services/api';
 import { toast } from 'sonner';
 import html2canvas from 'html2canvas';
+import * as XLSX from 'xlsx';
 import {
   THEMES,
   NIVEAUX,
@@ -109,6 +123,19 @@ const CompassControl = () => {
   return null;
 };
 
+// Recalcule les dimensions internes de la carte Leaflet après le
+// repli/déploiement du panneau latéral (react-leaflet ne le fait pas tout
+// seul : la carte garde ses anciennes dimensions tant qu'on n'interagit pas
+// manuellement avec elle, ce qui laisse des zones grises).
+const InvalidateOnResize = ({ trigger }: { trigger: unknown }) => {
+  const map = useMap();
+  useEffect(() => {
+    const t = setTimeout(() => map.invalidateSize(), 320);
+    return () => clearTimeout(t);
+  }, [trigger, map]);
+  return null;
+};
+
 // Fit map to GeoJSON bounds
 const FitBounds = ({ data }: { data: any }) => {
   const map = useMap();
@@ -151,6 +178,13 @@ const DataViz = () => {
   const [loading, setLoading] = useState(false);
   const [activeLayer, setActiveLayer] = useState<ActiveLayer>('dren');
   const [showEtab, setShowEtab] = useState(false);
+
+  // Panneau latéral repliable — même mécanique que SIG.tsx : ouvert par
+  // défaut sur desktop, replié par défaut sur mobile.
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= 768 : true
+  );
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
 
   // Slider state
   const [sliderRange, setSliderRange] = useState<[number, number]>([0, 100]);
@@ -505,6 +539,97 @@ const DataViz = () => {
     }
   }, [appliedTheme]);
 
+  // Jeu de données actuellement affiché sur la carte (le même que celui
+  // utilisé pour la coloration thématique), pour l'export CSV/Excel/JSON.
+  const activeExportDataset = useMemo(() => {
+    if (showEtab) return { label: 'etablissements', rows: dataEtab };
+    if (communeGeoJson) return { label: 'communes', rows: dataCommune };
+    if (activeLayer === 'cisco') return { label: 'cisco', rows: dataCisco };
+    return { label: 'dren', rows: dataDren };
+  }, [
+    showEtab,
+    communeGeoJson,
+    activeLayer,
+    dataEtab,
+    dataCommune,
+    dataCisco,
+    dataDren,
+  ]);
+
+  const themeSlugFor = (label: string) =>
+    label
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
+
+  const buildExportFilename = (ext: string) => {
+    const themeSlug = themeSlugFor(
+      THEMES.find((t) => t.value === appliedTheme)?.label || 'carte'
+    );
+    const date = new Date().toISOString().slice(0, 10);
+    return `dataviz-${activeExportDataset.label}-${themeSlug}-${date}.${ext}`;
+  };
+
+  const downloadCSV = () => {
+    const rows = activeExportDataset.rows;
+    if (!rows.length) {
+      toast.error('Aucune donnée à exporter');
+      return;
+    }
+    const headers = Object.keys(rows[0]);
+    const csv = [
+      headers.join(';'),
+      ...rows.map((r) =>
+        headers
+          .map((h) => `"${String(r[h] ?? '').replace(/"/g, '""')}"`)
+          .join(';')
+      ),
+    ].join('\n');
+    const blob = new Blob(['\ufeff' + csv], {
+      type: 'text/csv;charset=utf-8;',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = buildExportFilename('csv');
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Export CSV téléchargé');
+  };
+
+  const downloadExcel = () => {
+    const rows = activeExportDataset.rows;
+    if (!rows.length) {
+      toast.error('Aucune donnée à exporter');
+      return;
+    }
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, 'Données');
+    XLSX.writeFile(wb, buildExportFilename('xlsx'));
+    toast.success('Export Excel téléchargé');
+  };
+
+  const downloadJSON = () => {
+    const rows = activeExportDataset.rows;
+    if (!rows.length) {
+      toast.error('Aucune donnée à exporter');
+      return;
+    }
+    const blob = new Blob([JSON.stringify(rows, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = buildExportFilename('json');
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Export JSON téléchargé');
+  };
+
   // Context menu handlers
   const handleContextMenuOnLayer = useCallback(
     (code: number, name: string, e: any) => {
@@ -807,267 +932,311 @@ const DataViz = () => {
             SYSTEME D'INFORMATION GEOGRAPHIQUE / CARTE THEMATIQUE DES
             INDICATEURS
           </span>
-          <DataActionsBar
-            table="sig_etablissement"
-            tableLabel="SIG Établissement"
-            compact
-          />
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setShowDownloadModal(true)}
+              disabled={loading}
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Télécharger
+            </Button>
+            <DataActionsBar
+              table="sig_etablissement"
+              tableLabel="SIG Établissement"
+              compact
+            />
+          </div>
         </div>
       </div>
 
-      <div className="flex-1 flex gap-0 overflow-hidden">
-        {/* Filters Panel */}
-        <div className="w-72 flex-shrink-0 space-y-3 overflow-y-auto p-3 border-r border-border">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <Filter className="w-4 h-4" />
-                Filtres
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Theme */}
-              {/* Niveau */}
-              <div className="space-y-2">
-                <Label className="text-xs font-medium">Niveau</Label>
-                <Select
-                  value={niveau}
-                  onValueChange={(v) => setNiveau(v as Niveau)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {NIVEAUX.map((n) => (
-                      <SelectItem key={n.value} value={n.value}>
-                        {n.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-xs font-medium">Thème</Label>
-                <Select value={theme} onValueChange={setTheme}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="--Choisir un thème--" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableThemes.map((t) => (
-                      <SelectItem key={t.value} value={t.value}>
-                        {t.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Slider */}
-              {theme !== '0' && theme !== 'hm' && (
-                <div className="space-y-3 p-3 bg-muted/50 rounded-lg">
-                  <Label className="text-xs font-medium">
-                    Plage de valeurs (Min - Max)
-                  </Label>
-                  <Slider
-                    min={sliderRange[0]}
-                    max={sliderRange[1]}
-                    step={1}
-                    value={sliderValue}
-                    onValueChange={(v) => setSliderValue(v as [number, number])}
-                  />
-                  <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>
-                      Min:{' '}
-                      <strong className="text-foreground">
-                        {sliderValue[0]}
-                      </strong>
-                    </span>
-                    <span>
-                      Max:{' '}
-                      <strong className="text-foreground">
-                        {sliderValue[1]}
-                      </strong>
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              <div className="flex gap-2">
-                <Button
-                  onClick={handleApply}
-                  className="flex-1"
-                  disabled={loading || theme === '0'}
-                >
-                  {loading ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  ) : (
-                    <Filter className="w-4 h-4 mr-2" />
-                  )}
-                  Appliquer
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={handleReset}
-                  title="Réinitialiser"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                </Button>
-              </div>
-
-              {/* Capture / téléchargement de la carte */}
-              <Button
-                variant="secondary"
-                className="w-full"
-                onClick={handleCaptureMap}
-                disabled={loading}
-                title="Capturer et télécharger la carte en image PNG"
-              >
-                <Camera className="w-4 h-4 mr-2" />
-                Capturer la carte (PNG)
-              </Button>
-            </CardContent>
-          </Card>
-
-          {/* Layer Controls — uniquement DREN / CISCO */}
-          {appliedTheme !== '0' && appliedTheme !== 'hm' && (
+      <div className="flex-1 relative flex gap-0 overflow-hidden">
+        {/* Panneau latéral repliable (filtres, zone de délimitation,
+            légende) — même mécanique que SIG.tsx : ouvert par défaut sur
+            desktop, replié par défaut sur mobile, bouton rond pour
+            développer/réduire. */}
+        <div
+          className={
+            (sidebarOpen ? 'w-[85vw] max-w-[300px] ' : 'w-0 ') +
+            'shrink-0 h-full bg-background border-r border-border overflow-hidden transition-[width] duration-300 ease-in-out'
+          }
+        >
+          <div className="w-[85vw] max-w-[300px] h-full space-y-3 overflow-y-auto p-3">
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm">Zone de délimitation</CardTitle>
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Filter className="w-4 h-4" />
+                  Filtres
+                </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs">DREN</Label>
-                  <Switch
-                    checked={activeLayer === 'dren'}
-                    onCheckedChange={() => {
-                      setActiveLayer('dren');
-                      setCommuneGeoJson(null);
-                      setShowEtab(false);
-                    }}
-                  />
+              <CardContent className="space-y-4">
+                {/* Theme */}
+                {/* Niveau */}
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">Niveau</Label>
+                  <Select
+                    value={niveau}
+                    onValueChange={(v) => setNiveau(v as Niveau)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {NIVEAUX.map((n) => (
+                        <SelectItem key={n.value} value={n.value}>
+                          {n.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs">CISCO</Label>
-                  <Switch
-                    checked={activeLayer === 'cisco'}
-                    onCheckedChange={() => {
-                      setActiveLayer('cisco');
-                      setCommuneGeoJson(null);
-                      setShowEtab(false);
-                    }}
-                  />
-                </div>
-                <div className="p-2 bg-primary/5 border border-primary/20 rounded-md space-y-1.5">
-                  <p className="text-[11px] font-semibold flex items-center gap-1.5 text-primary">
-                    <Info className="w-3.5 h-3.5" /> Guide d'utilisation
-                  </p>
-                  <ul className="text-[10px] text-muted-foreground space-y-1 list-disc list-inside leading-relaxed">
-                    <li>
-                      Choisissez le <strong>niveau</strong> et le{' '}
-                      <strong>thème</strong>, puis cliquez sur{' '}
-                      <em>Appliquer</em>.
-                    </li>
-                    <li>
-                      Basculez entre <strong>DREN</strong> et{' '}
-                      <strong>CISCO</strong> avec les interrupteurs ci-dessus.
-                    </li>
-                    <li>
-                      <strong>Clic droit</strong> sur une zone pour accéder à la
-                      carte par <em>Commune</em> ou par <em>Établissement</em>.
-                    </li>
-                    <li>
-                      Utilisez <em>Capturer la carte</em> pour télécharger une
-                      image PNG de la vue.
-                    </li>
-                  </ul>
-                </div>
-              </CardContent>
-            </Card>
-          )}
 
-          {/* Legend */}
-          {appliedTheme !== '0' && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm">Légende</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-xs">
-                <p className="font-medium">{selectedThemeLabel}</p>
-                {appliedTheme === 'hm' ? (
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="w-3 h-3 rounded-full"
-                      style={{ backgroundColor: 'rgba(0,0,255,0.6)' }}
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">Thème</Label>
+                  <Select value={theme} onValueChange={setTheme}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="--Choisir un thème--" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableThemes.map((t) => (
+                        <SelectItem key={t.value} value={t.value}>
+                          {t.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Slider */}
+                {theme !== '0' && theme !== 'hm' && (
+                  <div className="space-y-3 p-3 bg-muted/50 rounded-lg">
+                    <Label className="text-xs font-medium">
+                      Plage de valeurs (Min - Max)
+                    </Label>
+                    <Slider
+                      min={sliderRange[0]}
+                      max={sliderRange[1]}
+                      step={1}
+                      value={sliderValue}
+                      onValueChange={(v) =>
+                        setSliderValue(v as [number, number])
+                      }
                     />
-                    <span>Densité des établissements</span>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>
+                        Min:{' '}
+                        <strong className="text-foreground">
+                          {sliderValue[0]}
+                        </strong>
+                      </span>
+                      <span>
+                        Max:{' '}
+                        <strong className="text-foreground">
+                          {sliderValue[1]}
+                        </strong>
+                      </span>
+                    </div>
                   </div>
-                ) : (
-                  <>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="w-4 h-3 border"
-                        style={{ backgroundColor: '#FFFFFF' }}
-                      />
-                      <span className="flex-1 text-right tabular-nums">
-                        Inférieur à{' '}
-                        {formatThemeValue(appliedBounds[0], appliedTheme)}
-                        {ptg ? ptg : unit}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="w-4 h-3"
-                        style={{ backgroundColor: '#00AA00' }}
-                      />
-                      <span className="flex-1 text-right tabular-nums">
-                        [{formatThemeValue(appliedBounds[0], appliedTheme)} –{' '}
-                        {formatThemeValue(appliedBounds[1], appliedTheme)}]
-                        {ptg ? ptg : unit}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="w-4 h-3"
-                        style={{ backgroundColor: '#FF0000' }}
-                      />
-                      <span className="flex-1 text-right tabular-nums">
-                        Supérieur à{' '}
-                        {formatThemeValue(appliedBounds[1], appliedTheme)}
-                        {ptg ? ptg : unit}
-                      </span>
-                    </div>
-                  </>
                 )}
-                <div className="border-t pt-2 mt-2 space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="w-4 h-3"
-                      style={{ backgroundColor: '#4e73df' }}
-                    />
-                    <span>Limite DREN</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="w-4 h-3"
-                      style={{ backgroundColor: '#22afbe' }}
-                    />
-                    <span>Limite CISCO</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="w-4 h-3"
-                      style={{ backgroundColor: '#c0c0c0' }}
-                    />
-                    <span>Limite Commune</span>
-                  </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleApply}
+                    className="flex-1"
+                    disabled={loading || theme === '0'}
+                  >
+                    {loading ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Filter className="w-4 h-4 mr-2" />
+                    )}
+                    Appliquer
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={handleReset}
+                    title="Réinitialiser"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                  </Button>
                 </div>
+
+                {/* Téléchargement — formats de données + capture PNG regroupés
+                  dans une seule modale (cf. bouton "Télécharger" du header) */}
+                <Button
+                  variant="secondary"
+                  className="w-full"
+                  onClick={() => setShowDownloadModal(true)}
+                  disabled={loading}
+                  title="Exporter les données ou capturer la carte"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Télécharger
+                </Button>
               </CardContent>
             </Card>
-          )}
 
+            {/* Layer Controls — uniquement DREN / CISCO */}
+            {appliedTheme !== '0' && appliedTheme !== 'hm' && (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm">
+                    Zone de délimitation
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">DREN</Label>
+                    <Switch
+                      checked={activeLayer === 'dren'}
+                      onCheckedChange={() => {
+                        setActiveLayer('dren');
+                        setCommuneGeoJson(null);
+                        setShowEtab(false);
+                      }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">CISCO</Label>
+                    <Switch
+                      checked={activeLayer === 'cisco'}
+                      onCheckedChange={() => {
+                        setActiveLayer('cisco');
+                        setCommuneGeoJson(null);
+                        setShowEtab(false);
+                      }}
+                    />
+                  </div>
+                  <div className="p-2 bg-primary/5 border border-primary/20 rounded-md space-y-1.5">
+                    <p className="text-[11px] font-semibold flex items-center gap-1.5 text-primary">
+                      <Info className="w-3.5 h-3.5" /> Guide d'utilisation
+                    </p>
+                    <ul className="text-[10px] text-muted-foreground space-y-1 list-disc list-inside leading-relaxed">
+                      <li>
+                        Choisissez le <strong>niveau</strong> et le{' '}
+                        <strong>thème</strong>, puis cliquez sur{' '}
+                        <em>Appliquer</em>.
+                      </li>
+                      <li>
+                        Basculez entre <strong>DREN</strong> et{' '}
+                        <strong>CISCO</strong> avec les interrupteurs ci-dessus.
+                      </li>
+                      <li>
+                        <strong>Clic droit</strong> sur une zone pour accéder à
+                        la carte par <em>Commune</em> ou par{' '}
+                        <em>Établissement</em>.
+                      </li>
+                      <li>
+                        Utilisez <em>Capturer la carte</em> pour télécharger une
+                        image PNG de la vue.
+                      </li>
+                    </ul>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Legend */}
+            {appliedTheme !== '0' && (
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm">Légende</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 text-xs">
+                  <p className="font-medium">{selectedThemeLabel}</p>
+                  {appliedTheme === 'hm' ? (
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="w-3 h-3 rounded-full"
+                        style={{ backgroundColor: 'rgba(0,0,255,0.6)' }}
+                      />
+                      <span>Densité des établissements</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="w-4 h-3 border"
+                          style={{ backgroundColor: '#FFFFFF' }}
+                        />
+                        <span className="flex-1 text-right tabular-nums">
+                          Inférieur à{' '}
+                          {formatThemeValue(appliedBounds[0], appliedTheme)}
+                          {ptg ? ptg : unit}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="w-4 h-3"
+                          style={{ backgroundColor: '#00AA00' }}
+                        />
+                        <span className="flex-1 text-right tabular-nums">
+                          [{formatThemeValue(appliedBounds[0], appliedTheme)} –{' '}
+                          {formatThemeValue(appliedBounds[1], appliedTheme)}]
+                          {ptg ? ptg : unit}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="w-4 h-3"
+                          style={{ backgroundColor: '#FF0000' }}
+                        />
+                        <span className="flex-1 text-right tabular-nums">
+                          Supérieur à{' '}
+                          {formatThemeValue(appliedBounds[1], appliedTheme)}
+                          {ptg ? ptg : unit}
+                        </span>
+                      </div>
+                    </>
+                  )}
+                  <div className="border-t pt-2 mt-2 space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="w-4 h-3"
+                        style={{ backgroundColor: '#4e73df' }}
+                      />
+                      <span>Limite DREN</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="w-4 h-3"
+                        style={{ backgroundColor: '#22afbe' }}
+                      />
+                      <span>Limite CISCO</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="w-4 h-3"
+                        style={{ backgroundColor: '#c0c0c0' }}
+                      />
+                      <span>Limite Commune</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
         </div>
+
+        {/* Bouton pour développer / réduire le panneau latéral — position
+            calculée avec clamp() pour toujours "coller" au bord droit du
+            panneau, en largeur mobile (85vw) comme en largeur desktop
+            (300px), sans JS de mesure. */}
+        <button
+          type="button"
+          onClick={() => setSidebarOpen((v) => !v)}
+          title={sidebarOpen ? 'Réduire le panneau' : 'Développer le panneau'}
+          className="absolute top-1/2 -translate-y-1/2 -ml-3 z-[1500] bg-background border shadow-md rounded-full w-7 h-7 flex items-center justify-center hover:bg-muted transition-[left] duration-300 ease-in-out"
+          style={{ left: sidebarOpen ? 'clamp(0px, 85vw, 300px)' : '0px' }}
+        >
+          {sidebarOpen ? (
+            <PanelLeftClose className="w-4 h-4" />
+          ) : (
+            <PanelLeftOpen className="w-4 h-4" />
+          )}
+        </button>
 
         {/* Map */}
         <div className="flex-1 overflow-hidden relative" ref={mapContainerRef}>
@@ -1119,6 +1288,7 @@ const DataViz = () => {
           >
             <MapClickHandler onClose={() => setContextMenu(null)} />
             <CompassControl />
+            <InvalidateOnResize trigger={sidebarOpen} />
 
             <LayersControl position="topright">
               <LayersControl.BaseLayer name="DEFAULT">
@@ -1216,6 +1386,103 @@ const DataViz = () => {
           </MapContainer>
         </div>
       </div>
+
+      <Dialog open={showDownloadModal} onOpenChange={setShowDownloadModal}>
+        <DialogContent className="sm:max-w-xl z-[10000]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-3">
+              <Download className="h-5 w-5" />
+              Exporter la carte thématique
+            </DialogTitle>
+            <DialogDescription>
+              Choisissez le format d'export pour les données actuellement
+              affichées.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-6 space-y-6">
+            <div className="bg-muted/50 rounded-xl p-5 text-sm">
+              <div className="grid grid-cols-2 gap-4 text-center">
+                <div>
+                  <div className="text-2xl font-semibold text-primary">
+                    {activeExportDataset.rows.length}
+                  </div>
+                  <div className="text-xs text-muted-foreground capitalize">
+                    {activeExportDataset.label}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-sm font-medium text-primary">
+                    {THEMES.find((t) => t.value === appliedTheme)?.label || '—'}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Thème appliqué
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <p className="text-sm font-medium text-muted-foreground mb-3">
+                FORMATS DE DONNÉES
+              </p>
+              <div className="grid grid-cols-3 gap-3">
+                <Button
+                  onClick={downloadCSV}
+                  variant="outline"
+                  className="h-20 flex-col gap-1"
+                  disabled={activeExportDataset.rows.length === 0}
+                >
+                  <Download className="h-5 w-5" />
+                  <span className="text-xs">CSV</span>
+                </Button>
+                <Button
+                  onClick={downloadExcel}
+                  variant="outline"
+                  className="h-20 flex-col gap-1"
+                  disabled={activeExportDataset.rows.length === 0}
+                >
+                  <FileSpreadsheet className="h-5 w-5" />
+                  <span className="text-xs">Excel</span>
+                </Button>
+                <Button
+                  onClick={downloadJSON}
+                  variant="outline"
+                  className="h-20 flex-col gap-1"
+                  disabled={activeExportDataset.rows.length === 0}
+                >
+                  <FileJson className="h-5 w-5" />
+                  <span className="text-xs">JSON</span>
+                </Button>
+              </div>
+            </div>
+
+            <div>
+              <p className="text-sm font-medium text-muted-foreground mb-3">
+                IMAGE DE LA CARTE
+              </p>
+              <Button
+                onClick={handleCaptureMap}
+                variant="default"
+                className="w-full h-16 gap-2"
+                disabled={loading}
+              >
+                <FileImage className="h-5 w-5" />
+                Capturer la carte (PNG)
+              </Button>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowDownloadModal(false)}
+            >
+              Fermer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

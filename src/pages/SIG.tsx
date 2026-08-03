@@ -23,10 +23,16 @@ import {
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import {
+  X,
   Settings,
   Search,
   Loader2,
+  Lock,
+  Check,
+  ClipboardList,
+  Table,
   Filter,
+  Trash,
   MapPin,
   ZoomIn,
   Download,
@@ -278,6 +284,12 @@ const SIG = () => {
   });
   const [etabNonPointe, setEtabNonPointe] = useState<any[]>([]);
   const [selectedEtabGeo, setSelectedEtabGeo] = useState<any | null>(null);
+  const [showEtabNonPointeModal, setShowEtabNonPointeModal] = useState(false);
+  const [etabNonPointeSearch, setEtabNonPointeSearch] = useState('');
+  const [modalDrenFilter, setModalDrenFilter] = useState('');
+  const [modalCiscoFilter, setModalCiscoFilter] = useState('');
+  const [modalSecteurFilter, setModalSecteurFilter] = useState('all');
+  const [modalZapFilter, setModalZapFilter] = useState('');
   const [filterEtabName, setFilterEtabName] = useState('');
   const [villageForm, setVillageForm] = useState({
     name: '',
@@ -638,6 +650,28 @@ const SIG = () => {
     };
   }, [selectedSchool, niveau]);
 
+  // ====================== FONCTIONS UTILITAIRES ======================
+  const isSuperUser = (user: any): boolean => {
+    return user?.is_superuser === true;
+  };
+
+  const getUserDrenCode = (user: any): number | null => {
+    if (!user) return null;
+    if (isSuperUser(user)) return null;
+    return user?.dren_code || null;
+  };
+
+  const getUserCiscoCode = (user: any): number | null => {
+    if (!user) return null;
+    if (isSuperUser(user)) return null;
+    return user?.cisco_code || null;
+  };
+
+  const isUserAuthorizedForDren = (user: any, drenCode: number): boolean => {
+    if (isSuperUser(user)) return true;
+    const userDren = getUserDrenCode(user);
+    return userDren === drenCode;
+  };
   // ====================== CHARGER CONFIG SIG ======================
   useEffect(() => {
     const loadConfig = async () => {
@@ -655,6 +689,8 @@ const SIG = () => {
           );
         };
 
+        const isAdmin = isSuperUser(user);
+
         setSigConfig({
           modules: {
             pointage: getModule('pointage'),
@@ -664,13 +700,22 @@ const SIG = () => {
               getModule('validation_deplacement'),
           },
           permissions: {
-            valider: Boolean(permissions.valider),
-            rejeter: Boolean(permissions.rejeter),
-            supprimer: Boolean(permissions.supprimer),
-            verifier: Boolean(permissions.verifier ?? true),
+            // Seul un SuperUser peut valider/rejeter
+            valider: isAdmin && getModule('validationDeplacement'),
+            rejeter: isAdmin && getModule('validationDeplacement'),
+            // Supprimer est autorisé pour tout le monde (user et admin)
+            supprimer: getModule('validationDeplacement'),
+            // Vérifier est autorisé pour tout le monde
+            verifier:
+              getModule('validationDeplacement') || getModule('pointage'),
           },
         });
       } catch (err) {
+        // Repli fail-safe : en cas d'échec de /sig/config/, on ne connaît pas
+        // la configuration voulue côté back-office, donc les modules
+        // sensibles (déplacement / validation) restent désactivés par
+        // défaut plutôt que d'être ouverts à tout le monde. Seul le
+        // pointage, sans impact sur les déplacements, reste actif.
         setSigConfig({
           modules: {
             pointage: true,
@@ -688,8 +733,82 @@ const SIG = () => {
     };
 
     loadConfig();
-  }, []);
+  }, [user]);
 
+  // ====================== DÉPLACEMENTS ======================
+  const loadDeplacements = async () => {
+    try {
+      if (!selectedDren) {
+        toast.error('DREN obligatoire');
+        return;
+      }
+
+      const isAdmin = isSuperUser(user);
+      const userDrenCode = getUserDrenCode(user);
+      const userCiscoCode = getUserCiscoCode(user);
+
+      // Vérifier si l'utilisateur a accès à cette DREN
+      if (!isAdmin) {
+        // Si l'utilisateur a une DREN et que la DREN sélectionnée n'est pas la sienne
+        if (userDrenCode && userDrenCode !== selectedDren) {
+          const drenName =
+            drens.find((d) => d.CODE_DREN === userDrenCode)?.DREN ||
+            `DREN ${userDrenCode}`;
+          toast.error(
+            `❌ Vous n'avez pas accès aux déplacements de cette DREN. Accès limité à : ${drenName}`
+          );
+          setDeplacements([]);
+          return;
+        }
+
+        // Si l'utilisateur est un CISCO, vérifier que la CISCO sélectionnée est la sienne
+        if (
+          userCiscoCode &&
+          selectedCisco > 0 &&
+          selectedCisco !== userCiscoCode
+        ) {
+          toast.error(
+            `❌ Vous n'avez pas accès aux déplacements de cette CISCO. Accès limité à votre CISCO ${userCiscoCode}`
+          );
+          setDeplacements([]);
+          return;
+        }
+      }
+
+      // Construire l'URL
+      let url = `/sig/deplacements/non-valides/?dren=${selectedDren}`;
+
+      // Pour les utilisateurs non-admin, filtrer par leur CISCO si définie
+      if (!isAdmin && userCiscoCode) {
+        url += `&cisco=${userCiscoCode}`;
+        toast.info(
+          `🔍 Affichage des déplacements de votre CISCO ${userCiscoCode}`,
+          { duration: 3000 }
+        );
+      } else if (selectedCisco > 0) {
+        url += `&cisco=${selectedCisco}`;
+      }
+
+      const response = await djangoGet(url);
+
+      const data = Array.isArray(response?.data) ? response.data : [];
+      setDeplacements(data);
+
+      if (data.length > 0) {
+        toast.success(
+          `📋 ${data.length} déplacement${data.length > 1 ? 's' : ''} en attente`
+        );
+      } else {
+        toast.info('✅ Aucun déplacement en attente pour votre zone', {
+          duration: 3000,
+        });
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error('Impossible de charger les déplacements');
+      setDeplacements([]);
+    }
+  };
   // ====================== GESTION CISCO =======================
   useEffect(() => {
     const load = async () => {
@@ -858,15 +977,6 @@ const SIG = () => {
       return;
     }
 
-    // ⚠️ Correctif important : le marqueur village stockait auparavant ses
-    // données via `(marker as any).properties = v` (propriété directe sur
-    // l'instance), alors que ce handler lisait `event.target.options.properties`
-    // (jamais renseigné pour les villages). Résultat : `id` était toujours
-    // `undefined` et la fonction s'arrêtait silencieusement avant le moindre
-    // appel réseau — la position déplacée n'était donc JAMAIS enregistrée en
-    // base, malgré un marqueur visuellement déplacé sur la carte. La création
-    // du marqueur (voir `createLayerEtab`/chargement villages) renseigne
-    // désormais `properties` dans les options, comme pour les établissements.
     const props = event.target.options.properties;
     const id = props?.id;
     const { lat, lng } = event.target.getLatLng();
@@ -1390,72 +1500,118 @@ const SIG = () => {
     }
   };
 
-  // ====================== DÉPLACEMENTS ======================
-  const loadDeplacements = async () => {
-    try {
-      if (!selectedDren) {
-        toast.error('DREN obligatoire');
-        return;
-      }
-
-      const url =
-        selectedCisco > 0
-          ? `/sig/deplacements/non-valides/?dren=${selectedDren}&cisco=${selectedCisco}`
-          : `/sig/deplacements/non-valides/?dren=${selectedDren}`;
-
-      const response = await djangoGet(url);
-
-      setDeplacements(Array.isArray(response?.data) ? response.data : []);
-    } catch (e) {
-      console.error(e);
-      toast.error('Impossible de charger les déplacements');
-      setDeplacements([]);
-    }
-  };
-
   const handleValider = async (item: any) => {
+    // SEUL SuperUser peut valider
+    if (!isSuperUser(user)) {
+      toast.error('❌ Seul un administrateur peut valider des déplacements');
+      return;
+    }
+
+    if (!sigConfig.permissions.valider) {
+      toast.error("❌ Le module de validation n'est pas activé");
+      return;
+    }
+
+    if (
+      !confirm(
+        `Voulez-vous vraiment VALIDER le déplacement de ${item.type_objet === 'ETAB' ? "l'établissement" : 'le village'} ${item.code || ''} ?`
+      )
+    ) {
+      return;
+    }
+
     try {
       await djangoPostJSON('/sig/deplacements/valider/', {
         type_objet: item.type_objet,
         id: item.id,
       });
-      toast.success('Déplacement validé');
+      toast.success(
+        `✅ Déplacement ${item.type_objet === 'ETAB' ? "de l'établissement" : 'du village'} ${item.code || ''} validé`
+      );
       await loadDeplacements();
-    } catch {
-      toast.error('Erreur lors de la validation');
+    } catch (error: any) {
+      console.error('Erreur validation:', error);
+      toast.error(`❌ Erreur : ${error.message || 'Veuillez réessayer'}`);
     }
   };
 
   const handleRejeter = async (item: any) => {
+    // SEUL SuperUser peut rejeter
+    if (!isSuperUser(user)) {
+      toast.error('❌ Seul un administrateur peut rejeter des déplacements');
+      return;
+    }
+
+    if (!sigConfig.permissions.rejeter) {
+      toast.error("❌ Le module de validation n'est pas activé");
+      return;
+    }
+
+    if (
+      !confirm(
+        `Voulez-vous vraiment REJETER le déplacement de ${item.type_objet === 'ETAB' ? "l'établissement" : 'le village'} ${item.code || ''} ?`
+      )
+    ) {
+      return;
+    }
+
     try {
       await djangoPostJSON('/sig/deplacements/rejeter/', {
         type_objet: item.type_objet,
         id: item.id,
       });
-      toast.success('Déplacement rejeté');
+      toast.success(
+        `⛔ Déplacement ${item.type_objet === 'ETAB' ? "de l'établissement" : 'du village'} ${item.code || ''} rejeté`
+      );
       await loadDeplacements();
-    } catch {
-      toast.error('Erreur lors du rejet');
+    } catch (error: any) {
+      console.error('Erreur rejet:', error);
+      toast.error(`❌ Erreur : ${error.message || 'Veuillez réessayer'}`);
     }
   };
 
   const handleSupprimer = async (item: any) => {
-    if (!confirm('Supprimer définitivement ?')) return;
+    // Supprimer est disponible pour tout le monde (user et admin)
+    if (!sigConfig.permissions.supprimer) {
+      toast.error("❌ Le module de suppression n'est pas activé");
+      return;
+    }
+
+    if (
+      !confirm(
+        `⚠️ Voulez-vous vraiment SUPPRIMER définitivement le déplacement de ${item.type_objet === 'ETAB' ? "l'établissement" : 'le village'} ${item.code || ''} ?\n\nCette action est irréversible !`
+      )
+    ) {
+      return;
+    }
+
     try {
       await djangoPostJSON('/sig/deplacements/supprimer/', {
         type_objet: item.type_objet,
         id: item.id,
       });
-      toast.success('Déplacement supprimé');
+      toast.success(
+        `🗑️ Déplacement ${item.type_objet === 'ETAB' ? "de l'établissement" : 'du village'} ${item.code || ''} supprimé`
+      );
       await loadDeplacements();
-    } catch {
-      toast.error('Erreur lors de la suppression');
+    } catch (error: any) {
+      console.error('Erreur suppression:', error);
+      toast.error(`❌ Erreur : ${error.message || 'Veuillez réessayer'}`);
     }
   };
 
   const handleVerifier = (item: any) => {
     const map = mapRef.current;
     if (!map) return;
+
+    // Notification avec détails
+    const typeLabel = item.type_objet === 'ETAB' ? 'Établissement' : 'Village';
+    const message = `🔍 Vérification de ${typeLabel} ${item.code || ''}
+  \n📍 Ancienne position : ${item.ancien_lat?.toFixed(6)}, ${item.ancien_lng?.toFixed(6)}
+  \n📍 Nouvelle position : ${item.nouveau_lat?.toFixed(6)}, ${item.nouveau_lng?.toFixed(6)}
+  ${item.is_duplicate ? '\n⚠️ Attention : Ce déplacement est marqué comme DOUBLON !' : ''}`;
+
+    toast.info(message, { duration: 5000 });
 
     setShowDeplacementsModal(false);
     setVerifyMode(true);
@@ -1482,6 +1638,22 @@ const SIG = () => {
     verificationMarkersRef.current.addLayer(oldMarker);
     verificationMarkersRef.current.addLayer(newMarker);
     verificationMarkersRef.current.addTo(map);
+
+    // Ajout d'une ligne de connexion entre les deux points
+    const line = L.polyline(
+      [
+        [item.ancien_lat, item.ancien_lng],
+        [item.nouveau_lat, item.nouveau_lng],
+      ],
+      {
+        color: 'orange',
+        weight: 2,
+        dashArray: '5, 5',
+        opacity: 0.8,
+      }
+    ).bindTooltip('Déplacement', { permanent: true, direction: 'center' });
+
+    verificationMarkersRef.current.addLayer(line);
 
     map.fitBounds([
       [item.ancien_lat, item.ancien_lng],
@@ -1514,6 +1686,101 @@ const SIG = () => {
       (e.NOM_ETAB &&
         e.NOM_ETAB.toLowerCase().includes(filterEtabName.toLowerCase()))
   );
+
+  // Calcul des valeurs uniques pour les filtres dans liste etab Non pointé
+  const uniqueDrens = useMemo(() => {
+    return [
+      ...new Set(etabNonPointe.map((e) => e.DREN).filter(Boolean)),
+    ].sort();
+  }, [etabNonPointe]);
+
+  const uniqueCiscos = useMemo(() => {
+    return [
+      ...new Set(etabNonPointe.map((e) => e.CISCO).filter(Boolean)),
+    ].sort();
+  }, [etabNonPointe]);
+
+  const uniqueZaps = useMemo(() => {
+    return [...new Set(etabNonPointe.map((e) => e.ZAP).filter(Boolean))].sort();
+  }, [etabNonPointe]);
+
+  const uniqueSecteurs = useMemo(() => {
+    return [
+      ...new Set(etabNonPointe.map((e) => String(e.SECTEUR ?? '').trim())),
+    ]
+      .filter((v) => v !== '')
+      .sort();
+  }, [etabNonPointe]);
+
+  // Filtrage complet
+  const reportEtabNonPointe = useMemo(() => {
+    const search = etabNonPointeSearch.trim().toLowerCase();
+
+    return etabNonPointe.filter((etab) => {
+      const secteur = String(etab.SECTEUR ?? '').trim();
+      const dren = String(etab.DREN ?? '').trim();
+      const cisco = String(etab.CISCO ?? '').trim();
+      const zap = String(etab.ZAP ?? '').trim();
+
+      const matchesSearch =
+        search === '' ||
+        String(etab.NOM_ETAB ?? '')
+          .toLowerCase()
+          .includes(search) ||
+        String(etab.CODE_ETAB ?? '').includes(search);
+
+      const matchesDren = modalDrenFilter === '' || dren === modalDrenFilter;
+
+      const matchesCisco =
+        modalCiscoFilter === '' || cisco === modalCiscoFilter;
+
+      const matchesSecteur =
+        modalSecteurFilter === 'all' ||
+        String(etab.SECTEUR ?? '').trim() === modalSecteurFilter;
+
+      const matchesZap = modalZapFilter === '' || zap === modalZapFilter;
+
+      return (
+        matchesSearch &&
+        matchesDren &&
+        matchesCisco &&
+        matchesSecteur &&
+        matchesZap
+      );
+    });
+  }, [
+    etabNonPointe,
+    etabNonPointeSearch,
+    modalDrenFilter,
+    modalCiscoFilter,
+    modalSecteurFilter,
+    modalZapFilter,
+  ]);
+
+  const exportEtabNonPointeCSV = () => {
+    if (reportEtabNonPointe.length === 0) return;
+    const headers = ['CODE_ETAB', 'NOM_ETAB', 'SECTEUR', 'ZAP'];
+    const rows = reportEtabNonPointe.map((e) =>
+      [
+        e.CODE_ETAB ?? '',
+        e.NOM_ETAB ?? '',
+        e.SECTEUR === 1 ? 'PRIVE' : 'PUBLIC',
+        e.ZAP ?? '',
+      ]
+        .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+        .join(';')
+    );
+    const csv = [headers.join(';'), ...rows].join('\n');
+    const blob = new Blob(['\ufeff' + csv], {
+      type: 'text/csv;charset=utf-8;',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `etablissements_non_pointes_dren${selectedDren}_cisco${selectedCisco}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const teacherStats = useMemo(() => {
     if (!selectedSchool) return null;
@@ -1846,64 +2113,128 @@ const SIG = () => {
   // ====================== RENDU ======================
   return (
     <div className="h-[calc(100vh-4rem)] relative flex w-full overflow-hidden bg-muted/20">
-      {/* Panneau latéral repliable (filtres, récapitulatif, recherche).
-          Repose sur `sidebarOpen` : ouvert par défaut sur desktop (>= 768px),
-          replié par défaut sur mobile pour laisser toute la place à la carte.
-          Le bouton rond accroché au bord droit permet de le réduire/étendre
-          à tout moment, sur tous les appareils. */}
+      {/* Panneau latéral repliable */}
       <div
-        className={`
-    ${sidebarOpen ? 'w-[88vw] sm:w-[320px]' : 'w-0'}
-    shrink-0 h-full
-    bg-background/80
-    backdrop-blur-xl
-    border-r
-    shadow-xl
-    flex flex-col
-    overflow-hidden
-    transition-all duration-300 ease-in-out
-  `}
+        className={` ${sidebarOpen ? 'w-[88vw] sm:w-[320px]' : 'w-0'} shrink-0 h-full bg-background/80 backdrop-blur-xl border-r shadow-xl flex flex-col overflow-y-auto
+    overflow-x-hidden ransition-all duration-300 ease-in-out`}
       >
         <div className="w-[85vw] max-w-[300px] h-full flex flex-col">
-          <div
-            className="
-  px-4 py-3
-  border-b
-  bg-background/60
-  backdrop-blur-md
-  flex flex-col gap-3
-"
-          >
+          {/* Bouton Filtres */}
+          <div className="px-4 py-3 border-b bg-background/60 backdrop-blur-md flex flex-col gap-3">
             <Button
               onClick={() => setShowFilters(true)}
-              className="
-    w-full
-    h-10
-    justify-center
-    shadow-md
-    bg-primary
-  "
+              className="w-full h-10 justify-center shadow-md bg-primary"
             >
               <Filter className="h-4 w-4 mr-2" />
-              Filtres
+              Filtres Zone Géographique
             </Button>
 
-            {selectedDren > 0 && stats.total > 0 && (
-              <div
-                className="
-   bg-background/70
-   backdrop-blur-xl
-   border
-   rounded-2xl
-   shadow-lg
-   overflow-hidden
- "
+            {/* Bouton Liste des déplacements */}
+            {user && sigConfig.modules.validationDeplacement && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={async () => {
+                  if (!selectedDren) {
+                    toast.error('Veuillez sélectionner une DREN');
+                    return;
+                  }
+
+                  const isAdmin = isSuperUser(user);
+                  const userDrenCode = getUserDrenCode(user);
+                  const userCiscoCode = getUserCiscoCode(user);
+
+                  // Vérifier l'accès à la DREN sélectionnée
+                  if (
+                    !isAdmin &&
+                    userDrenCode &&
+                    userDrenCode !== selectedDren
+                  ) {
+                    const drenName =
+                      drens.find((d) => d.CODE_DREN === userDrenCode)?.DREN ||
+                      `DREN ${userDrenCode}`;
+                    toast.error(`❌ Accès limité à votre DREN : ${drenName}`);
+                    return;
+                  }
+
+                  // Vérifier l'accès à la CISCO sélectionnée
+                  if (
+                    !isAdmin &&
+                    userCiscoCode &&
+                    selectedCisco > 0 &&
+                    selectedCisco !== userCiscoCode
+                  ) {
+                    toast.error(
+                      `❌ Accès limité à votre CISCO : ${userCiscoCode}`
+                    );
+                    return;
+                  }
+
+                  await loadDeplacements();
+                  setShowDeplacementsModal(true);
+                }}
+                className="w-full h-10 shadow-md"
               >
+                <div className="flex items-center justify-between gap-2 w-full">
+                  <div className="flex items-center gap-2">
+                    <Table className="h-4 w-4 flex-shrink-0" />
+                    <span>Liste des déplacements</span>
+                  </div>
+                  {user && !isSuperUser(user) && (
+                    <Badge variant="outline" className="text-[9px] px-1.5">
+                      {getUserCiscoCode(user)
+                        ? `CISCO ${getUserCiscoCode(user)}`
+                        : getUserDrenCode(user)
+                          ? `DREN ${getUserDrenCode(user)}`
+                          : 'Restreint'}
+                    </Badge>
+                  )}
+                </div>
+              </Button>
+            )}
+
+            {/* Bouton Liste Etab Non Pointé */}
+            {sigConfig.modules.pointage && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (!selectedDren) {
+                    toast.error('Veuillez sélectionner un DREN');
+                    return;
+                  }
+                  setEtabNonPointeSearch('');
+                  setShowEtabNonPointeModal(true);
+                }}
+                className="w-full h-10 shadow-md"
+              >
+                <div className="flex items-center justify-between gap-2 w-full">
+                  <div className="flex items-center gap-2">
+                    <Table className="h-4 w-4 flex-shrink-0" />
+                    <span>Établissements non pointés</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Badge
+                      variant="destructive"
+                      className="h-5 min-w-5 px-1.5 flex items-center justify-center text-[10px]"
+                    >
+                      {etabNonPointe.length}
+                    </Badge>
+                  </div>
+                </div>
+              </Button>
+            )}
+
+            {/* Récapitulatif */}
+            {selectedDren > 0 && stats.total > 0 && (
+              <div className="bg-background/70 backdrop-blur-xl border rounded-2xl shadow-lg overflow-hidden">
                 <div
                   className="flex items-center justify-between px-4 py-3 border-b cursor-pointer hover:bg-muted/50 transition-colors"
                   onClick={() => setShowRecap(!showRecap)}
                 >
-                  <span className="font-semibold text-sm">Récapitulatif</span>
+                  <div className="flex items-center gap-2">
+                    <ClipboardList className="h-4 w-4 flex-shrink-0" />
+                    <span className="font-semibold text-sm">Récapitulatif</span>
+                  </div>
                   <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
                     {showRecap ? '−' : '+'}
                   </Button>
@@ -1912,7 +2243,6 @@ const SIG = () => {
                 {showRecap && (
                   <div className="p-4 text-xs space-y-3">
                     {' '}
-                    {/* Taille réduite */}
                     {/* Zone sélectionnée */}
                     <div className="flex justify-between text-muted-foreground">
                       <span>Zone</span>
@@ -2021,52 +2351,38 @@ const SIG = () => {
                         {stats.villages || 0}
                       </Badge>
                     </div>
+                    {/* Ratio Établissements non pointés / pointés */}
+                    <div className="flex justify-between items-center pt-2 border-t">
+                      <span className="font-semibold">
+                        Établissements non pointés
+                      </span>
+                      <Badge variant="destructive" className="tabular-nums">
+                        {etabNonPointe.length}
+                      </Badge>
+                    </div>
+                    <div className="flex justify-between items-center text-[10px] text-muted-foreground pl-2">
+                      <span>Ratio non pointés / total</span>
+                      <span className="tabular-nums">
+                        {stats.total > 0
+                          ? `${Math.round((etabNonPointe.length / stats.total) * 100)}%`
+                          : '0%'}
+                      </span>
+                    </div>
                   </div>
                 )}
               </div>
             )}
-
-            {user && sigConfig.modules.validationDeplacement && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={async () => {
-                  if (!selectedDren) {
-                    toast.error('Veuillez sélectionner un DREN');
-                    return;
-                  }
-                  await loadDeplacements();
-                  setShowDeplacementsModal(true);
-                }}
-              >
-                Liste des déplacements
-              </Button>
-            )}
           </div>
 
-          <div
-            className="
- px-4 py-4
- space-y-3
- border-t
- bg-background/40
- "
-          >
+          {/* Zone Recherche */}
+          <div className="px-4 py-4 space-y-3 border-t bg-background/40">
             <div className="relative w-full">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="écoles ou villages..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="
- pl-10
- h-11
- bg-background/80
- backdrop-blur
- border
- shadow-sm
- rounded-xl
-"
+                className="pl-10 h-11 bg-background/80 backdrop-blur border shadow-sm rounded-xl"
               />
             </div>
             {searchResults.length > 0 && (
@@ -2087,31 +2403,12 @@ const SIG = () => {
         </div>
       </div>
 
-      {/* Bouton pour développer / réduire le panneau latéral. Position
-          calculée avec clamp() pour toujours "coller" au bord droit du
-          panneau, qu'il soit à sa largeur mobile (85vw) ou desktop (300px). */}
+      {/* Bouton pour développer / réduire le panneau latéral.*/}
       <button
         type="button"
         onClick={() => setSidebarOpen((v) => !v)}
         title={sidebarOpen ? 'Réduire le panneau' : 'Développer le panneau'}
-        className="
-absolute
-top-1/2
--translate-y-1/2
--ml-4
-z-[1500]
-bg-background
-border
-shadow-xl
-rounded-full
-w-9
-h-9
-flex
-items-center
-justify-center
-hover:bg-muted
-transition-all
-"
+        className="absolute top-1/2 -translate-y-1/2 -ml-4 z-[1500] bg-background border shadow-xl rounded-full w-9 h-9 flex items-center justify-center hover:bg-muted transition-all"
         style={{ left: sidebarOpen ? 'clamp(0px, 85vw, 300px)' : '0px' }}
       >
         {sidebarOpen ? (
@@ -2165,6 +2462,7 @@ transition-all
           </div>
         )}
 
+        {/* Bouton pour arrêter le mode vérification coord etab ancien et nouveau*/}
         {verifyMode && (
           <Button
             className="absolute top-3 right-4 z-[2000]"
@@ -2174,6 +2472,7 @@ transition-all
           </Button>
         )}
 
+        {/* Modal liste de déplacement */}
         {showDeplacementsModal && (
           <div className="fixed inset-0 z-[2000] bg-black/40 flex items-center justify-center">
             <div className="bg-white w-[95%] max-w-7xl rounded-lg shadow-xl p-4 max-h-[92vh] overflow-hidden flex flex-col">
@@ -2282,35 +2581,61 @@ transition-all
                               <div className="flex gap-2 flex-wrap justify-center">
                                 {sigConfig.modules.validationDeplacement && (
                                   <>
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => handleVerifier(item)}
-                                    >
-                                      Vérifier
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      className="bg-green-600 hover:bg-green-700 text-white"
-                                      onClick={() => handleValider(item)}
-                                    >
-                                      Valider
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="destructive"
-                                      onClick={() => handleRejeter(item)}
-                                    >
-                                      Rejeter
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      className="text-red-600 hover:bg-red-50"
-                                      onClick={() => handleSupprimer(item)}
-                                    >
-                                      Supprimer
-                                    </Button>
+                                    {/* Vérifier - disponible pour tout le monde */}
+                                    {sigConfig.permissions.verifier && (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => handleVerifier(item)}
+                                        className="hover:bg-blue-50"
+                                        title="Vérifier le déplacement sur la carte"
+                                      >
+                                        <Search className="h-3 w-3 mr-1" />
+                                        Vérifier
+                                      </Button>
+                                    )}
+
+                                    {/* Valider - UNIQUEMENT pour les SuperUsers */}
+                                    {sigConfig.permissions.valider &&
+                                      isSuperUser(user) && (
+                                        <Button
+                                          size="sm"
+                                          className="bg-green-600 hover:bg-green-700 text-white"
+                                          onClick={() => handleValider(item)}
+                                          title="Valider ce déplacement"
+                                        >
+                                          <Check className="h-3 w-3 mr-1" />
+                                          Valider
+                                        </Button>
+                                      )}
+
+                                    {/* Rejeter - UNIQUEMENT pour les SuperUsers */}
+                                    {sigConfig.permissions.rejeter &&
+                                      isSuperUser(user) && (
+                                        <Button
+                                          size="sm"
+                                          variant="destructive"
+                                          onClick={() => handleRejeter(item)}
+                                          title="Rejeter ce déplacement"
+                                        >
+                                          <X className="h-3 w-3 mr-1" />
+                                          Rejeter
+                                        </Button>
+                                      )}
+
+                                    {/* Supprimer - disponible pour tout le monde (user et admin) */}
+                                    {sigConfig.permissions.supprimer && (
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="text-red-600 hover:bg-red-50"
+                                        onClick={() => handleSupprimer(item)}
+                                        title="Supprimer définitivement"
+                                      >
+                                        <Trash className="h-3 w-3 mr-1" />
+                                        Supprimer
+                                      </Button>
+                                    )}
                                   </>
                                 )}
                               </div>
@@ -2322,6 +2647,229 @@ transition-all
                   </table>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Modal liste de déplacement */}
+        {showEtabNonPointeModal && (
+          <div className="fixed inset-0 z-[2000] bg-black/40 flex items-center justify-center">
+            <div className="bg-white w-[95%] max-w-6xl rounded-lg shadow-xl p-4 max-h-[92vh] overflow-hidden flex flex-col">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  <MapPin className="h-5 w-5 text-destructive" />
+                  Établissements non pointés
+                  <Badge variant="secondary" className="ml-1">
+                    {etabNonPointe.length}
+                  </Badge>
+                </h2>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={exportEtabNonPointeCSV}
+                    disabled={reportEtabNonPointe.length === 0}
+                  >
+                    <Download className="h-4 w-4 mr-1.5" />
+                    Exporter CSV
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowEtabNonPointeModal(false)}
+                  >
+                    Fermer
+                  </Button>
+                </div>
+              </div>
+
+              <p className="text-xs text-muted-foreground mb-4">
+                Zone filtrée :{' '}
+                <strong>
+                  {selectedDren
+                    ? drens.find((d) => d.CODE_DREN === selectedDren)?.DREN ||
+                      `DREN ${selectedDren}`
+                    : 'Toutes les DREN'}
+                  {selectedCisco > 0 && ciscos.length > 0 && (
+                    <>
+                      {' '}
+                      —{' '}
+                      {ciscos.find((c) => c.CODE_CISCO === selectedCisco)
+                        ?.CISCO || `CISCO ${selectedCisco}`}
+                    </>
+                  )}
+                </strong>
+              </p>
+
+              {/* Filtres */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 mb-4 bg-muted/50 p-4 rounded-xl">
+                {/* DREN */}
+                <div>
+                  <Label className="text-xs">DREN</Label>
+                  <Select
+                    value={modalDrenFilter}
+                    onValueChange={setModalDrenFilter}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="Toutes les DREN" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {uniqueDrens.map((d) => (
+                        <SelectItem key={d} value={d}>
+                          {d}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {/* CISCO */}
+                <div>
+                  <Label className="text-xs">CISCO</Label>
+                  <Select
+                    value={modalCiscoFilter}
+                    onValueChange={setModalCiscoFilter}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="Toutes les CISCO" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {uniqueCiscos.map((c) => (
+                        <SelectItem key={c} value={c}>
+                          {c}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {/* ZAP */}
+                <div>
+                  <Label className="text-xs">ZAP</Label>
+                  <Select
+                    value={modalZapFilter}
+                    onValueChange={setModalZapFilter}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="Tous les ZAP" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {uniqueZaps.map((zap) => (
+                        <SelectItem key={zap} value={zap}>
+                          {zap}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {/* SECTEUR */}
+                <div>
+                  <Label className="text-xs">Secteur</Label>
+                  <Select
+                    value={modalSecteurFilter}
+                    onValueChange={setModalSecteurFilter}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Secteur" />
+                    </SelectTrigger>
+
+                    <SelectContent>
+                      <SelectItem value="all">Tous</SelectItem>
+
+                      {uniqueSecteurs.map((secteur) => (
+                        <SelectItem key={secteur} value={secteur}>
+                          {secteur === '0'
+                            ? 'Public'
+                            : secteur === '1'
+                              ? 'Privé'
+                              : `Secteur ${secteur}`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs">Recherche</Label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Code ou nom..."
+                      value={etabNonPointeSearch}
+                      onChange={(e) => setEtabNonPointeSearch(e.target.value)}
+                      className="pl-9 h-9"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Tableau */}
+              {reportEtabNonPointe.length === 0 ? (
+                <div className="text-center py-16 text-muted-foreground flex flex-col items-center">
+                  <MapPin className="h-12 w-12 mx-auto mb-4 opacity-30" />
+                  <p className="text-lg">
+                    {etabNonPointe.length === 0
+                      ? 'Aucun établissement non pointé dans cette zone'
+                      : 'Aucun résultat correspondant aux filtres'}
+                  </p>
+                </div>
+              ) : (
+                <div className="flex-1 overflow-auto border rounded-lg">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-gray-100 z-10 shadow">
+                      <tr>
+                        <th className="p-3 text-left">Code</th>
+                        <th className="p-3 text-left">Établissement</th>
+                        <th className="p-3 text-left">DREN</th>
+                        <th className="p-3 text-left">CISCO</th>
+                        <th className="p-3 text-left">ZAP</th>
+                        <th className="p-3 text-left">Secteur</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reportEtabNonPointe.map((etab, i) => (
+                        <tr
+                          key={`nonpointe-${etab.CODE_ETAB}-${i}`}
+                          className="border-t hover:bg-gray-50 transition-colors"
+                        >
+                          <td className="p-3 font-mono font-medium">
+                            {etab.CODE_ETAB}
+                          </td>
+                          <td className="p-3 font-medium">{etab.NOM_ETAB}</td>
+                          <td className="p-3 text-muted-foreground">
+                            {etab.DREN}
+                          </td>
+                          <td className="p-3 text-muted-foreground">
+                            {etab.CISCO}
+                          </td>
+                          <td className="p-3">{etab.ZAP}</td>
+                          <td className="p-3">
+                            {etab.SECTEUR === 1 ? (
+                              <Badge
+                                variant="outline"
+                                className="text-amber-700"
+                              >
+                                Privé
+                              </Badge>
+                            ) : (
+                              <Badge
+                                variant="outline"
+                                className="text-blue-700"
+                              >
+                                Public
+                              </Badge>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <p className="text-xs text-center text-muted-foreground mt-3">
+                {reportEtabNonPointe.length} affiché(s) sur{' '}
+                {etabNonPointe.length}
+              </p>
             </div>
           </div>
         )}

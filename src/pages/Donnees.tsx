@@ -81,6 +81,13 @@ const NIVEAU_META: Record<
 
 const ANNEES = ['2022', '2023', '2024', '2025'];
 
+const secteurLabel: Record<string, string> = {
+  '2': 'Tous',
+  '0': 'Public',
+  '1': 'Privé',
+};
+const getSecteurLabel = (value: string) => secteurLabel[value] ?? 'Tous';
+
 const SECTION_META: Record<Section, { label: string; icon: any }> = {
   ecoles: { label: 'Écoles', icon: School },
   eleves: { label: 'Élèves', icon: Users },
@@ -669,6 +676,7 @@ const Donnees = () => {
                 `, ${filters.communes.find((c) => String(c.CODE_COMMUNE) === filters.selectedCommune)?.COMMUNE}`}
               {filters.selectedZap !== '0' &&
                 `, ${filters.zaps.find((z) => String(z.CODE_ZAP) === filters.selectedZap)?.ZAP}`}
+              {`, ${getSecteurLabel(filters.selectedSecteur)}`}
             </Badge>
           </div>
         </div>
@@ -924,73 +932,73 @@ const Donnees = () => {
         </div>
 
         <CardContent className="p-0">
-  {loading ? (
-    <div className="flex flex-col items-center justify-center min-h-[600px] gap-3">
-      <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      <p className="text-sm text-muted-foreground">
-        Chargement des données…
-      </p>
-    </div>
-  ) : data.length > 0 ? (
-    <div className="min-h-[600px]">
-      <DataTable
-        data={data}
-        columns={columns}
-        title={`${activeSectionMeta.label} — ${meta.label}`}
-        exportFilename={`donnees_${niveau}_${section}.csv`}
-        pageSize={10}
-        headerClassName={SECTION_THEME[section].tableHeader}
-        pageSizeOptions={[10, 25, 50, 100]}
-        hasAppliedFilter={hasLoadedOnce}
-        hasSelectedDren={filters.selectedDren !== '0'}
-      />
-    </div>
-  ) : (
-    <div className="flex flex-col items-center justify-center min-h-[600px] px-6 text-center">
-      <div className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-muted mb-4">
-        <Filter className="h-6 w-6 text-muted-foreground" />
-      </div>
+          {loading ? (
+            <div className="flex flex-col items-center justify-center min-h-[600px] gap-3">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <p className="text-sm text-muted-foreground">
+                Chargement des données…
+              </p>
+            </div>
+          ) : data.length > 0 ? (
+            <div className="min-h-[600px]">
+              <DataTable
+                data={data}
+                columns={columns}
+                title={`${activeSectionMeta.label} — ${meta.label}`}
+                exportFilename={`donnees_${niveau}_${section}.csv`}
+                pageSize={10}
+                headerClassName={SECTION_THEME[section].tableHeader}
+                pageSizeOptions={[10, 25, 50, 100]}
+                hasAppliedFilter={hasLoadedOnce}
+                hasSelectedDren={filters.selectedDren !== '0'}
+              />
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center min-h-[600px] px-6 text-center">
+              <div className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-muted mb-4">
+                <Filter className="h-6 w-6 text-muted-foreground" />
+              </div>
 
-      {isFilterDirty ? (
-        <>
-          <p className="text-sm font-semibold text-foreground">
-            Filtres modifiés
-          </p>
+              {isFilterDirty ? (
+                <>
+                  <p className="text-sm font-semibold text-foreground">
+                    Filtres modifiés
+                  </p>
 
-          <p className="text-xs text-muted-foreground mt-1.5 max-w-sm mx-auto">
-            Les critères de recherche ont été modifiés.
-            <br />
-            Cliquez sur « Filtrer » pour appliquer les changements.
-          </p>
-        </>
-      ) : hasLoadedOnce ? (
-        <>
-          <p className="text-sm font-semibold text-foreground">
-            Aucune donnée disponible
-          </p>
+                  <p className="text-xs text-muted-foreground mt-1.5 max-w-sm mx-auto">
+                    Les critères de recherche ont été modifiés.
+                    <br />
+                    Cliquez sur « Filtrer » pour appliquer les changements.
+                  </p>
+                </>
+              ) : hasLoadedOnce ? (
+                <>
+                  <p className="text-sm font-semibold text-foreground">
+                    Aucune donnée disponible
+                  </p>
 
-          <p className="text-xs text-muted-foreground mt-1.5 max-w-sm mx-auto">
-            Aucun établissement ne correspond aux critères sélectionnés.
-            <br />
-            Modifiez vos filtres puis relancez la recherche.
-          </p>
-        </>
-      ) : (
-        <>
-          <p className="text-sm font-semibold text-foreground">
-            Aucun filtre appliqué
-          </p>
+                  <p className="text-xs text-muted-foreground mt-1.5 max-w-sm mx-auto">
+                    Aucun établissement ne correspond aux critères sélectionnés.
+                    <br />
+                    Modifiez vos filtres puis relancez la recherche.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-semibold text-foreground">
+                    Aucun filtre appliqué
+                  </p>
 
-          <p className="text-xs text-muted-foreground mt-1.5 max-w-sm mx-auto">
-            Sélectionnez une DREN puis cliquez sur « Filtrer »
-            <br />
-            pour charger les données.
-          </p>
-        </>
-      )}
-    </div>
-  )}
-</CardContent>
+                  <p className="text-xs text-muted-foreground mt-1.5 max-w-sm mx-auto">
+                    Sélectionnez une DREN puis cliquez sur « Filtrer »
+                    <br />
+                    pour charger les données.
+                  </p>
+                </>
+              )}
+            </div>
+          )}
+        </CardContent>
       </Card>
 
       {/* Modal Export */}
