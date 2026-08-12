@@ -1,4 +1,4 @@
-import { School, Circle, MapPin, Home, Building2 } from 'lucide-react';
+import { MapPin } from 'lucide-react';
 
 interface LegendItem {
   icon: React.ReactNode;
@@ -16,13 +16,13 @@ interface MapLegendProps {
 // Légende pour ORS Primaire avec icônes visuelles
 const primaireLegendItems: LegendItem[] = [
   { 
-    icon: <div className="w-4 h-4 rounded-full border-2" style={{ borderColor: '#36b9cc', backgroundColor: 'rgba(54, 185, 204, 0.3)' }} />, 
+    icon: <i className="fas fa-book-open w-4 text-center" style={{ color: '#36b9cc' }} />,
     label: 'École Primaire Publique', 
     color: '#36b9cc',
     description: 'EPP existant'
   },
   { 
-    icon: <div className="w-4 h-4 rounded-full border-2" style={{ borderColor: '#f6c23e', backgroundColor: 'rgba(246, 194, 62, 0.3)' }} />, 
+    icon: <i className="fas fa-book-open w-4 text-center" style={{ color: '#f6c23e' }} />,
     label: 'École Primaire Privée', 
     color: '#f6c23e',
     description: 'Établissement privé'
@@ -89,25 +89,25 @@ const primaireLegendItems: LegendItem[] = [
 // Légende pour ORS Collège — alignée sur les couleurs RÉELLES de ORSMap.tsx
 const collegeLegendItems: LegendItem[] = [
   {
-    icon: <div className="w-5 h-5 rounded-full border-2" style={{ borderColor: 'green', backgroundColor: 'rgba(0, 128, 0, 0.15)' }} />,
+    icon: <i className="fas fa-school w-5 text-center" style={{ color: 'green' }} />,
     label: 'CEG (Collège public)',
     color: 'green',
     description: 'Avec cercle de zone de couverture',
   },
   {
-    icon: <div className="w-4 h-4 rounded-full" style={{ backgroundColor: '#36b9cc' }} />,
+    icon: <i className="fas fa-book-open w-4 text-center" style={{ color: '#36b9cc' }} />,
     label: 'EPP dans zone CEG',
     color: '#36b9cc',
     description: 'École couverte par un CEG',
   },
   {
-    icon: <div className="w-4 h-4 rounded-full border-2" style={{ borderColor: '#dc2626', backgroundColor: '#36b9cc' }} />,
+    icon: <i className="fas fa-book-open w-4 text-center" style={{ color: '#dc2626' }} />,
     label: 'EPP HORS zone',
     color: '#dc2626',
     description: 'Cerclée rouge → éligible nouveau CEG',
   },
   {
-    icon: <div className="w-4 h-4 rounded-full border" style={{ borderColor: '#888', backgroundColor: '#ffffcc' }} />,
+    icon: <i className="fas fa-book-open w-4 text-center" style={{ color: '#b45309' }} />,
     label: 'École privée',
     color: '#ffffcc',
     description: 'Hors analyse d\'éligibilité',
@@ -138,19 +138,19 @@ const collegeLegendItems: LegendItem[] = [
 // Légende pour ORS Lycée — alignée sur ORSMap.tsx (lycées violet, collèges cyan)
 const lyceeLegendItems: LegendItem[] = [
   {
-    icon: <div className="w-5 h-5 rounded-full border-2" style={{ borderColor: '#8b5cf6', backgroundColor: 'rgba(139, 92, 246, 0.2)' }} />,
+    icon: <i className="fas fa-building w-5 text-center" style={{ color: '#8b5cf6' }} />,
     label: 'Lycée public',
     color: '#8b5cf6',
     description: 'Avec cercle de zone d\'attraction',
   },
   {
-    icon: <div className="w-4 h-4 rounded-full" style={{ backgroundColor: '#36b9cc' }} />,
+    icon: <i className="fas fa-school w-4 text-center" style={{ color: '#36b9cc' }} />,
     label: 'Collège existant',
     color: '#36b9cc',
     description: 'CEG potentiel pour extension',
   },
   {
-    icon: <div className="w-4 h-4 rounded-full border" style={{ borderColor: '#888', backgroundColor: '#ffffcc' }} />,
+    icon: <i className="fas fa-school w-4 text-center" style={{ color: '#b45309' }} />,
     label: 'Établissement privé',
     color: '#ffffcc',
   },

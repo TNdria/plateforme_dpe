@@ -50,12 +50,7 @@ const Referentiel = lazyRetry(
   'Referentiel'
 );
 const SIG = lazyRetry(() => import('@/pages/SIG'), 'SIG');
-const ORSPrimaire = lazyRetry(
-  () => import('@/pages/ORSPrimaire'),
-  'ORSPrimaire'
-);
-const ORSCollege = lazyRetry(() => import('@/pages/ORSCollege'), 'ORSCollege');
-const ORSLycee = lazyRetry(() => import('@/pages/ORSLycee'), 'ORSLycee');
+const ORS = lazyRetry(() => import('@/pages/ORS'), 'ORS');
 const DataViz = lazyRetry(() => import('@/pages/DataViz'), 'DataViz');
 const Donnees = lazyRetry(() => import('@/pages/Donnees'), 'Donnees');
 const Besoins = lazyRetry(() => import('@/pages/Besoins'), 'Besoins');
@@ -104,28 +99,29 @@ const App = () => (
                   />
                   <Route path="/sig" element={<SIG />} />
                   <Route
-                    path="/ors-primaire"
+                    path="/ors"
+                    element={<Navigate to="/ors/primaire" replace />}
+                  />
+                  <Route
+                    path="/ors/:niveau"
                     element={
                       <RequireAuth>
-                        <ORSPrimaire />
+                        <ORS />
                       </RequireAuth>
                     }
+                  />
+                  {/* Anciennes URLs conservées pour ne pas casser les liens existants */}
+                  <Route
+                    path="/ors-primaire"
+                    element={<Navigate to="/ors/primaire" replace />}
                   />
                   <Route
                     path="/ors-college"
-                    element={
-                      <RequireAuth>
-                        <ORSCollege />
-                      </RequireAuth>
-                    }
+                    element={<Navigate to="/ors/college" replace />}
                   />
                   <Route
                     path="/ors-lycee"
-                    element={
-                      <RequireAuth>
-                        <ORSLycee />
-                      </RequireAuth>
-                    }
+                    element={<Navigate to="/ors/lycee" replace />}
                   />
                   <Route path="/dataviz" element={<DataViz />} />
                   <Route

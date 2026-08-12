@@ -15,6 +15,11 @@ export interface CanvasPoint {
   popupHtml?: () => string;
   /** Lazy click handler */
   onClick?: () => void;
+  /** Handlers used by the optional establishment information panel. */
+  onMouseOver?: () => void;
+  onMouseOut?: () => void;
+  /** SVG marker for establishment levels; villages keep the lightweight circle. */
+  iconHtml?: string;
 }
 
 interface Props {
@@ -50,18 +55,30 @@ export const CanvasMarkersLayer = ({ points, visible = true }: Props) => {
       const end = Math.min(i + CHUNK, points.length);
       for (; i < end; i++) {
         const p = points[i];
-        const marker = L.circleMarker([p.lat, p.lng], {
-          radius: p.radius,
-          color: p.color,
-          fillColor: p.fillColor,
-          fillOpacity: p.fillOpacity ?? 0.75,
-          weight: p.weight ?? 1,
-          renderer,
-        });
+        const marker = p.iconHtml
+          ? L.marker([p.lat, p.lng], {
+              icon: L.divIcon({
+                className: 'ors-etablissement-marker',
+                html: p.iconHtml,
+                iconSize: [28, 28],
+                iconAnchor: [14, 14],
+              }),
+              keyboard: false,
+            })
+          : L.circleMarker([p.lat, p.lng], {
+              radius: p.radius,
+              color: p.color,
+              fillColor: p.fillColor,
+              fillOpacity: p.fillOpacity ?? 0.75,
+              weight: p.weight ?? 1,
+              renderer,
+            });
         if (p.popupHtml) {
           marker.bindPopup(() => p.popupHtml!(), { maxWidth: 320 });
         }
         if (p.onClick) marker.on('click', p.onClick);
+        if (p.onMouseOver) marker.on('mouseover', p.onMouseOver);
+        if (p.onMouseOut) marker.on('mouseout', p.onMouseOut);
         marker.addTo(group);
       }
       if (i < points.length) {
