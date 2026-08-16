@@ -6,216 +6,130 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const VERSION = "v46-20260531-redeploy-all-health";
+const VERSION = "v60-20260812-plan-officiel-docx";
 
-const systemPrompt = `Tu es un expert en statistiques et planification de l'éducation à Madagascar, spécialisé dans l'analyse des indicateurs du système éducatif selon les normes du Ministère de l'Éducation Nationale (MEN).
+const systemPrompt = `Tu es un expert en planification de l'éducation à Madagascar (Direction de la Planification de l'Éducation, MEN).
+Tu rédiges le "DOCUMENT DE DIAGNOSTIC DU SYSTÈME ÉDUCATIF" d'une CISCO ou d'une DREN, en respectant STRICTEMENT
+le plan officiel et les FORMULES OFFICIELLES ci-dessous. Tu n'inventes AUCUN chiffre : tu n'utilises que les
+données et indicateurs fournis dans le bloc DONNÉES. Si une donnée manque, écris "Donnée non disponible".
 
-## MISSION
-Produire un DIAGNOSTIC COMPLET et STRUCTURÉ du système éducatif suivant le CAHIER DES CHARGES OFFICIEL du MEN Madagascar pour l'élaboration du document de diagnostic du système éducatif local et régional. Le document doit contenir des TABLEAUX et des DONNÉES POUR GRAPHIQUES intégrés.
+## PLAN OFFICIEL À RESPECTER À LA LETTRE (titres et numérotation identiques)
 
-## STRUCTURE EXACTE DU DIAGNOSTIC (suivant le Plan Indicatif Officiel)
+# INTRODUCTION
+- Contexte national
+- Contexte au niveau CISCO/DREN
+- Objectif du document
 
-# INTRODUCTION & MONOGRAPHIE
-- Contexte géographique et socio-économique : Relief, accessibilité, activités économiques, poids démographique de la population d'âge scolaire
-- Organisation administrative scolaire : Nombre de ZAP, nombre d'établissements (Public/Privé)
+# MONOGRAPHIE
+- Localisation géographique de la CISCO/DREN
+- Population (utiliser la population totale et la population scolarisable fournies)
+- Situation socio-économique et culturelle
+- Division administrative
+- Organisation sommaire administrative dans la CISCO/DREN
+- Tableau de synthèse OBLIGATOIRE : lignes = Nombre d'établissements, Nombre de salles de classe,
+  Effectif élèves, Nombre d'enseignants ; colonnes = Préscolaire, Primaire, Collège, Lycée.
 
-# CHAPITRE I : COUVERTURE
-Ce chapitre montre l'évolution de l'accès à l'éducation et la capacité d'accueil du système scolaire de 2020 à 2024.
+# DIAGNOSTIC DU SYSTÈME ÉDUCATIF
 
-## 1.1 Couverture du préscolaire
-### 1.1.1 Évolution des taux de préscolarisation par genre (Graphique en courbes)
-### 1.1.2 Évolution des taux de préscolarisation par CISCO si DREN / par ZAP si CISCO (Graphique en courbes)
-### 1.1.3 Évolution des effectifs par secteur (Histogramme groupé Public vs Privé)
-### 1.1.4 Évolution du nombre d'établissements préscolaires par secteur
-### 1.1.5 Pourcentage d'EPP pourvu de CAP par CISCO
+## I. COUVERTURE
+### 1. COUVERTURE DU PRÉSCOLAIRE
+a. Évolution des taux de préscolarisation par genre — Taux = Effectif maternelle / enfants 3-5 ans × 100
+b. Évolution des taux de préscolarisation par CISCO / par ZAP
+c. Évolution des effectifs par secteur (Public / Privé)
+d. Évolution du nombre de CAP par secteur
+e. Pourcentage d'EPP pourvu de CAP = Nombre total de CAP / Nombre total d'EPP × 100
 
-## 1.2 Couverture du primaire
-### 1.2.1 Évolution des effectifs des élèves par secteur
-### 1.2.2 Évolution des effectifs par genre
-### 1.2.3 Évolution des TBA (évolution, par genre, par CISCO)
-### 1.2.4 Évolution des TBS par genre
-### 1.2.5 Évolution des TBS par CISCO
-### 1.2.6 Nombre de salles de classe pour 1000 enfants scolarisables
+### 2. COUVERTURE DU PRIMAIRE
+a. Capacité d'accueil : Nombre de salles pour 1000 enfants scolarisables = salles utilisables / enfants 6-10 ans × 1000 ;
+   Ratio classe pédagogique/salle = nombre de classes pédagogiques / nombre de salles définitives
+b. Évolution des effectifs par secteur
+c. Évolution des effectifs par genre
+d. Évolution du TBS par genre — TBS = effectif primaire / enfants 6-10 ans × 100
+e. Évolution du TBS par commune / par CISCO
+f. Évolution du TBA — TBA = (effectif 11ème − redoublants 11ème) / enfants de 6 ans × 100
+g. Évolution du TBA par commune / par CISCO
 
-## 1.3 Couverture du collège
-### 1.3.1 Évolution des effectifs des élèves par secteur
-### 1.3.2 Évolution des effectifs par genre
-### 1.3.3 Évolution des TBA (évolution, par genre, par CISCO)
-### 1.3.4 Évolution des TBS par genre
-### 1.3.5 Évolution des TBS par CISCO
+### 3. COUVERTURE DU COLLÈGE
+a. Capacité d'accueil : % d'élèves parcourant plus de 5 km ; taux d'utilisation des salles du collège
+b. Évolution des effectifs par secteur
+c. Évolution des effectifs par genre
+d. TBS par genre — effectif collège / enfants 11-14 ans × 100
+e. TBS par commune / par CISCO
+f. TBA — (effectif 6ème − redoublants 6ème) / enfants de 11 ans × 100
+g. TBA par commune / par CISCO
+h. Taux de transition 7ème → 6ème
 
-## 1.4 Couverture Lycée
-### 1.4.1 Évolution des effectifs des élèves par secteur
-### 1.4.2 Évolution des effectifs par genre
-### 1.4.3 Évolution des TBA (évolution, par genre, par CISCO)
-### 1.4.4 Évolution des TBS par genre
-### 1.4.5 Évolution des TBS par CISCO
+### 4. COUVERTURE DU LYCÉE
+a. Capacité d'accueil : taux d'utilisation des salles du lycée
+b. Évolution des effectifs par secteur
+c. Évolution des effectifs par genre
+d. TBS par genre — effectif lycée / enfants 15-17 ans × 100
+e. TBS par commune / par CISCO
+f. TBA — (effectif 2nde − redoublants 2nde) / enfants de 15 ans × 100
+g. TBA par commune / par CISCO
+h. Taux de transition 3ème → 2nde
 
-# CHAPITRE II : EFFICACITÉ INTERNE (FLUX ET RÉTENTION)
-L'objectif est d'analyser le "gaspillage" scolaire (redoublements/abandons).
+## II. EFFICACITÉ INTERNE
+### 1. PRIMAIRE
+a. Taux de promotion = (effectif classe supérieure année N − redoublants classe supérieure année N) / effectif classe année N-1 × 100
+b. Taux de redoublement = redoublants de la classe année N / effectif de la classe année N-1 × 100
+c. Taux d'abandon = 100 % − (taux de promotion + taux de redoublement)
+d. Profil de rétention (cohorte T1 → T5) ; Taux apparent de rétention = E(N, T5) / E(N-4, T1) × 100
+### 2. COLLÈGE  (mêmes formules : 6ème→5ème, etc., profil de rétention T6 → T9)
+### 3. LYCÉE   (mêmes formules : 2nde→1ère, etc., profil de rétention 2nde → Terminale)
 
-## 2.1 Primaire
-### 2.1.1 Le Redoublement pour les 5 années scolaires successifs
-#### 2.1.1.1 Évolution des taux de redoublement par année d'étude et par secteur
-#### 2.1.1.2 Évolution du pourcentage de redoublants par année d'étude et par secteur
-#### 2.1.1.3 Pourcentage de redoublants par genre par année d'étude et par secteur
-#### 2.1.1.4 Pourcentage de redoublants par CISCO par genre et par secteur
+## III. QUALITÉ ET ENVIRONNEMENT D'APPRENTISSAGE
+### 1. INTRANTS PÉDAGOGIQUES
+a. Préscolaire : % d'éducateurs formés ; ratio élève/éducateur par secteur ; ratio élève/place assise ; % de CAP dotés de kits didactiques
+b. Primaire : % d'enseignants qualifiés ; % d'enseignants non fonctionnaires (FRAM) ; ratio élève/enseignant par secteur ;
+   ratio élève/place assise ; ratio élève/manuel (Malagasy, Mathématiques, Français)
+c. Collège : % d'enseignants qualifiés par discipline (scientifique, littéraire, EPS) ; % non fonctionnaires ;
+   ratio élève/enseignant par discipline et par secteur ; taux d'utilisation des enseignants par discipline
+   (= nombre de sections × horaire maximal hebdomadaire / (nombre d'enseignants × horaire enseignant hebdomadaire) × 100)
+d. Lycée : % d'enseignants qualifiés par matière ; % non fonctionnaires ; ratio élève/enseignant par matière ; taux d'utilisation des enseignants par matière
+### 2. RÉSULTATS AUX EXAMENS
+a. Primaire : taux de réussite au CEPE = admis / inscrits en 7ème × 100 ; scores moyens dans les matières de base
+b. Collège : taux de réussite au BEPC = admis / inscrits en 3ème × 100 ; scores moyens dans les matières de base
+c. Lycée : taux de réussite au BACC par série
 
-### 2.1.2 L'abandon pour les 5 années scolaires successifs
-#### 2.1.2.1 Évolution des taux d'abandon par année d'étude et par secteur
-#### 2.1.2.2 Taux d'abandon par genre, par année d'étude et par secteur
-#### 2.1.2.3 Pourcentage d'abandon par année et par CISCO par genre et par secteur
+## IV. ANALYSE DES GOULOTS D'ÉTRANGLEMENT ET SYNTHÈSE
+Analyse offre / demande / qualité / gouvernance, appuyée sur les tableaux de bord CISCO-DREN.
 
-### 2.1.3 Taux de promotion pour les 5 années scolaires successifs
-#### 2.1.3.1 Évolution du taux de promotion par année d'étude et par secteur
-#### 2.1.3.2 Taux de promotion par genre, par année d'étude et par secteur
-#### 2.1.3.3 Taux de promotion par CISCO par genre et par secteur
+# ESTIMATION DES BESOINS
+- Projection des populations par âge
+- Projection des effectifs (primaire, collège, lycée)
+- Estimation des besoins en enseignants
+- Estimation des besoins en salles de classe
+- Estimation des besoins en kits scolaires
 
-## 2.2 Collège
-### 2.2.1 Le Redoublement (même structure que 2.1.1 avec 6ème, 5ème, 4ème, 3ème)
-### 2.2.2 L'abandon (même structure que 2.1.2)
-### 2.2.3 Taux de promotion (même structure que 2.1.3)
-
-## 2.3 Lycée
-### 2.3.1 Le Redoublement (même structure + par série: A, C, D, L, S, OSE)
-### 2.3.2 L'abandon (même structure + par série)
-### 2.3.3 Taux de promotion (même structure + par série)
-
-# CHAPITRE III : QUALITÉ ET ENVIRONNEMENT D'APPRENTISSAGE
-L'objectif est d'évaluer les conditions de réussite.
-
-## 3.1 Intrants pédagogiques
-### 3.1.1 Préscolaire
-#### 3.1.1.1 Pourcentage d'enseignants préscolaires qualifiés
-#### 3.1.1.2 Ratio élève par enseignant préscolaire par secteur
-#### 3.1.1.3 Ratio élève par place assise (mobilier adéquat)
-#### 3.1.1.4 Pourcentage de CAP doté de kits didactiques
-#### 3.1.1.5 Pourcentage de CAP doté de kits classes
-
-### 3.1.2 Primaire
-#### 3.1.2.1 Pourcentage d'enseignants primaires qualifiés
-#### 3.1.2.2 Ratio élève par enseignant primaire par secteur
-#### 3.1.2.3 Ratio élève par place assise (mobilier adéquat)
-#### 3.1.2.4 Ratio élève manuel
-
-### 3.1.3 Collège
-#### 3.1.3.1 Pourcentage d'enseignants collège qualifiés par genre et discipline
-#### 3.1.3.2 Ratio élève par enseignant du collège par secteur
-#### 3.1.3.3 Ratio élève par place assise (mobilier adéquat)
-#### 3.1.3.4 Ratio élève manuel
-
-## 3.2 Résultats aux examens (tendance 5 ans)
-Analyse de la corrélation entre les ressources (enseignants qualifiés) et les résultats.
-
-### 3.2.1 En Primaire
-#### 3.2.1.1 Taux de réussite aux examens CEPE (Évolution par genre par secteur par CISCO)
-#### 3.2.1.2 Scores moyens dans les matières de bases
-
-### 3.2.2 Au collège
-#### 3.2.2.1 Taux de réussite aux examens BEPC (Évolution par genre par secteur par CISCO)
-#### 3.2.2.2 Scores moyens dans les matières de bases
-
-### 3.2.3 Au Lycée
-#### 3.2.3.1 Taux de réussite aux examens BAC (Évolution par genre par secteur par CISCO)
-
-# 4. ANALYSE DES GOULOTS D'ÉTRANGLEMENT ET SYNTHÈSE
-Pour chaque chapitre, répondre à : Pourquoi les indicateurs ne progressent-ils pas ?
-- Offre : Manque de salles, éloignement (> 3km), manque d'enseignants
-- Demande : Coûts financiers, barrières culturelles, travail des enfants
-- Qualité : Manque de supervision pédagogique, absentéisme enseignant
+# PLAN DE PERFORMANCE
+I. PLAN D'ACTION (fiches-action : constat chiffré, cause probable, objectif SMART, activités, acteurs, ressources, indicateurs de suivi, échéance — au moins 4 fiches)
+II. ÉLABORATION DU BUDGET PROGRAMME
 
 # CONCLUSION
-- Synthèse des forces et faiblesses
-- Recommandations prioritaires classées par urgence
+- Forces
+- Faiblesses
+- Recommandations
 - Axes prioritaires d'intervention
 
-# 5. PLAN D'ACTION OPÉRATIONNEL POUR LES DIRECTEURS D'ÉCOLES
-
-Cette section est OBLIGATOIRE et doit être TRÈS DÉTAILLÉE. Le diagnostic ne doit pas s'arrêter au constat : il doit
-proposer aux Directeurs d'Écoles, aux Chefs ZAP et aux Chefs CISCO des orientations concrètes facilitant
-l'élaboration d'un plan d'action d'établissement avec des activités identifiées.
-
-Pour CHAQUE problème majeur identifié dans les chapitres précédents, produire une fiche-action structurée :
-
-## 5.x [Titre du problème ciblé]
-
-| Élément | Détail |
-|---|---|
-| **Constat chiffré** | Reprendre la donnée précise (ex : taux d'abandon T3→T4 = 14%, contre 5% norme) |
-| **Cause probable** | Analyse causale (offre / demande / qualité / gouvernance) |
-| **Objectif SMART** | Spécifique, Mesurable, Atteignable, Réaliste, Temporel (ex : ramener à 8% en 1 an) |
-| **Activités proposées** | Liste numérotée de 3 à 6 activités concrètes que le Directeur peut piloter |
-| **Acteurs responsables** | Directeur, FRAM, Chef ZAP, Chef CISCO, Communauté, PTF |
-| **Ressources nécessaires** | Humaines, matérielles, financières (estimation si possible) |
-| **Indicateurs de suivi** | Comment mesurer le progrès (mensuel/trimestriel) |
-| **Échéance** | Court terme (3 mois), moyen (6 mois), long (1 an) |
-
-EXEMPLES d'activités concrètes à proposer selon le problème :
-- **Faible rétention** : visites à domicile par FRAM, cantine scolaire, soutien scolaire ciblé, suivi nominatif des absents > 3 jours
-- **Manque d'enseignants qualifiés** : plan de formation continue, jumelage avec école performante, accompagnement pédagogique du Chef ZAP
-- **Faible TUPA / manque de tables-bancs** : mobilisation Caisse École, partenariat communal, plaidoyer auprès CISCO
-- **Faibles résultats CEPE** : remédiation sur matières faibles, simulations d'examen, club de lecture
-- **Disparité de genre** : sensibilisation parents, latrines filles, mentorat féminin
-- **Goulot d'étranglement (T1→T2)** : préscolarisation, classes passerelles, alphabétisation initiale
-
-Produire AU MOINS 4 fiches-action prioritaires (les 4 problèmes les plus critiques détectés dans le diagnostic).
-Le ton doit être DIRECTEMENT OPÉRATIONNEL, comme un guide pratique pour le Directeur d'École qui doit présenter
-son plan d'action lors du prochain Conseil d'École ou en COPIL CISCO.
-
-## RÈGLES DE FORMATAGE OBLIGATOIRES
-
-### TABLEAUX MARKDOWN
-Tu DOIS inclure des tableaux dans chaque section avec les données disponibles. Format:
-
-| Indicateur | Préscolaire | Primaire | Collège | Lycée |
-|---|---|---|---|---|
-| Effectifs | xxx | xxx | xxx | xxx |
-
-### DONNÉES POUR GRAPHIQUES
-Pour chaque section pertinente, inclus un bloc JSON pour graphique avec cette syntaxe EXACTE:
-
+## RÈGLES DE RÉDACTION ET DE FORMATAGE
+1. Tous les indicateurs d'évolution portent sur 3 à 5 années scolaires (utilise toutes les années fournies).
+2. Rappelle la FORMULE utilisée avant chaque indicateur clé (en italique), puis le chiffre calculé, puis l'interprétation.
+3. Un TABLEAU MARKDOWN par sous-section chiffrée (années en colonnes lorsqu'il s'agit d'une évolution).
+4. Pour chaque évolution, ajoute un bloc graphique :
 \`\`\`chart
-{
-  "type": "bar",
-  "title": "Titre du graphique",
-  "data": [
-    {"name": "Label1", "valeur": 100, "valeur2": 80},
-    {"name": "Label2", "valeur": 200, "valeur2": 150}
-  ],
-  "dataKeys": ["valeur", "valeur2"],
-  "colors": ["#3b82f6", "#f97316"],
-  "labels": ["Légende 1", "Légende 2"]
-}
+{"type":"line","title":"Titre","data":[{"name":"2022","valeur":10}],"dataKeys":["valeur"],"colors":["#1d4ed8"],"labels":["Légende"]}
 \`\`\`
+Types autorisés : "bar", "line", "pie" (pie : {"type":"pie","title":"...","data":[{"name":"X","value":10}]}).
+5. Normes de référence MEN : REM primaire 40-52 ; ratio élève/place assise ≤ 1 ; TBS cible 100 % ;
+   redoublement < 10 % ; abandon < 5 % ; enseignants qualifiés > 80 % ; salles en mauvais état < 10 % ;
+   distance max primaire 2 km, collège 5 km.
+6. Style académique, phrases courtes, analyse causale systématique. Aucune donnée inventée.`;
 
-Types de graphiques supportés: "bar", "line", "pie"
-Pour le pie: {"type": "pie", "title": "...", "data": [{"name": "Label", "value": 100}]}
-
-IMPORTANT pour les graphiques de tendance (évolution sur 5 ans): utiliser "line" avec les années en "name".
-
-### NORMES DE RÉFÉRENCE
-- REM acceptable: 40-52 élèves/enseignant (< 40: surplus, > 52: déficit)
-- TUPA (ratio élève/place assise): < 1: surplus, = 1: normal, > 1: déficit
-- TBS objectif: 100%
-- Taux de redoublement acceptable: < 10% (idéalement < 5%)
-- Taux d'abandon acceptable: < 5% (idéalement proche 0%)
-- Taux d'achèvement objectif: > 80%
-- Enseignants qualifiés: > 80%
-- Distance max école primaire: 2km
-- Distance max collège: 5km
-- Ratio élèves/salle de classe normal: 40-52
-
-### RÈGLES DE RÉDACTION
-1. Langage académique et professionnel
-2. Citer les chiffres précis et les comparer aux normes
-3. Interpréter chaque indicateur selon les standards internationaux
-4. Identifier problèmes structurels et causes probables (approche causale)
-5. Proposer recommandations concrètes et réalisables
-6. Inclure au minimum 8 tableaux et 6 graphiques dans le document
-7. Chaque sous-chapitre doit avoir un commentaire analytique
-8. Analyse comparative : tendance 5 ans et disparités spatiales (entre CISCO/ZAP)
-9. Pour chaque niveau (Préscolaire, Primaire, Collège, Lycée), analyser par secteur (Public/Privé) et par genre
-10. Le chapitre 5 (PLAN D'ACTION) est OBLIGATOIRE et doit contenir au moins 4 fiches-action SMART, opérationnelles et directement utilisables par les Directeurs d'Écoles`;
+function fmt(v: unknown): string {
+  if (v === null || v === undefined || v === "") return "n.d.";
+  return String(v);
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -225,167 +139,134 @@ serve(async (req) => {
   try {
     const url = new URL(req.url);
     if (url.searchParams.get("action") === "health") {
-      return new Response(
-        JSON.stringify({ ok: true, function: "ai-diagnostic", version: VERSION }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-cache" } },
-      );
+      return new Response(JSON.stringify({ ok: true, function: "ai-diagnostic", version: VERSION }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-cache" },
+      });
     }
 
-    const { data, drenName, ciscoName, niveau, annee } = await req.json();
-    const safeData = data && typeof data === "object" ? data : {};
+    const { dataset, drenName, ciscoName, annee } = await req.json();
+    if (!dataset || typeof dataset !== "object") {
+      return new Response(JSON.stringify({ error: "Dataset manquant : impossible de générer un diagnostic sans données réelles." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-    const userPrompt = `Produis un diagnostic complet du système éducatif pour:
-${drenName ? `**DREN:** ${drenName}` : '**Niveau National:** Madagascar'}
-${ciscoName ? `**CISCO:** ${ciscoName}` : ''}
-**Niveau d'analyse:** ${niveau || 'Tous niveaux'}
-**Année scolaire:** ${annee || '2024-2025'}
+    const years: number[] = Array.isArray(dataset.years) ? dataset.years : [];
+    const pop = dataset.population || {};
+    const last = annee && dataset.annees?.[String(annee)] ? Number(annee) : years[years.length - 1];
 
-## DONNÉES DISPONIBLES
+    const monographie = (() => {
+      const d = dataset.annees?.[String(last)];
+      if (!d) return "Données non disponibles";
+      const line = (label: string, get: (lv: string) => unknown) =>
+        `| ${label} | ${fmt(get("presco"))} | ${fmt(get("primaire"))} | ${fmt(get("college"))} | ${fmt(get("lycee"))} |`;
+      return [
+        "| Rubrique | Préscolaire | Primaire | Collège | Lycée |",
+        "|---|---|---|---|---|",
+        line("Nombre d'établissements", (lv) => d.etablissements[lv]?.total),
+        line("Nombre de salles de classe", (lv) => d.salles[lv]?.total),
+        line("Effectif élèves", (lv) => d.eleves[lv]?.total),
+        line("Nombre d'enseignants", (lv) => d.enseignants[lv]?.total),
+      ].join("\n");
+    })();
 
-### ÉTABLISSEMENTS (par niveau et année scolaire)
-${JSON.stringify(safeData.etablissements ?? null, null, 2)}
+    const userPrompt = `Rédige le DOCUMENT DE DIAGNOSTIC DU SYSTÈME ÉDUCATIF pour :
+${ciscoName ? `**CISCO :** ${ciscoName}` : drenName ? `**DREN :** ${drenName}` : "**Niveau national : Madagascar**"}
+${ciscoName && drenName ? `**DREN de rattachement :** ${drenName}` : ""}
+**Année scolaire de référence :** ${last}
+**Années couvertes par l'analyse d'évolution :** ${years.join(", ")}
 
-### EFFECTIFS ÉLÈVES - Préscolaire et Primaire
-${JSON.stringify(safeData.elevesN0N1 ?? null, null, 2)}
+## DONNÉES (source : base de données DPE — enquêtes FPE, examens officiels, projections démographiques)
 
-### EFFECTIFS ÉLÈVES - Collège et Lycée
-${JSON.stringify(safeData.elevesN2N3 ?? null, null, 2)}
+### Population scolarisable (${fmt(pop.source)})
+- Population totale : ${fmt(pop.total)}
+- Enfants 3-5 ans (préscolaire) : ${fmt(pop.p3_5)}
+- Enfants 6-10 ans (primaire) : ${fmt(pop.p6_10)} — dont 6 ans : ${fmt(pop.p6)}
+- Enfants 11-14 ans (collège) : ${fmt(pop.p11_14)} — dont 11 ans : ${fmt(pop.p11)}
+- Enfants 15-17 ans (lycée) : ${fmt(pop.p15_17)} — dont 15 ans : ${fmt(pop.p15)}
 
-### ENSEIGNANTS (par niveau et année scolaire)
-${JSON.stringify(safeData.enseignants ?? null, null, 2)}
+### Tableau monographique (année ${last})
+${monographie}
 
-### PLACES ASSISES / TABLES-BANCS
-${JSON.stringify(safeData.places ?? null, null, 2)}
+### Données brutes par année scolaire (effectifs par genre et secteur, effectifs et redoublants par classe,
+### établissements, salles de classe, sections pédagogiques, places assises, manuels, enseignants, examens)
+\`\`\`json
+${JSON.stringify(dataset.annees, null, 1)}
+\`\`\`
 
-### INDICATEURS CALCULÉS
-${safeData.indicateurs ? `
-**Ratio Élève/Maître (REM):**
-- Préscolaire: ${safeData.indicateurs.rem?.prescolaire?.toFixed(1) || 'N/A'}
-- Primaire: ${safeData.indicateurs.rem?.primaire?.toFixed(1) || 'N/A'}
-- Collège: ${safeData.indicateurs.rem?.college?.toFixed(1) || 'N/A'}
-- Lycée: ${safeData.indicateurs.rem?.lycee?.toFixed(1) || 'N/A'}
+### Indicateurs déjà calculés selon les formules officielles (par année)
+\`\`\`json
+${JSON.stringify(dataset.indicateurs, null, 1)}
+\`\`\`
 
-**Ratio Élève/Place assise (TUPA):**
-- Préscolaire: ${safeData.indicateurs.ratioElevePlaceAssise?.prescolaire?.toFixed(2) || 'N/A'}
-- Primaire: ${safeData.indicateurs.ratioElevePlaceAssise?.primaire?.toFixed(2) || 'N/A'}
-- Collège: ${safeData.indicateurs.ratioElevePlaceAssise?.college?.toFixed(2) || 'N/A'}
-- Lycée: ${safeData.indicateurs.ratioElevePlaceAssise?.lycee?.toFixed(2) || 'N/A'}
-
-**Données brutes:**
-${JSON.stringify(safeData.indicateurs.donnees, null, 2)}
-` : 'Indicateurs non calculés'}
-
-### DONNÉES NATIONALES DE FLUX (Source: Éducation en Chiffres 2024-2025)
-${safeData.fluxNationaux ? `
-**Taux de promotion (2023-2024):**
-- Primaire: G=${safeData.fluxNationaux.promotion?.primaire?.["2023-2024"]?.garcons}% F=${safeData.fluxNationaux.promotion?.primaire?.["2023-2024"]?.filles}% Total=${safeData.fluxNationaux.promotion?.primaire?.["2023-2024"]?.total}%
-- Collège: G=${safeData.fluxNationaux.promotion?.college?.["2023-2024"]?.garcons}% F=${safeData.fluxNationaux.promotion?.college?.["2023-2024"]?.filles}% Total=${safeData.fluxNationaux.promotion?.college?.["2023-2024"]?.total}%
-- Lycée: G=${safeData.fluxNationaux.promotion?.lycee?.["2023-2024"]?.garcons}% F=${safeData.fluxNationaux.promotion?.lycee?.["2023-2024"]?.filles}% Total=${safeData.fluxNationaux.promotion?.lycee?.["2023-2024"]?.total}%
-
-**Taux de redoublement (2023-2024):**
-- Primaire: Total=${safeData.fluxNationaux.redoublement?.primaire?.["2023-2024"]?.total}%
-- Collège: Total=${safeData.fluxNationaux.redoublement?.college?.["2023-2024"]?.total}%
-- Lycée: Total=${safeData.fluxNationaux.redoublement?.lycee?.["2023-2024"]?.total}%
-
-**Taux d'abandon (2023-2024):**
-- Primaire: Total=${safeData.fluxNationaux.abandon?.primaire?.["2023-2024"]?.total}%
-- Collège: Total=${safeData.fluxNationaux.abandon?.college?.["2023-2024"]?.total}%
-- Lycée: Total=${safeData.fluxNationaux.abandon?.lycee?.["2023-2024"]?.total}%
-` : ''}
-
-### INDICATEURS D'EFFICACITÉ NATIONALE
-${safeData.efficaciteNationale ? `
-**Taux d'achèvement (2024-2025):**
-- Primaire: ${safeData.efficaciteNationale.taux_achevement?.primaire?.["2024-2025"]?.total}%
-- Collège: ${safeData.efficaciteNationale.taux_achevement?.college?.["2024-2025"]?.total}%
-- Lycée: ${safeData.efficaciteNationale.taux_achevement?.lycee?.["2024-2025"]?.total}%
-
-**Taux de transition (2024-2025):**
-- Primaire→Collège: ${safeData.efficaciteNationale.taux_transition?.primaire_college?.["2024-2025"]?.total}%
-- Collège→Lycée: ${safeData.efficaciteNationale.taux_transition?.college_lycee?.["2024-2025"]?.total}%
-
-**Coefficient d'efficacité interne du primaire (2024-2025):**
-- Global: ${safeData.efficaciteNationale.coefficient_efficacite?.["2024-2025"]?.global}
-- Sans redoublement: ${safeData.efficaciteNationale.coefficient_efficacite?.["2024-2025"]?.sans_redoublement}
-- Sans abandon: ${safeData.efficaciteNationale.coefficient_efficacite?.["2024-2025"]?.sans_abandon}
-` : ''}
+### Profils de rétention (cohortes apparentes)
+\`\`\`json
+${JSON.stringify(dataset.retention, null, 1)}
+\`\`\`
 
 ---
-
-IMPORTANT: Génère le diagnostic complet en suivant EXACTEMENT la structure définie.
-- Inclus des TABLEAUX MARKDOWN dans chaque section avec les données.
-- Inclus des blocs \`\`\`chart pour les graphiques (bar, line, pie).
-- Utilise les données de flux (promotion, redoublement, abandon) et d'efficacité fournies.
-- Sois précis et analytique. Compare toujours aux normes de référence.
-- Chaque chapitre doit avoir une synthèse et analyse du goulot d'étranglement.
-- Propose des recommandations concrètes dans la conclusion.`;
+CONSIGNES FINALES :
+- Suis EXACTEMENT le plan officiel (INTRODUCTION, MONOGRAPHIE, I. COUVERTURE, II. EFFICACITÉ INTERNE,
+  III. QUALITÉ ET ENVIRONNEMENT D'APPRENTISSAGE, IV. GOULOTS D'ÉTRANGLEMENT, ESTIMATION DES BESOINS,
+  PLAN DE PERFORMANCE, CONCLUSION), avec la même numérotation.
+- Utilise EXCLUSIVEMENT les chiffres ci-dessus ; indique "Donnée non disponible" pour ce qui manque
+  (ex. distance parcourue par les élèves, kits didactiques, résultats du BACC si absents).
+- Chaque indicateur : formule en italique, valeur, comparaison à la norme, interprétation.
+- Tableaux markdown + blocs \`\`\`chart pour toutes les évolutions pluriannuelles.`;
 
     const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
-    if (!lovableApiKey) {
-      throw new Error("LOVABLE_API_KEY not configured");
-    }
-
-    console.log("Calling AI for diagnostic generation...", { drenName, ciscoName });
+    if (!lovableApiKey) throw new Error("LOVABLE_API_KEY not configured");
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${lovableApiKey}`,
-      },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${lovableApiKey}` },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "google/gemini-2.5-pro",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
-        max_tokens: 12000,
-        temperature: 0.7,
+        max_tokens: 32000,
+        temperature: 0.4,
       }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("AI API error:", errorText);
-      
+      console.error("AI API error:", response.status, errorText);
       if (response.status === 429) {
-        return new Response(
-          JSON.stringify({ error: "Limite de requêtes atteinte. Veuillez réessayer dans quelques instants." }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return new Response(JSON.stringify({ error: "Limite de requêtes atteinte. Veuillez réessayer dans quelques instants." }), {
+          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
       if (response.status === 402) {
-        return new Response(
-          JSON.stringify({ error: "Crédit insuffisant. Veuillez recharger votre compte." }),
-          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+        return new Response(JSON.stringify({ error: "Crédit insuffisant. Veuillez recharger votre compte." }), {
+          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
-      
       throw new Error(`AI API error: ${response.status}`);
     }
 
     const aiResponse = await response.json();
     const diagnosticText = aiResponse.choices?.[0]?.message?.content || "Erreur lors de la génération du diagnostic";
 
-    console.log("Diagnostic generated successfully, length:", diagnosticText.length);
-
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         diagnostic: diagnosticText,
-        drenName,
-        ciscoName,
-        niveau,
-        annee,
+        drenName: drenName || "",
+        ciscoName: ciscoName || "",
+        niveau: ciscoName ? "cisco" : drenName ? "dren" : "national",
+        annee: String(last),
         generatedAt: new Date().toISOString(),
-        indicateurs: safeData.indicateurs || null,
+        version: VERSION,
       }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
-  } catch (error) {
-    console.error("Error generating diagnostic:", error);
-    return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : "Erreur inconnue" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+  } catch (error: any) {
+    console.error("Error in ai-diagnostic:", error);
+    return new Response(JSON.stringify({ error: error?.message || "Erreur inconnue" }), {
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });

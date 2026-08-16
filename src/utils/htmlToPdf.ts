@@ -3,7 +3,7 @@
  * - Format A3 PAYSAGE (420 × 297 mm)
  * - Texte 100 % sélectionnable, SVG Recharts vectoriels (pas d'aplatissement)
  * - Aucun effet d'« aperçu papier » (pas d'ombre, pas de bordure de feuille)
- * - Le contenu occupe toute la surface utile de la page (pas de grandes marges)
+ * - Le contenu est mis à l'échelle pour remplir toute la largeur utile A3
  *
  * Mode 'print'   : déclenche directement la boîte d'impression du navigateur
  *                  (= « Enregistrer en PDF »). C'est la SEULE façon d'obtenir
@@ -12,10 +12,11 @@
  */
 export type HtmlPdfMode = 'print' | 'preview';
 
-// A3 paysage à 96 dpi
-const A3_LANDSCAPE_WIDTH_PX = 1684;  // ≈ 420 mm
-const A3_LANDSCAPE_HEIGHT_PX = 1191; // ≈ 297 mm
-const A3_MARGIN_MM = 4; // marges minimales pour maximiser la surface utile
+// A3 paysage à 96 dpi, marges déduites
+const A3_MARGIN_MM = 4;
+const MM_TO_PX = 96 / 25.4;
+const A3_LANDSCAPE_WIDTH_PX = Math.round((420 - A3_MARGIN_MM * 2) * MM_TO_PX); // ≈ 1554
+const A3_LANDSCAPE_HEIGHT_PX = Math.round((297 - A3_MARGIN_MM * 2) * MM_TO_PX); // ≈ 1093
 
 export const openHtmlPdf = (
   contentElement: HTMLElement,
@@ -51,11 +52,13 @@ export const openHtmlPdf = (
     }
   });
 
-  // Le TDB est conçu à 1191 px (largeur d'écran A3 portrait). En paysage
-  // la largeur utile est 1684 px → on applique un scale uniforme pour que le
-  // contenu remplisse toute la largeur de la page A3 paysage, sans
-  // distorsion et SANS perdre la sélection du texte (transform CSS).
-  const scale = A3_LANDSCAPE_WIDTH_PX / 1191;
+  // Largeur réelle du TDB à l'écran (fallback 1191 px = A3 portrait).
+  const srcRect = contentElement.getBoundingClientRect();
+  const contentWidth = Math.round(srcRect.width) || 1191;
+
+  // Mise à l'échelle uniforme pour remplir toute la largeur utile A3 paysage,
+  // sans distorsion et SANS perdre la sélection du texte (transform CSS).
+  const scale = A3_LANDSCAPE_WIDTH_PX / contentWidth;
 
   win.document.open();
   win.document.write(`<!DOCTYPE html>
@@ -91,9 +94,9 @@ export const openHtmlPdf = (
     }
     @media print { .__pdf-stage { padding-top: 0; } }
 
-    /* Contenu original 1191 px mis à l'échelle pour remplir 1684 px */
+    /* Contenu original mis à l'échelle pour remplir la largeur A3 */
     .__pdf-body {
-      width: 1191px;
+      width: ${contentWidth}px;
       transform: scale(${scale});
       transform-origin: top left;
       background: #fff;
@@ -147,17 +150,35 @@ export const openHtmlPdf = (
   </div>
   <script>
     (function () {
-      function adjustScalerHeight() {
+      var PAGE_H = ${A3_LANDSCAPE_HEIGHT_PX};
+      var STAGE_W = ${A3_LANDSCAPE_WIDTH_PX};
+      var BASE_W = ${contentWidth};
+
+      function fit() {
         var body = document.querySelector('.__pdf-body');
         var scaler = document.querySelector('.__pdf-scaler');
-        if (body && scaler) {
-          // Hauteur réelle après scaling
-          scaler.style.height = (body.getBoundingClientRect().height) + 'px';
+        if (!body || !scaler) return;
+
+        // Échelle de base : remplir la largeur A3
+        var scale = STAGE_W / BASE_W;
+        body.style.transform = 'scale(' + scale + ')';
+        var h = body.getBoundingClientRect().height;
+
+        // Si le contenu tient presque sur une page, on réduit légèrement
+        // pour qu'il remplisse exactement UNE page A3 paysage.
+        if (h > PAGE_H && h <= PAGE_H * 1.25) {
+          scale = scale * (PAGE_H / h);
+          body.style.transform = 'scale(' + scale + ')';
+          h = body.getBoundingClientRect().height;
         }
+        scaler.style.height = h + 'px';
       }
+
       function ready() {
-        adjustScalerHeight();
-        ${mode === 'print' ? "setTimeout(function(){ window.focus(); window.print(); }, 600);" : ''}
+        fit();
+        // Recalcul après stabilisation des polices / graphiques
+        setTimeout(fit, 400);
+        ${mode === 'print' ? "setTimeout(function(){ window.focus(); window.print(); }, 900);" : ''}
       }
       var imgs = document.querySelectorAll('img');
       if (imgs.length === 0) { setTimeout(ready, 300); return; }

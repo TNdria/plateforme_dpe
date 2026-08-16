@@ -3,8 +3,9 @@
 // Structural columns (SECTEUR, CODE_ZAP, CODE_DREN) are integer - no cast needed
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { Client } from "https://deno.land/x/postgres@v0.17.0/mod.ts";
+import { executeDiagnosticDataset } from "./diagnostic.ts";
 
-const VERSION = "v50-20260601-exam-dedup-year-and-django-preview";
+const VERSION = "v51-20260812-diagnostic-dataset-national";
 
 // PBKDF2-SHA256 password verification for Django auth
 async function verifyDjangoPassword(password: string, encoded: string): Promise<boolean> {
@@ -759,6 +760,14 @@ serve(async (req: Request) => {
       case "getStatsPlacesAssises":
         result = await executeStatsPlaces(client, codeDren, codeCisco, secteur);
         break;
+
+      case "getDiagnosticDataset": {
+        const dataset = await executeDiagnosticDataset(client, { codeDren, codeCisco });
+        try { await client.end(); } catch (_e) { /* ignore */ }
+        return new Response(JSON.stringify(serializeData(dataset)), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
       case "getZaps":
         result = await executeGetZaps(client, codeDren, codeCisco, codeCommune);

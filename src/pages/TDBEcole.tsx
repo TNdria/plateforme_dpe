@@ -6,7 +6,6 @@ import { Loader2, FileDown, School, Printer, Eye } from 'lucide-react';
 import { PDFViewer } from '@/components/pdf/PDFViewer';
 import { dashboardApi, tdbApi, Dren, Cisco, Zap } from '@/services/api';
 import { printTdb } from '@/utils/printTdb';
-import { generateMultiPagePdf } from '@/utils/multiPagePdf';
 import { TDBShell } from '@/components/tdb/TDBShell';
 import { TDBImportDialog } from '@/components/tdb/TDBImportDialog';
 import { DisparityIcon } from '@/components/score/DisparityIcon';
@@ -152,12 +151,9 @@ const TDBEcole = () => {
     if (!printRef.current || !tdbData) return;
     setGeneratingPdf(true);
     try {
-      await generateMultiPagePdf(
-        [printRef.current],
-        `TDB_ECOLE_${tdbData.names.NOM_ETAB}_${tdbData.annee}.pdf`,
-        { orientation: 'portrait', format: 'a3', windowWidth: 1191 }
-      );
-      toast.success('PDF téléchargé');
+      const { openHtmlPdf } = await import('@/utils/htmlToPdf');
+      openHtmlPdf(printRef.current, `TDB_ECOLE_${tdbData.names.NOM_ETAB}_${tdbData.annee}`, 'print');
+      toast.success('Fenêtre d\'impression A3 ouverte (texte sélectionnable)');
     } catch { toast.error('Erreur PDF'); }
     finally { setGeneratingPdf(false); }
   }, [tdbData]);

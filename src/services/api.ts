@@ -334,6 +334,16 @@ export const orsLyceeApi = {
     `${getSupabaseUrl()}/functions/v1/db-query?action=downloadCsv&code_dren=${codeDren}&code_cisco=${codeCisco}&type=lycee`,
 };
 
+// ===== Diagnostic API (dataset officiel MEN, base de données DPE) =====
+export interface DiagnosticDataset {
+  scope: { codeDren: number; codeCisco: number };
+  years: number[];
+  population: Record<string, any>;
+  annees: Record<string, any>;
+  indicateurs: Record<string, any>;
+  retention: Record<string, any>;
+}
+
 // Dashboard API - Uses direct database connection
 export const dashboardApi = {
   getDrens: () => fetchDB<Dren[]>('getDrens'),
@@ -748,6 +758,8 @@ export const besoinsApi = {
 
 // Diagnostic API - Based on src/diagnostic/urls.py
 export const diagnosticApi = {
+  getDataset: (codeDren: number, codeCisco: number) =>
+    fetchDB<DiagnosticDataset>('getDiagnosticDataset', { code_dren: codeDren, code_cisco: codeCisco }),
   getDrens: () => fetchDB<Dren[]>('getDrens'),
   getCiscos: (codeDren: number) => fetchDB<Cisco[]>('getCiscos', { code_dren: codeDren }),
   getDiagnostic: (codeDren: number, codeCisco: number) =>

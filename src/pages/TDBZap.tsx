@@ -6,7 +6,6 @@ import { Loader2, FileDown, MapPin, Printer, Eye } from 'lucide-react';
 import { PDFViewer } from '@/components/pdf/PDFViewer';
 import { dashboardApi, tdbApi, Dren, Cisco, Zap } from '@/services/api';
 import { printTdb } from '@/utils/printTdb';
-import { generateMultiPagePdf } from '@/utils/multiPagePdf';
 import emojiHappy from '@/assets/emoji-happy.jpg';
 import emojiSad from '@/assets/emoji-sad.jpg';
 import { TDBShell } from '@/components/tdb/TDBShell';
@@ -140,12 +139,9 @@ const TDBZap = () => {
     if (!tdbData || !printRef.current) return;
     setGeneratingPdf(true);
     try {
-      await generateMultiPagePdf(
-        [printRef.current],
-        `TDB_ZAP_${tdbData.names.ZAP}_${tdbData.annee}.pdf`,
-        { orientation: 'portrait', format: 'a3', windowWidth: 1191 }
-      );
-      toast.success('PDF téléchargé');
+      const { openHtmlPdf } = await import('@/utils/htmlToPdf');
+      openHtmlPdf(printRef.current, `TDB_ZAP_${tdbData.names.ZAP}_${tdbData.annee}`, 'print');
+      toast.success('Fenêtre d\'impression A3 ouverte (texte sélectionnable)');
     } catch (err) { console.error(err); toast.error('Erreur PDF'); }
     finally { setGeneratingPdf(false); }
   }, [tdbData]);

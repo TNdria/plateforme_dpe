@@ -1,6 +1,10 @@
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
-import { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, WidthType, BorderStyle, AlignmentType, ImageRun } from 'docx';
+import {
+  Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell,
+  WidthType, BorderStyle, AlignmentType, ImageRun, Header, Footer, PageNumber,
+  TableOfContents, LevelFormat, ShadingType, PageBreak, VerticalAlign, TabStopType, TabStopPosition,
+} from 'docx';
 import { saveAs } from 'file-saver';
 import { toast } from 'sonner';
 
@@ -496,65 +500,118 @@ export const exportDiagnosticToPDF = (result: DiagnosticResult) => {
 };
 
 // ======= DOCX EXPORT =======
+const A4_CONTENT_W = 9906; // 11906 - 2 x 1000 twip margins
+
 export const exportDiagnosticToDocx = async (result: DiagnosticResult) => {
   const blocks = parseForExport(result.diagnostic);
-  const children: (Paragraph | Table)[] = [];
+  const children: any[] = [];
+  const scope = result.ciscoName
+    ? `CISCO ${result.ciscoName}`
+    : result.drenName ? `DREN ${result.drenName}` : 'Niveau national — Madagascar';
 
-  // Title
-  children.push(new Paragraph({ text: 'DIAGNOSTIC DU SYSTÈME ÉDUCATIF', heading: HeadingLevel.TITLE, alignment: AlignmentType.CENTER }));
+  // ===== COVER PAGE =====
   children.push(new Paragraph({
-    children: [new TextRun({ text: 'Ministère de l\'Éducation Nationale', italics: true, size: 22, color: '337AB7' })],
-    alignment: AlignmentType.CENTER,
+    children: [new TextRun({ text: 'RÉPUBLIQUE DE MADAGASCAR', bold: true, size: 22, color: '1F3864' })],
+    alignment: AlignmentType.CENTER, spacing: { before: 600, after: 40 },
   }));
   children.push(new Paragraph({
-    children: [new TextRun({ text: result.drenName ? `DREN: ${result.drenName}${result.ciscoName ? ` — CISCO: ${result.ciscoName}` : ''}` : 'Niveau National', bold: true, size: 26 })],
-    alignment: AlignmentType.CENTER,
-    spacing: { before: 200 },
+    children: [new TextRun({ text: "MINISTÈRE DE L'ÉDUCATION NATIONALE", bold: true, size: 20, color: '337AB7' })],
+    alignment: AlignmentType.CENTER, spacing: { after: 20 },
   }));
   children.push(new Paragraph({
-    children: [new TextRun({ text: `Année scolaire: ${result.annee} | Généré le: ${new Date(result.generatedAt).toLocaleDateString('fr-FR', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`, size: 18, color: '666666' })],
+    children: [new TextRun({ text: "Direction de la Planification de l'Éducation (DPE)", italics: true, size: 18, color: '666666' })],
     alignment: AlignmentType.CENTER,
-    spacing: { after: 400 },
+    border: { bottom: { style: BorderStyle.SINGLE, size: 8, color: '337AB7', space: 6 } },
+    spacing: { after: 800 },
   }));
+  children.push(new Paragraph({
+    children: [new TextRun({ text: 'DOCUMENT DE DIAGNOSTIC', bold: true, size: 52, color: '1F3864' })],
+    alignment: AlignmentType.CENTER, spacing: { after: 80 },
+  }));
+  children.push(new Paragraph({
+    children: [new TextRun({ text: 'DU SYSTÈME ÉDUCATIF', bold: true, size: 52, color: '1F3864' })],
+    alignment: AlignmentType.CENTER, spacing: { after: 600 },
+  }));
+  children.push(new Paragraph({
+    children: [new TextRun({ text: scope, bold: true, size: 32, color: '337AB7' })],
+    alignment: AlignmentType.CENTER, spacing: { after: 120 },
+  }));
+  children.push(new Paragraph({
+    children: [new TextRun({ text: `Année scolaire de référence : ${result.annee}`, size: 24 })],
+    alignment: AlignmentType.CENTER, spacing: { after: 1200 },
+  }));
+  children.push(new Paragraph({
+    children: [new TextRun({
+      text: `Document généré le ${new Date(result.generatedAt).toLocaleDateString('fr-FR', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`,
+      size: 18, color: '888888',
+    })],
+    alignment: AlignmentType.CENTER,
+  }));
+  children.push(new Paragraph({ children: [new PageBreak()] }));
 
-  // Separator
+  // ===== TABLE OF CONTENTS =====
   children.push(new Paragraph({
-    border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: '337AB7' } },
+    children: [new TextRun({ text: 'SOMMAIRE', bold: true, size: 32, color: '1F3864' })],
+    alignment: AlignmentType.CENTER,
+    border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: '337AB7', space: 4 } },
     spacing: { after: 300 },
   }));
+  children.push(new TableOfContents('Sommaire', { hyperlink: true, headingStyleRange: '1-3' }));
+  children.push(new Paragraph({ children: [new PageBreak()] }));
 
-  const borderStyle = { style: BorderStyle.SINGLE, size: 1, color: '333333' };
+  const borderStyle = { style: BorderStyle.SINGLE, size: 1, color: 'B7C3D6' };
   const cellBorders = { top: borderStyle, bottom: borderStyle, left: borderStyle, right: borderStyle };
+  const cellMargins = { top: 60, bottom: 60, left: 110, right: 110 };
 
   const buildDocxTable = (header: string[], rows: string[][], title?: string) => {
+    const cols = Math.max(1, header.length);
+    const firstColW = cols > 2 ? Math.round(A4_CONTENT_W * 0.3) : Math.round(A4_CONTENT_W / cols);
+    const otherW = cols > 1 ? Math.floor((A4_CONTENT_W - firstColW) / (cols - 1)) : 0;
+    const colWidths = cols === 1
+      ? [A4_CONTENT_W]
+      : [A4_CONTENT_W - otherW * (cols - 1), ...Array(cols - 1).fill(otherW)];
+
     if (title) {
       children.push(new Paragraph({
-        children: [new TextRun({ text: `📊 ${title}`, bold: true, size: 22, color: '337AB7' })],
+        children: [new TextRun({ text: title, bold: true, size: 20, color: '337AB7' })],
         spacing: { before: 200, after: 100 },
       }));
     }
 
     const headerRow = new TableRow({
-      children: header.map(cell => new TableCell({
-        children: [new Paragraph({ children: [new TextRun({ text: cell, bold: true, size: 16, color: 'FFFFFF' })] })],
+      children: header.map((cell, ci) => new TableCell({
+        children: [new Paragraph({
+          alignment: ci === 0 ? AlignmentType.LEFT : AlignmentType.CENTER,
+          children: [new TextRun({ text: cell, bold: true, size: 17, color: 'FFFFFF' })],
+        })],
         borders: cellBorders,
-        shading: { fill: '337AB7' },
+        width: { size: colWidths[ci] ?? otherW, type: WidthType.DXA },
+        margins: cellMargins,
+        verticalAlign: VerticalAlign.CENTER,
+        shading: { fill: '337AB7', type: ShadingType.CLEAR },
       })),
       tableHeader: true,
     });
     const dataRows = rows.map((row, ri) => new TableRow({
-      children: row.map(cell => new TableCell({
-        children: [new Paragraph({ children: [new TextRun({ text: cell, size: 18 })] })],
+      children: row.slice(0, cols).map((cell, ci) => new TableCell({
+        children: [new Paragraph({
+          alignment: ci === 0 ? AlignmentType.LEFT : AlignmentType.CENTER,
+          children: [new TextRun({ text: cell.replace(/\*\*/g, ''), size: 17, bold: ci === 0 })],
+        })],
         borders: cellBorders,
-        shading: ri % 2 === 0 ? { fill: 'F5F5FA' } : undefined,
+        width: { size: colWidths[ci] ?? otherW, type: WidthType.DXA },
+        margins: cellMargins,
+        verticalAlign: VerticalAlign.CENTER,
+        shading: ri % 2 === 0 ? { fill: 'F2F6FC', type: ShadingType.CLEAR } : undefined,
       })),
     }));
 
     children.push(new Table({
       rows: [headerRow, ...dataRows],
-      width: { size: 100, type: WidthType.PERCENTAGE },
+      width: { size: A4_CONTENT_W, type: WidthType.DXA },
+      columnWidths: colWidths,
     }));
-    children.push(new Paragraph({ text: '', spacing: { after: 200 } }));
+    children.push(new Paragraph({ text: '', spacing: { after: 160 } }));
   };
 
   const addChartAsImage = async (chart: ChartBlock) => {
@@ -575,7 +632,7 @@ export const exportDiagnosticToDocx = async (result: DiagnosticResult) => {
       children.push(new Paragraph({
         children: [new ImageRun({
           data: byteArr,
-          transformation: { width: 520, height: 280 },
+          transformation: { width: 480, height: 258 },
           type: 'png',
         })],
         alignment: AlignmentType.CENTER,
@@ -593,12 +650,19 @@ export const exportDiagnosticToDocx = async (result: DiagnosticResult) => {
       const level = block.level === 1 ? HeadingLevel.HEADING_1
                   : block.level === 2 ? HeadingLevel.HEADING_2
                   : HeadingLevel.HEADING_3;
-      children.push(new Paragraph({ text: block.text, heading: level, spacing: { before: block.level === 1 ? 400 : 200, after: 100 } }));
+      if (block.level === 1) {
+        children.push(new Paragraph({ children: [new PageBreak()] }));
+      }
+      children.push(new Paragraph({
+        text: block.text.replace(/\*\*/g, ''),
+        heading: level,
+        spacing: { before: block.level === 1 ? 0 : 240, after: 120 },
+      }));
     } else if (block.type === 'list-item') {
       children.push(new Paragraph({
-        children: [new TextRun({ text: `• ${block.text}`, size: 20 })],
-        spacing: { after: 60 },
-        indent: { left: 360 },
+        numbering: { reference: 'diag-bullets', level: 0 },
+        children: [new TextRun({ text: block.text.replace(/\*\*/g, ''), size: 20 })],
+        spacing: { after: 60, line: 300 },
       }));
     } else if (block.type === 'paragraph') {
       const parts = block.text.split(/(\*\*[^*]+\*\*)/g);
@@ -607,7 +671,11 @@ export const exportDiagnosticToDocx = async (result: DiagnosticResult) => {
           return new TextRun({ text: p.slice(2, -2), bold: true, size: 20 });
         return new TextRun({ text: p, size: 20 });
       });
-      children.push(new Paragraph({ children: runs, spacing: { after: 80 } }));
+      children.push(new Paragraph({
+        children: runs,
+        alignment: AlignmentType.JUSTIFIED,
+        spacing: { after: 120, line: 300 },
+      }));
     } else if (block.type === 'table') {
       const tBlock = block as TableBlock;
       buildDocxTable(tBlock.header, tBlock.rows);
@@ -616,10 +684,76 @@ export const exportDiagnosticToDocx = async (result: DiagnosticResult) => {
     }
   }
 
-  const doc = new Document({ sections: [{ properties: { page: { margin: { top: 1000, right: 1000, bottom: 1000, left: 1000 } } }, children }] });
+  const doc = new Document({
+    styles: {
+      default: { document: { run: { font: 'Arial', size: 20 } } },
+      paragraphStyles: [
+        {
+          id: 'Heading1', name: 'Heading 1', basedOn: 'Normal', next: 'Normal', quickFormat: true,
+          run: { size: 30, bold: true, font: 'Arial', color: '1F3864' },
+          paragraph: { spacing: { before: 240, after: 200 }, outlineLevel: 0 },
+        },
+        {
+          id: 'Heading2', name: 'Heading 2', basedOn: 'Normal', next: 'Normal', quickFormat: true,
+          run: { size: 26, bold: true, font: 'Arial', color: '337AB7' },
+          paragraph: { spacing: { before: 240, after: 140 }, outlineLevel: 1 },
+        },
+        {
+          id: 'Heading3', name: 'Heading 3', basedOn: 'Normal', next: 'Normal', quickFormat: true,
+          run: { size: 22, bold: true, font: 'Arial', color: '2E4A6B' },
+          paragraph: { spacing: { before: 200, after: 100 }, outlineLevel: 2 },
+        },
+      ],
+    },
+    numbering: {
+      config: [{
+        reference: 'diag-bullets',
+        levels: [{
+          level: 0, format: LevelFormat.BULLET, text: '•', alignment: AlignmentType.LEFT,
+          style: { paragraph: { indent: { left: 460, hanging: 280 } } },
+        }],
+      }],
+    },
+    sections: [{
+      properties: {
+        page: {
+          size: { width: 11906, height: 16838 },
+          margin: { top: 1000, right: 1000, bottom: 1000, left: 1000 },
+        },
+      },
+      headers: {
+        default: new Header({
+          children: [new Paragraph({
+            tabStops: [{ type: TabStopType.RIGHT, position: TabStopPosition.MAX }],
+            border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: '337AB7', space: 2 } },
+            children: [
+              new TextRun({ text: "MEN — Direction de la Planification de l'Éducation", size: 16, color: '666666' }),
+              new TextRun({ text: `\t${scope} — ${result.annee}`, size: 16, color: '666666' }),
+            ],
+          })],
+        }),
+      },
+      footers: {
+        default: new Footer({
+          children: [new Paragraph({
+            alignment: AlignmentType.CENTER,
+            border: { top: { style: BorderStyle.SINGLE, size: 4, color: 'B7C3D6', space: 4 } },
+            children: [
+              new TextRun({ text: 'Page ', size: 16, color: '888888' }),
+              new TextRun({ children: [PageNumber.CURRENT], size: 16, color: '888888' }),
+              new TextRun({ text: ' / ', size: 16, color: '888888' }),
+              new TextRun({ children: [PageNumber.TOTAL_PAGES], size: 16, color: '888888' }),
+            ],
+          })],
+        }),
+      },
+      children,
+    }],
+  });
   const blob = await Packer.toBlob(doc);
-  saveAs(blob, `diagnostic_${result.drenName || 'national'}_${new Date().toISOString().split('T')[0]}.docx`);
-  toast.success('DOCX exporté avec succès');
+  const slug = (result.ciscoName || result.drenName || 'national').replace(/[^\w-]+/g, '_');
+  saveAs(blob, `Diagnostic_${slug}_${result.annee}.docx`);
+  toast.success('DOCX exporté (mise en page officielle MEN/DPE)');
 };
 
 // Helper: chart to table (fallback)

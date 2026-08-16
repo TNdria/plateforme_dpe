@@ -6,7 +6,6 @@ import { Loader2, FileDown, Building2, Printer, Eye } from 'lucide-react';
 import { PDFViewer } from '@/components/pdf/PDFViewer';
 import { dashboardApi, tdbApi, Dren, Cisco } from '@/services/api';
 import { printTdb } from '@/utils/printTdb';
-import { generateMultiPagePdf } from '@/utils/multiPagePdf';
 import { GenderLabel } from '@/components/score/GenderRow';
 import { ScoreY, computeScoreY } from '@/components/score/ScoreY';
 import { TDBShell } from '@/components/tdb/TDBShell';
@@ -111,12 +110,9 @@ const TDBCisco = () => {
     if (!tdbData || !printRef.current) return;
     setGeneratingPdf(true);
     try {
-      await generateMultiPagePdf(
-        [printRef.current],
-        `TDB_CISCO_${tdbData.names.CISCO}_${tdbData.annee}.pdf`,
-        { orientation: 'portrait', format: 'a3', windowWidth: 1191 }
-      );
-      toast.success('PDF téléchargé');
+      const { openHtmlPdf } = await import('@/utils/htmlToPdf');
+      openHtmlPdf(printRef.current, `TDB_CISCO_${tdbData.names.CISCO}_${tdbData.annee}`, 'print');
+      toast.success('Fenêtre d\'impression A3 ouverte (texte sélectionnable)');
     } catch (err) { console.error(err); toast.error('Erreur PDF'); }
     finally { setGeneratingPdf(false); }
   }, [tdbData]);
@@ -188,31 +184,62 @@ const TDBCisco = () => {
       },
     ];
 
-    // Efficience scatter data
-    const efficienceData = (tdbData.efficience || []).map((item: any) => {
-      const nbrEleve = Number(item.nbr_eleve || 0);
-      const persEnClasse = Number(item.pers_en_classe || 0);
+    // Efficience scatter data — calcul commun (mêmes formules que la grille)
+    const scoresFrom = (src: {
+      nbr_eleve?: any; pers_en_classe?: any; nbr_etab?: any; etab_eau?: any; etab_elec?: any;
+      red_g?: any; red_f?: any; eff_t1?: any; eff_t5?: any; admis?: any; inscrits?: any; tpa?: any;
+    }) => {
+      const nbrEleve = Number(src.nbr_eleve || 0);
+      const persEnClasse = Number(src.pers_en_classe || 0);
       const rem = nbrEleve > 0 && persEnClasse > 0 ? nbrEleve / persEnClasse : 0;
       const remScore = rem > 0 ? (rem <= 45 ? 100 : rem >= 60 ? 0 : ((60 - rem) / 15) * 100) : 0;
-      const nbrEtab = Number(item.nbr_etab || 0);
-      const eau = nbrEtab > 0 ? Number(item.etab_eau || 0) / nbrEtab * 100 : 0;
-      const elec = nbrEtab > 0 ? Number(item.etab_elec || 0) / nbrEtab * 100 : 0;
-      const ressourcesScore = (remScore + eau + elec) / 3;
-      const red = nbrEleve > 0 ? (Number(item.red_g || 0) + Number(item.red_f || 0)) / nbrEleve * 100 : 0;
-      const retention = Number(item.eff_t1 || 0) > 0 ? Number(item.eff_t5 || 0) / Number(item.eff_t1) * 100 : 0;
-      const admis = Number(item.admis || 0);
-      const inscrits = Number(item.inscrits_cepe || 0);
-      const txAdmis = inscrits > 0 ? admis / inscrits * 100 : 0;
-      const tpa = Number(item.tpa || txAdmis || 0);
-      const resultatsScore = ((100 - Math.min(red, 100)) + retention + tpa + txAdmis) / 4;
-      return {
-        name: item.CISCO || '',
-        code: item.CODE_CISCO,
-        x: Number(ressourcesScore.toFixed(1)),
-        y: Number(resultatsScore.toFixed(1)),
-        isCurrent: Number(item.CODE_CISCO) === Number(selectedCisco),
-      };
+      const nbrEtab = Number(src.nbr_etab || 0);
+      const eau = nbrEtab > 0 ? Math.min((Number(src.etab_eau || 0) / nbrEtab) * 100, 100) : 0;
+      const elec = nbrEtab > 0 ? Math.min((Number(src.etab_elec || 0) / nbrEtab) * 100, 100) : 0;
+      const x = (remScore + eau + elec) / 3;
+      const red = nbrEleve > 0 ? ((Number(src.red_g || 0) + Number(src.red_f || 0)) / nbrEleve) * 100 : 0;
+      const retention = Number(src.eff_t1 || 0) > 0 ? (Number(src.eff_t5 || 0) / Number(src.eff_t1)) * 100 : 0;
+      const inscrits = Number(src.inscrits || 0);
+      const txAdmis = inscrits > 0 ? (Number(src.admis || 0) / inscrits) * 100 : 0;
+      const tpa = Number(src.tpa || txAdmis || 0);
+      const parts = [100 - Math.min(red, 100), retention, tpa, txAdmis].filter((v) => isFinite(v));
+      const y = parts.length ? parts.reduce((a, b) => a + b, 0) / parts.length : 0;
+      return { x: Number(x.toFixed(1)), y: Number(y.toFixed(1)) };
+    };
+
+    // Agrégat -> source de scores (à partir des données déjà affichées ci-dessus)
+    const aggToSrc = (a: any) => ({
+      nbr_eleve: a?.ressources?.nbr_eleve,
+      pers_en_classe: a?.personnel?.pers_en_classe,
+      nbr_etab: a?.ressources?.nbr_etab,
+      etab_eau: a?.ressources?.etab_eau,
+      etab_elec: a?.ressources?.etab_elec,
+      red_g: a?.ressources?.red_g,
+      red_f: a?.ressources?.red_f,
+      eff_t1: a?.ressources?.eff_t1,
+      eff_t5: a?.ressources?.eff_t5,
+      admis: Number(a?.cepe?.admis_g || 0) + Number(a?.cepe?.admis_f || 0),
+      inscrits: Number(a?.cepe?.nbr_g || 0) + Number(a?.cepe?.nbr_f || 0),
     });
+
+    const rawEfficience = (tdbData.efficience || []).map((item: any) => ({
+      name: item.CISCO || '',
+      code: item.CODE_CISCO,
+      isCurrent: Number(item.CODE_CISCO) === Number(selectedCisco),
+      ...scoresFrom({ ...item, inscrits: item.inscrits_cepe }),
+    }));
+
+    // Fallback : si le backend ne renvoie pas la liste des CISCO, on compare
+    // la CISCO courante à sa DREN et à MADA avec les données déjà affichées.
+    const fallbackEfficience = [
+      { name: tdbData.names?.CISCO || 'CISCO', code: selectedCisco, isCurrent: true, ...scoresFrom(aggToSrc(c)) },
+      { name: `DREN ${tdbData.names?.DREN || ''}`.trim(), code: 'dren', isCurrent: false, ...scoresFrom(aggToSrc(d)) },
+      { name: 'MADAGASCAR', code: 'mada', isCurrent: false, ...scoresFrom(aggToSrc(m)) },
+    ];
+
+    const hasRaw = rawEfficience.length > 0 && !rawEfficience.every((p: any) => p.x === 0 && p.y === 0);
+    const efficienceData = hasRaw ? rawEfficience : fallbackEfficience;
+
 
     return (
       <div style={{ width: '100%', maxWidth: '1191px', margin: '0 auto', font: '12px verdana', background: '#fff' }}>
@@ -721,16 +748,12 @@ const TDBCisco = () => {
             </BarChart>
           </ResponsiveContainer>
         </div>
-        {/* Ligne 2: Efficience — une seule vue (scatter peer-comparison de la CISCO) */}
-        <div style={{ border: '1px solid #000', padding: 10 }}>
-          <h4 style={{ textAlign: 'center', fontSize: 12, fontWeight: 'bold', marginBottom: 8 }}>Efficience — votre CISCO (en rouge) parmi les autres</h4>
-          {efficienceData.length === 0 || efficienceData.every((p:any)=>p.x===0 && p.y===0) ? (
-            <div style={{ height: 320, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888', fontSize: 11, fontStyle: 'italic' }}>
-              Aucune donnée d'efficience disponible pour cette année.
-            </div>
-          ) : (
+        {/* Ligne 2: Efficience — scatter (55%) + grille de positionnement (45%) */}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+          <div style={{ border: '1px solid #000', padding: 10, width: '55%' }}>
+            <h4 style={{ textAlign: 'center', fontSize: 12, fontWeight: 'bold', marginBottom: 8 }}>Efficience — votre CISCO (en rouge) comparée à sa DREN et à MADA</h4>
             <ResponsiveContainer width="100%" height={320}>
-              <ScatterChart margin={{ top: 10, right: 30, left: 10, bottom: 20 }}>
+              <ScatterChart margin={{ top: 10, right: 40, left: 10, bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis type="number" dataKey="x" name="Ressources" domain={[0, 100]} label={{ value: 'Ressources (%)', position: 'insideBottom', offset: -10, fontSize: 10 }} tick={{ fontSize: 9 }} />
                 <YAxis type="number" dataKey="y" name="Résultats" domain={[0, 100]} label={{ value: 'Résultats (%)', angle: -90, position: 'insideLeft', fontSize: 10 }} tick={{ fontSize: 9 }} />
@@ -743,8 +766,13 @@ const TDBCisco = () => {
                 </Scatter>
               </ScatterChart>
             </ResponsiveContainer>
-          )}
+          </div>
+          <div style={{ border: '1px solid #000', padding: 10, width: '45%' }}>
+            <h4 style={{ textAlign: 'center', fontSize: 12, fontWeight: 'bold', marginBottom: 8 }}>Positionnement ressources / résultats</h4>
+            <EfficienceGrid entity={c} niveau="primaire" entityLabel="CISCO" />
+          </div>
         </div>
+
           </div>
           </div>
         </div>
