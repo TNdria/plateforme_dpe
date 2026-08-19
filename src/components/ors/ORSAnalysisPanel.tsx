@@ -1,13 +1,21 @@
-import { useMemo } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
-import { AlertTriangle, CheckCircle2, Building2, MapPin, Hammer, Wrench, PackagePlus } from 'lucide-react';
-import { Etablissement, Village } from '@/hooks/useMapData';
-import { SpatialGrid } from '@/lib/spatialGrid';
+import { useMemo } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Building2,
+  MapPin,
+  Hammer,
+  Wrench,
+  PackagePlus,
+} from "lucide-react";
+import { Etablissement, Village } from "@/hooks/useMapData";
+import { SpatialGrid } from "@/lib/spatialGrid";
 
 interface ORSAnalysisPanelProps {
-  type: 'primaire' | 'college' | 'lycee';
+  type: "primaire" | "college" | "lycee";
   primaires: Etablissement[];
   colleges: Etablissement[];
   lycees: Etablissement[];
@@ -29,15 +37,9 @@ export const ORSAnalysisPanel = ({
 }: ORSAnalysisPanelProps) => {
   const analysis = useMemo(() => {
     // Sélectionne la liste cible selon le type
-    const targets =
-      type === 'primaire' ? primaires :
-      type === 'college' ? colleges :
-      lycees;
+    const targets = type === "primaire" ? primaires : type === "college" ? colleges : lycees;
 
-    const refs =
-      type === 'primaire' ? [] :
-      type === 'college' ? primaires :
-      colleges;
+    const refs = type === "primaire" ? [] : type === "college" ? primaires : colleges;
 
     const total = targets.length;
     const reconstructions = targets.filter((e) => e.eligible_reconstruction).length;
@@ -57,8 +59,10 @@ export const ORSAnalysisPanel = ({
     // Pour primaire : villages hors rayon (grille spatiale: O(N) au lieu de O(N×M))
     let villagesHorsZone = 0;
     let villagesTotal = 0;
-    if (type === 'primaire' && villages.length > 0) {
-      const ecolesPub = primaires.filter((p) => p.SECTEUR === 0 && p.latitude && p.longitude) as Array<{ latitude: number; longitude: number }>;
+    if (type === "primaire" && villages.length > 0) {
+      const ecolesPub = primaires.filter(
+        (p) => (Number(p.SECTEUR) === 0 || Number(p.SECTEUR) === 2) && p.latitude && p.longitude,
+      ) as Array<{ latitude: number; longitude: number }>;
       const grid = new SpatialGrid(ecolesPub, radius);
       for (const v of villages) {
         if (v.latitude == null || v.longitude == null) continue;
@@ -70,11 +74,19 @@ export const ORSAnalysisPanel = ({
     // Pour collège/lycée : refs (EPP/CEG) hors zone des cibles
     let refsHorsZone = 0;
     let refsTotal = 0;
-    if (type !== 'primaire' && refs.length > 0) {
-      const targetsCoords = targets.filter((t) => t.latitude && t.longitude) as Array<{ latitude: number; longitude: number }>;
+    if (type !== "primaire" && refs.length > 0) {
+      const targetsCoords = targets.filter((t) => t.latitude && t.longitude) as Array<{
+        latitude: number;
+        longitude: number;
+      }>;
       const grid = new SpatialGrid(targetsCoords, radius);
       for (const r of refs) {
-        if (r.SECTEUR !== 0 || r.latitude == null || r.longitude == null) continue;
+        if (
+          (Number(r.SECTEUR) !== 0 && Number(r.SECTEUR) !== 2) ||
+          r.latitude == null ||
+          r.longitude == null
+        )
+          continue;
         refsTotal++;
         if (!grid.hasNeighborWithin(r.latitude, r.longitude, radius)) refsHorsZone++;
       }
@@ -94,9 +106,9 @@ export const ORSAnalysisPanel = ({
   }, [type, primaires, colleges, lycees, villages, radius]);
 
   const labels = {
-    primaire: { unit: 'EPP', refUnit: 'Village' },
-    college: { unit: 'CEG', refUnit: 'EPP' },
-    lycee: { unit: 'Lycée', refUnit: 'CEG' },
+    primaire: { unit: "EPP", refUnit: "Village" },
+    college: { unit: "CEG", refUnit: "EPP" },
+    lycee: { unit: "Lycée", refUnit: "CEG" },
   }[type];
 
   if (analysis.total === 0) return null;
@@ -164,13 +176,13 @@ export const ORSAnalysisPanel = ({
           <div className="flex items-center justify-between text-xs pt-1 border-t border-border">
             <span className="text-muted-foreground">Table-bancs (2 places) requis</span>
             <Badge variant="outline" className="bg-blue-500/10 text-blue-700">
-              {analysis.tableBancs.toLocaleString('fr-FR')}
+              {analysis.tableBancs.toLocaleString("fr-FR")}
             </Badge>
           </div>
         )}
 
         {/* Villages hors zone (primaire) */}
-        {type === 'primaire' && analysis.villagesTotal > 0 && (
+        {type === "primaire" && analysis.villagesTotal > 0 && (
           <div className="pt-2 border-t border-border space-y-1">
             <div className="flex items-center justify-between text-xs">
               <span className="flex items-center gap-1.5 text-foreground">
@@ -191,7 +203,7 @@ export const ORSAnalysisPanel = ({
         )}
 
         {/* Refs hors zone (college/lycée) */}
-        {type !== 'primaire' && analysis.refsTotal > 0 && (
+        {type !== "primaire" && analysis.refsTotal > 0 && (
           <div className="pt-2 border-t border-border space-y-1">
             <div className="flex items-center justify-between text-xs">
               <span className="flex items-center gap-1.5 text-foreground">

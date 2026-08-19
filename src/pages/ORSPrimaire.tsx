@@ -1,22 +1,53 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
-import { useMapData, Etablissement } from '@/hooks/useMapData';
-import { MapFilters, type LayerVisibility, type TableBancFilter } from '@/components/ors/MapFilters';
-import { ORSMap } from '@/components/ors/ORSMap';
-import { ORSAnalysisPanel } from '@/components/ors/ORSAnalysisPanel';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { toast } from 'sonner';
-import { MapPin, School, Users, AlertTriangle, Loader2 } from 'lucide-react';
-import DataActionsBar from '@/components/admin/DataActionsBar';
-import { useUserScope } from '@/hooks/useUserScope';
-import useAutoApplyScope from '@/hooks/useAutoApplyScope';
-import { VillageAnalysisDialog } from '@/components/ors/VillageAnalysisDialog';
-import type { VillageAnalysisResult } from '@/components/ors/MapInteractions';
-import { HelpPanel } from '@/components/ors/HelpPanel';
-import { downloadAsCsv, ORS_CSV_COLUMNS } from '@/utils/csvExport';
+import { useState, useCallback, useMemo, useEffect } from "react";
+import { useMapData, Etablissement } from "@/hooks/useMapData";
+import {
+  MapFilters,
+  type LayerVisibility,
+  type TableBancFilter,
+} from "@/components/ors/MapFilters";
+import { ORSMap } from "@/components/ors/ORSMap";
+import { ORSAnalysisPanel } from "@/components/ors/ORSAnalysisPanel";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
+import { MapPin, School, Users, AlertTriangle, Loader2 } from "lucide-react";
+import DataActionsBar from "@/components/admin/DataActionsBar";
+import { useUserScope } from "@/hooks/useUserScope";
+import useAutoApplyScope from "@/hooks/useAutoApplyScope";
+import { VillageAnalysisDialog } from "@/components/ors/VillageAnalysisDialog";
+import type { VillageAnalysisResult } from "@/components/ors/MapInteractions";
+import { HelpPanel } from "@/components/ors/HelpPanel";
+import { downloadAsCsv, ORS_CSV_COLUMNS } from "@/utils/csvExport";
+
+const normalizeSectorValue = (value: unknown): 0 | 1 | 2 | null => {
+  if (value === null || value === undefined || value === "") return null;
+
+  if (typeof value === "number") {
+    if (value === 0 || value === 2) return value;
+    if (value === 1) return 1;
+    return null;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toUpperCase();
+    if (["0", "PUBLIC", "PUBLIQUE"].includes(normalized)) return 0;
+    if (["2", "PUBLIC_2", "PUBLIQUE_2"].includes(normalized)) return 2;
+    if (["1", "PRIVE", "PRIVÉ", "PRIVEE", "PRIVATE"].includes(normalized)) return 1;
+    return null;
+  }
+
+  return null;
+};
+
+const isPublicSectorValue = (value: unknown): boolean => {
+  const normalized = normalizeSectorValue(value);
+  return normalized === 0 || normalized === 2;
+};
+
+const isPrivateSectorValue = (value: unknown): boolean => normalizeSectorValue(value) === 1;
 
 const ORSPrimaire = () => {
   const {
@@ -35,7 +66,7 @@ const ORSPrimaire = () => {
     fetchEtablissements,
     resetFilter,
     getDownloadUrl,
-  } = useMapData('primaire');
+  } = useMapData("primaire");
 
   const scope = useUserScope();
 
@@ -43,46 +74,45 @@ const ORSPrimaire = () => {
   const [mapCenter, setMapCenter] = useState<[number, number]>([-18.9189596, 47.5135653]);
   const [mapZoom, setMapZoom] = useState(6);
   const [selectedEtablissement, setSelectedEtablissement] = useState<Etablissement | null>(null);
-  const [categoryFilter, setCategoryFilter] = useState<string>('aucune');
+  const [categoryFilter, setCategoryFilter] = useState<string>("aucune");
   const [analysisResult, setAnalysisResult] = useState<VillageAnalysisResult | null>(null);
   const [layerVisibility, setLayerVisibility] = useState<LayerVisibility>({
     publiques: true,
     prives: true,
     villages: true,
-    nouvelleCreation: true,
   });
-  const [tableBancFilter, setTableBancFilter] = useState<TableBancFilter>('tous');
+  const [tableBancFilter, setTableBancFilter] = useState<TableBancFilter>("tous");
 
   // Établissements filtrés selon les couches visibles (publiques/privées)
   const filteredPrimaires = useMemo(() => {
-    return primaires.filter(p => {
-      if (p.SECTEUR === 0 && !layerVisibility.publiques) return false;
-      if (p.SECTEUR === 1 && !layerVisibility.prives) return false;
+    return primaires.filter((p) => {
+      if (isPublicSectorValue(p.SECTEUR) && !layerVisibility.publiques) return false;
+      if (isPrivateSectorValue(p.SECTEUR) && !layerVisibility.prives) return false;
       return true;
     });
   }, [primaires, layerVisibility.publiques, layerVisibility.prives]);
 
   const filteredVillages = useMemo(
-    () => layerVisibility.villages ? villages : [],
-    [villages, layerVisibility.villages]
+    () => (layerVisibility.villages ? villages : []),
+    [villages, layerVisibility.villages],
   );
 
   // Calculer les statistiques
   const stats = useMemo(() => {
     const total = primaires.length;
-    const publics = primaires.filter(p => p.SECTEUR === 0).length;
-    const prives = primaires.filter(p => p.SECTEUR === 1).length;
+    const publics = primaires.filter((p) => isPublicSectorValue(p.SECTEUR)).length;
+    const prives = primaires.filter((p) => isPrivateSectorValue(p.SECTEUR)).length;
     return { total, publics, prives };
   }, [primaires]);
 
   const handleApplyFilter = useCallback(async () => {
     if (selectedDren === 0) {
-      toast.error('Veuillez sélectionner une DREN');
+      toast.error("Veuillez sélectionner une DREN");
       return;
     }
-    
+
     await fetchEtablissements(selectedDren, selectedCisco);
-    
+
     // Ajuster le zoom selon la sélection
     if (selectedCisco > 0) {
       setMapZoom(10);
@@ -92,20 +122,28 @@ const ORSPrimaire = () => {
   }, [selectedDren, selectedCisco, fetchEtablissements]);
 
   useAutoApplyScope({
-    scope, selectedDren, selectedCisco, isFiltered,
-    handleDrenChange, handleCiscoChange, fetchEtablissements, setMapZoom,
+    scope,
+    selectedDren,
+    selectedCisco,
+    isFiltered,
+    handleDrenChange,
+    handleCiscoChange,
+    fetchEtablissements,
+    setMapZoom,
   });
 
   const handleDownload = useCallback(() => {
     if (!primaires.length) {
-      toast.error('Aucune donnée à télécharger');
+      toast.error("Aucune donnée à télécharger");
       return;
     }
-    const drenLabel = drens.find(d => d.CODE_DREN === selectedDren)?.DREN ?? `dren${selectedDren}`;
-    const ciscoLabel = selectedCisco > 0
-      ? (ciscos.find(c => c.CODE_CISCO === selectedCisco)?.CISCO ?? `cisco${selectedCisco}`)
-      : 'tous';
-    const filename = `ORS_PRIMAIRE_${drenLabel}_${ciscoLabel}_${new Date().toISOString().slice(0,10)}.csv`;
+    const drenLabel =
+      drens.find((d) => d.CODE_DREN === selectedDren)?.DREN ?? `dren${selectedDren}`;
+    const ciscoLabel =
+      selectedCisco > 0
+        ? (ciscos.find((c) => c.CODE_CISCO === selectedCisco)?.CISCO ?? `cisco${selectedCisco}`)
+        : "tous";
+    const filename = `ORS_PRIMAIRE_${drenLabel}_${ciscoLabel}_${new Date().toISOString().slice(0, 10)}.csv`;
     const ok = downloadAsCsv(primaires, filename, ORS_CSV_COLUMNS);
     if (ok) toast.success(`${primaires.length} établissements exportés`);
   }, [primaires, drens, ciscos, selectedDren, selectedCisco]);
@@ -180,7 +218,6 @@ const ORSPrimaire = () => {
             layerVisibility={layerVisibility}
             onLayerVisibilityChange={setLayerVisibility}
             showVillagesLayer
-            showNouvelleCreationLayer
             tableBancFilter={tableBancFilter}
             onTableBancFilterChange={setTableBancFilter}
           />
@@ -197,23 +234,37 @@ const ORSPrimaire = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="px-4 pb-4 pt-0">
-                <RadioGroup value={categoryFilter} onValueChange={setCategoryFilter} className="space-y-2">
+                <RadioGroup
+                  value={categoryFilter}
+                  onValueChange={setCategoryFilter}
+                  className="space-y-2"
+                >
                   <div className="flex items-center space-x-2 p-2 rounded-lg hover:bg-muted/50 transition-colors">
                     <RadioGroupItem value="aucune" id="aucune" />
-                    <Label htmlFor="aucune" className="text-sm cursor-pointer flex-1">Aucune</Label>
+                    <Label htmlFor="aucune" className="text-sm cursor-pointer flex-1">
+                      Aucune
+                    </Label>
                   </div>
                   <div className="flex items-center space-x-2 p-2 rounded-lg hover:bg-muted/50 transition-colors">
                     <RadioGroupItem value="extension" id="extension" />
-                    <Label htmlFor="extension" className="text-sm cursor-pointer flex-1">Extension</Label>
-                    <Badge variant="destructive" className="text-[10px]">Prioritaire</Badge>
+                    <Label htmlFor="extension" className="text-sm cursor-pointer flex-1">
+                      Extension
+                    </Label>
+                    <Badge variant="destructive" className="text-[10px]">
+                      Prioritaire
+                    </Badge>
                   </div>
                   <div className="flex items-center space-x-2 p-2 rounded-lg hover:bg-muted/50 transition-colors">
                     <RadioGroupItem value="reconstruction" id="reconstruction" />
-                    <Label htmlFor="reconstruction" className="text-sm cursor-pointer flex-1">Reconstruction</Label>
+                    <Label htmlFor="reconstruction" className="text-sm cursor-pointer flex-1">
+                      Reconstruction
+                    </Label>
                   </div>
                   <div className="flex items-center space-x-2 p-2 rounded-lg hover:bg-muted/50 transition-colors">
                     <RadioGroupItem value="rehabilitation" id="rehabilitation" />
-                    <Label htmlFor="rehabilitation" className="text-sm cursor-pointer flex-1">Réhabilitation</Label>
+                    <Label htmlFor="rehabilitation" className="text-sm cursor-pointer flex-1">
+                      Réhabilitation
+                    </Label>
                   </div>
                 </RadioGroup>
               </CardContent>
@@ -254,6 +305,7 @@ const ORSPrimaire = () => {
             geoLayers={geoLayers}
             villages={filteredVillages}
             onVillageAnalysis={setAnalysisResult}
+            layerVisibility={layerVisibility}
           />
         </div>
       </div>
@@ -276,12 +328,16 @@ const ORSPrimaire = () => {
                 </div>
                 <div className="bg-muted/50 rounded-lg p-3">
                   <div className="text-xs text-muted-foreground">Secteur</div>
-                  <Badge variant={selectedEtablissement.SECTEUR === 0 ? 'default' : 'secondary'}>
-                    {selectedEtablissement.SECTEUR === 0 ? 'PUBLIC' : 'PRIVÉ'}
+                  <Badge
+                    variant={
+                      isPrivateSectorValue(selectedEtablissement.SECTEUR) ? "secondary" : "default"
+                    }
+                  >
+                    {isPrivateSectorValue(selectedEtablissement.SECTEUR) ? "PRIVÉ" : "PUBLIC"}
                   </Badge>
                 </div>
               </div>
-              
+
               <table className="w-full text-sm">
                 <tbody className="divide-y divide-border">
                   <tr className="hover:bg-muted/30">
@@ -289,28 +345,32 @@ const ORSPrimaire = () => {
                       <Users className="w-4 h-4 text-muted-foreground" />
                       Effectif T5
                     </td>
-                    <td className="py-2 text-right font-semibold">{selectedEtablissement.eff_t5 || '-'}</td>
+                    <td className="py-2 text-right font-semibold">
+                      {selectedEtablissement.eff_t5 || "-"}
+                    </td>
                   </tr>
                   <tr className="hover:bg-muted/30">
                     <td className="py-2 font-medium flex items-center gap-2">
                       <Users className="w-4 h-4 text-muted-foreground" />
                       Effectif Total 2024
                     </td>
-                    <td className="py-2 text-right font-semibold">{selectedEtablissement.eff_2024 || '-'}</td>
+                    <td className="py-2 text-right font-semibold">
+                      {selectedEtablissement.eff_2024 || "-"}
+                    </td>
                   </tr>
                   <tr className="hover:bg-muted/30">
                     <td className="py-2 font-medium flex items-center gap-2">
                       <MapPin className="w-4 h-4 text-muted-foreground" />
                       Commune
                     </td>
-                    <td className="py-2 text-right">{selectedEtablissement.COMMUNE || '-'}</td>
+                    <td className="py-2 text-right">{selectedEtablissement.COMMUNE || "-"}</td>
                   </tr>
                   <tr className="hover:bg-muted/30">
                     <td className="py-2 font-medium flex items-center gap-2">
                       <MapPin className="w-4 h-4 text-muted-foreground" />
                       Fokontany
                     </td>
-                    <td className="py-2 text-right">{selectedEtablissement.FOKONTANY || '-'}</td>
+                    <td className="py-2 text-right">{selectedEtablissement.FOKONTANY || "-"}</td>
                   </tr>
                 </tbody>
               </table>

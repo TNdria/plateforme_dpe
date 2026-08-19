@@ -1,22 +1,24 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Button } from '@/components/ui/button';
-import { Slider } from '@/components/ui/slider';
-import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Label } from '@/components/ui/label';
-import { Filter, Download, Search, Loader2, MapPin, X, Lock, Layers } from 'lucide-react';
-import { DREN, CISCO, Etablissement } from '@/hooks/useMapData';
+import { useState, useMemo, useRef, useEffect } from "react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
+import { Input } from "@/components/ui/input";
+import { Filter, Download, Search, Loader2, MapPin, X, Lock } from "lucide-react";
+import { DREN, CISCO, Etablissement } from "@/hooks/useMapData";
 
 export interface LayerVisibility {
   publiques: boolean;
   prives: boolean;
   villages: boolean;
-  nouvelleCreation: boolean;
 }
 
-export type TableBancFilter = 'tous' | 'suffisant' | 'insuffisant';
+export type TableBancFilter = "tous" | "suffisant" | "insuffisant";
 
 interface MapFiltersProps {
   drens: DREN[];
@@ -38,17 +40,22 @@ interface MapFiltersProps {
   drenLocked?: boolean;
   /** Verrouille le sélecteur CISCO (utilisateur scope CISCO) */
   ciscoLocked?: boolean;
-  /** Visibilité des couches (publiques / privées / villages / NC) */
-  layerVisibility?: LayerVisibility;
-  onLayerVisibilityChange?: (visibility: LayerVisibility) => void;
-  /** Affiche/masque la couche villages (selon le type de page) */
-  showVillagesLayer?: boolean;
-  /** Affiche/masque la couche nouvelle création */
-  showNouvelleCreationLayer?: boolean;
-  /** Filtre table-bancs */
-  tableBancFilter?: TableBancFilter;
-  onTableBancFilterChange?: (value: TableBancFilter) => void;
 }
+
+// Fix #3 (audit du 19/08/2026) : `layerVisibility`, `onLayerVisibilityChange`,
+// `etabInfoVisible`, `onEtabInfoVisibleChange`, `showVillagesLayer`,
+// `tableBancFilter` et `onTableBancFilterChange` figuraient dans les props de
+// ce composant mais n'étaient JAMAIS transmis par ORS.tsx et ne rendaient
+// donc jamais rien (le bloc "Filtre Table-bancs" ci-dessous était mort —
+// gardé par `tableBancFilter !== undefined`, toujours `undefined`). Les
+// vrais contrôles (couches publiques/privées/villages/infos, table-bancs)
+// vivent réellement dans le panneau latéral de ORS.tsx, pilotés par l'état
+// React `layerVisibility` / `etabInfoVisible` / `tableBancFilter` de ce
+// fichier. Pour ne garder qu'un seul système de contrôle (au lieu de deux
+// API parallèles, l'une vivante, l'autre fantôme), ces props mortes ont été
+// retirées d'ici plutôt que branchées : dupliquer les mêmes contrôles dans
+// MapFilters ET dans le panneau latéral aurait recréé l'ambiguïté qu'on
+// cherche justement à éliminer.
 
 export const MapFilters = ({
   drens,
@@ -68,14 +75,8 @@ export const MapFilters = ({
   isFiltered = false,
   drenLocked = false,
   ciscoLocked = false,
-  layerVisibility,
-  onLayerVisibilityChange,
-  showVillagesLayer = true,
-  showNouvelleCreationLayer = true,
-  tableBancFilter,
-  onTableBancFilterChange,
 }: MapFiltersProps) => {
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const searchSectionRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -86,7 +87,7 @@ export const MapFilters = ({
     if (!prevFilteredRef.current && isFiltered && searchItems.length > 0) {
       // Petit délai pour laisser le DOM se mettre à jour
       setTimeout(() => {
-        searchSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        searchSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
         searchInputRef.current?.focus();
       }, 250);
     }
@@ -98,9 +99,10 @@ export const MapFilters = ({
     if (!searchQuery.trim()) return [];
     const query = searchQuery.toLowerCase();
     return searchItems
-      .filter(item => 
-        item.NOM_ETAB?.toLowerCase().includes(query) ||
-        item.CODE_ETAB?.toString().includes(query)
+      .filter(
+        (item) =>
+          item.NOM_ETAB?.toLowerCase().includes(query) ||
+          item.CODE_ETAB?.toString().includes(query),
       )
       .slice(0, 20); // Limiter à 20 résultats
   }, [searchItems, searchQuery]);
@@ -109,40 +111,42 @@ export const MapFilters = ({
     if (onSearchSelect) {
       onSearchSelect(item);
     }
-    setSearchQuery('');
+    setSearchQuery("");
     setIsSearchOpen(false);
   };
 
   return (
     <div className="bg-card border border-border rounded-lg shadow-sm overflow-hidden">
       {/* Header */}
-      <div className="px-4 py-3 bg-primary/5 border-b border-border">
-        <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
-            <Filter className="w-4 h-4 text-primary" />
+      <div className="px-3 py-2.5 bg-primary/5 border-b border-border">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+            <Filter className="w-3.5 h-3.5 text-primary" />
             Filtres de sélection
           </h3>
           {isFiltered && (
-            <span className="text-[10px] font-medium bg-primary text-primary-foreground px-2 py-0.5 rounded-full">
+            <span className="text-[9px] font-medium bg-primary text-primary-foreground px-1.5 py-0.5 rounded-full">
               Filtre actif
             </span>
           )}
         </div>
       </div>
-      
-      <div className="p-4 space-y-4">
+
+      <div className="p-3 space-y-3">
         {/* DREN Select */}
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+        <div className="space-y-1">
+          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
             DREN
-            {drenLocked && <Lock className="w-3 h-3 text-primary" aria-label="Verrouillée par votre profil" />}
+            {drenLocked && (
+              <Lock className="w-3 h-3 text-primary" aria-label="Verrouillée par votre profil" />
+            )}
           </label>
           <Select
             value={selectedDren.toString()}
             onValueChange={(v) => onDrenChange(parseInt(v))}
             disabled={drenLocked}
           >
-            <SelectTrigger className={`h-10 ${drenLocked ? 'opacity-80 bg-muted/40' : ''}`}>
+            <SelectTrigger className={`h-8 ${drenLocked ? "opacity-80 bg-muted/40" : ""}`}>
               <SelectValue placeholder="Sélectionner une DREN" />
             </SelectTrigger>
             <SelectContent>
@@ -157,18 +161,26 @@ export const MapFilters = ({
         </div>
 
         {/* CISCO Select */}
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+        <div className="space-y-1">
+          <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
             CISCO
-            {ciscoLocked && <Lock className="w-3 h-3 text-primary" aria-label="Verrouillée par votre profil" />}
+            {ciscoLocked && (
+              <Lock className="w-3 h-3 text-primary" aria-label="Verrouillée par votre profil" />
+            )}
           </label>
           <Select
             value={selectedCisco.toString()}
             onValueChange={(v) => onCiscoChange(parseInt(v))}
             disabled={selectedDren === 0 || ciscoLocked}
           >
-            <SelectTrigger className={`h-10 ${selectedDren === 0 ? 'opacity-50' : ''} ${ciscoLocked ? 'opacity-80 bg-muted/40' : ''}`}>
-              <SelectValue placeholder={selectedDren === 0 ? "Choisir une DREN d'abord" : "Sélectionner une CISCO"} />
+            <SelectTrigger
+              className={`h-8 ${selectedDren === 0 ? "opacity-50" : ""} ${ciscoLocked ? "opacity-80 bg-muted/40" : ""}`}
+            >
+              <SelectValue
+                placeholder={
+                  selectedDren === 0 ? "Choisir une DREN d'abord" : "Sélectionner une CISCO"
+                }
+              />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="0">-- Toutes les CISCO --</SelectItem>
@@ -182,12 +194,12 @@ export const MapFilters = ({
         </div>
 
         {/* Radius Slider */}
-        <div className="space-y-2">
+        <div className="space-y-1">
           <div className="flex items-center justify-between">
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
               Rayon de couverture
             </label>
-            <span className="text-sm font-bold text-primary bg-primary/10 px-2 py-0.5 rounded">
+            <span className="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded">
               {radius / 1000} km
             </span>
           </div>
@@ -206,11 +218,11 @@ export const MapFilters = ({
         </div>
 
         {/* Action Buttons */}
-        <div className="flex gap-2 pt-2">
-          <Button 
+        <div className="flex gap-2 pt-1">
+          <Button
             onClick={onApplyFilter}
             disabled={selectedDren === 0 || loading}
-            className="flex-1 h-10"
+            className="flex-1 h-8"
             size="default"
           >
             {loading ? (
@@ -218,26 +230,26 @@ export const MapFilters = ({
             ) : (
               <Filter className="w-4 h-4 mr-2" />
             )}
-            {loading ? 'Chargement...' : 'Appliquer'}
+            {loading ? "Chargement..." : "Appliquer"}
           </Button>
-          
+
           {isFiltered && onResetFilter && (
-            <Button 
+            <Button
               variant="outline"
               onClick={onResetFilter}
-              className="h-10 px-3"
+              className="h-8 px-2.5"
               title="Réinitialiser les filtres"
             >
               <X className="w-4 h-4" />
             </Button>
           )}
-          
+
           {onDownload && (
-            <Button 
+            <Button
               variant="outline"
               onClick={onDownload}
               disabled={selectedDren === 0}
-              className="h-10 px-3"
+              className="h-8 px-2.5"
               title="Télécharger les données"
             >
               <Download className="w-4 h-4" />
@@ -245,101 +257,6 @@ export const MapFilters = ({
           )}
         </div>
       </div>
-
-      {/* Couches affichées */}
-      {layerVisibility && onLayerVisibilityChange && (
-        <div className="border-t border-border">
-          <div className="px-4 py-3 bg-muted/20">
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1">
-              <Layers className="w-3.5 h-3.5" />
-              Couches affichées
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <label className="flex items-center gap-2 p-2 rounded hover:bg-muted/50 cursor-pointer transition-colors">
-                <Checkbox
-                  checked={layerVisibility.publiques}
-                  onCheckedChange={(checked) =>
-                    onLayerVisibilityChange({ ...layerVisibility, publiques: !!checked })
-                  }
-                />
-                <span className="text-xs">
-                  <span className="inline-block w-2 h-2 rounded-full bg-cyan-500 mr-1.5 align-middle" />
-                  Publiques
-                </span>
-              </label>
-              <label className="flex items-center gap-2 p-2 rounded hover:bg-muted/50 cursor-pointer transition-colors">
-                <Checkbox
-                  checked={layerVisibility.prives}
-                  onCheckedChange={(checked) =>
-                    onLayerVisibilityChange({ ...layerVisibility, prives: !!checked })
-                  }
-                />
-                <span className="text-xs">
-                  <span className="inline-block w-2 h-2 rounded-full bg-amber-500 mr-1.5 align-middle" />
-                  Privées
-                </span>
-              </label>
-              {showVillagesLayer && (
-                <label className="flex items-center gap-2 p-2 rounded hover:bg-muted/50 cursor-pointer transition-colors">
-                  <Checkbox
-                    checked={layerVisibility.villages}
-                    onCheckedChange={(checked) =>
-                      onLayerVisibilityChange({ ...layerVisibility, villages: !!checked })
-                    }
-                  />
-                  <span className="text-xs">
-                    <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 mr-1.5 align-middle" />
-                    Villages
-                  </span>
-                </label>
-              )}
-              {showNouvelleCreationLayer && (
-                <label className="flex items-center gap-2 p-2 rounded hover:bg-muted/50 cursor-pointer transition-colors">
-                  <Checkbox
-                    checked={layerVisibility.nouvelleCreation}
-                    onCheckedChange={(checked) =>
-                      onLayerVisibilityChange({ ...layerVisibility, nouvelleCreation: !!checked })
-                    }
-                  />
-                  <span className="text-xs">
-                    <span className="inline-block w-2 h-2 rounded-full bg-rose-500 mr-1.5 align-middle" />
-                    Nouvelle création
-                  </span>
-                </label>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Filtre Table-bancs */}
-      {tableBancFilter !== undefined && onTableBancFilterChange && (
-        <div className="border-t border-border">
-          <div className="px-4 py-3 bg-muted/20">
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2 block">
-              Table-bancs
-            </label>
-            <RadioGroup
-              value={tableBancFilter}
-              onValueChange={(v) => onTableBancFilterChange(v as TableBancFilter)}
-              className="space-y-1"
-            >
-              <div className="flex items-center gap-2 p-1.5 rounded hover:bg-muted/50">
-                <RadioGroupItem value="tous" id="tb-tous" />
-                <Label htmlFor="tb-tous" className="text-xs cursor-pointer flex-1">Tous</Label>
-              </div>
-              <div className="flex items-center gap-2 p-1.5 rounded hover:bg-muted/50">
-                <RadioGroupItem value="suffisant" id="tb-suff" />
-                <Label htmlFor="tb-suff" className="text-xs cursor-pointer flex-1">Suffisant</Label>
-              </div>
-              <div className="flex items-center gap-2 p-1.5 rounded hover:bg-muted/50">
-                <RadioGroupItem value="insuffisant" id="tb-insuff" />
-                <Label htmlFor="tb-insuff" className="text-xs cursor-pointer flex-1">Insuffisant</Label>
-              </div>
-            </RadioGroup>
-          </div>
-        </div>
-      )}
 
       {/* Search Section */}
       {searchItems.length > 0 && (
@@ -365,7 +282,7 @@ export const MapFilters = ({
               {searchQuery && (
                 <button
                   onClick={() => {
-                    setSearchQuery('');
+                    setSearchQuery("");
                     setIsSearchOpen(false);
                   }}
                   className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground"
@@ -374,7 +291,7 @@ export const MapFilters = ({
                 </button>
               )}
             </div>
-            
+
             {/* Search Results Dropdown */}
             {isSearchOpen && filteredSearchItems.length > 0 && (
               <div className="mt-2 max-h-48 overflow-y-auto bg-background border border-border rounded-lg shadow-lg">
@@ -387,13 +304,15 @@ export const MapFilters = ({
                     <MapPin className="w-3 h-3 text-primary flex-shrink-0" />
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-medium truncate">{item.NOM_ETAB}</div>
-                      <div className="text-[10px] text-muted-foreground">Code: {item.CODE_ETAB}</div>
+                      <div className="text-[10px] text-muted-foreground">
+                        Code: {item.CODE_ETAB}
+                      </div>
                     </div>
                   </button>
                 ))}
               </div>
             )}
-            
+
             {isSearchOpen && searchQuery && filteredSearchItems.length === 0 && (
               <div className="mt-2 px-3 py-2 text-xs text-muted-foreground bg-muted/30 rounded-lg">
                 Aucun résultat trouvé pour "{searchQuery}"

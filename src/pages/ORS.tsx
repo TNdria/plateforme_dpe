@@ -1,34 +1,35 @@
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { useMapData, Etablissement } from '@/hooks/useMapData';
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import { useParams, Link } from "react-router-dom";
+import { useMapData, Etablissement } from "@/hooks/useMapData";
 import {
   MapFilters,
   type LayerVisibility,
   type TableBancFilter,
-} from '@/components/ors/MapFilters';
-import { ORSMap } from '@/components/ors/ORSMap';
-import { ORSAnalysisPanel } from '@/components/ors/ORSAnalysisPanel';
+} from "@/components/ors/MapFilters";
+import { ORSMap } from "@/components/ors/ORSMap";
+import { ORS_COLORS, NIVEAU_MAIN_COLOR } from "@/components/ors/orsColors";
+import { ORSAnalysisPanel } from "@/components/ors/ORSAnalysisPanel";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from '@/components/ui/dialog';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+} from "@/components/ui/dialog";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { toast } from 'sonner';
+} from "@/components/ui/select";
+import { toast } from "sonner";
 import {
   MapPin,
   School,
@@ -42,25 +43,25 @@ import {
   Download,
   FileSpreadsheet,
   FileText,
+  Layers,
   ChevronLeft,
   ChevronRight,
-  Layers,
-} from 'lucide-react';
-import DataActionsBar from '@/components/admin/DataActionsBar';
-import { useUserScope } from '@/hooks/useUserScope';
-import useAutoApplyScope from '@/hooks/useAutoApplyScope';
-import { VillageAnalysisDialog } from '@/components/ors/VillageAnalysisDialog';
-import type { VillageAnalysisResult } from '@/components/ors/MapInteractions';
-import { HelpPanel } from '@/components/ors/HelpPanel';
-import { cn } from '@/lib/utils';
-import { ORS_CSV_COLUMNS } from '@/utils/csvExport';
-import * as XLSX from 'xlsx';
+} from "lucide-react";
+import DataActionsBar from "@/components/admin/DataActionsBar";
+import { useUserScope } from "@/hooks/useUserScope";
+import useAutoApplyScope from "@/hooks/useAutoApplyScope";
+import { VillageAnalysisDialog } from "@/components/ors/VillageAnalysisDialog";
+import type { VillageAnalysisResult } from "@/components/ors/MapInteractions";
+import { HelpPanel } from "@/components/ors/HelpPanel";
+import { cn } from "@/lib/utils";
+import { ORS_CSV_COLUMNS } from "@/utils/csvExport";
+import * as XLSX from "xlsx";
 
 // ============================================================================
 //  CONFIGURATION PAR NIVEAU
 // ============================================================================
 
-export type OrsNiveau = 'primaire' | 'college' | 'lycee';
+export type OrsNiveau = "primaire" | "college" | "lycee";
 
 interface NiveauMeta {
   label: string;
@@ -69,9 +70,9 @@ interface NiveauMeta {
   gradientClass: string;
   activeBg: string;
   activeText: string;
-  helpType: 'primaire' | 'college' | 'lycee';
-  mainDataKey: 'primaires' | 'colleges' | 'lycees';
-  refDataKey: 'primaires' | 'colleges' | null;
+  helpType: "primaire" | "college" | "lycee";
+  mainDataKey: "primaires" | "colleges" | "lycees";
+  refDataKey: "primaires" | "colleges" | null;
   unitLabel: string;
   /** Libellé du niveau de référence (inférieur) affiché en badge — null si
    * aucune donnée de référence n'existe pour ce niveau (cas du préscolaire,
@@ -83,138 +84,251 @@ interface NiveauMeta {
 
 const NIVEAU_META: Record<OrsNiveau, NiveauMeta> = {
   primaire: {
-    label: 'Primaire',
+    label: "Primaire",
     icon: School,
-    breadcrumb: 'ORS PRIMAIRE',
-    gradientClass: 'from-primary/10 to-transparent',
-    activeBg: 'bg-primary',
-    activeText: 'text-primary-foreground',
-    helpType: 'primaire',
-    mainDataKey: 'primaires',
+    breadcrumb: "ORS PRIMAIRE",
+    gradientClass: "from-primary/10 to-transparent",
+    activeBg: "bg-primary",
+    activeText: "text-primary-foreground",
+    helpType: "primaire",
+    mainDataKey: "primaires",
     refDataKey: null,
-    unitLabel: 'EPP',
+    unitLabel: "EPP",
     refUnitLabel: null,
     defaultRadius: 4000,
-    filenamePrefix: 'ORS_PRIMAIRE',
+    filenamePrefix: "ORS_PRIMAIRE",
   },
   college: {
-    label: 'Collège',
+    label: "Collège",
     icon: Building2,
-    breadcrumb: 'ORS COLLEGE',
-    gradientClass: 'from-green-500/10 to-transparent',
-    activeBg: 'bg-green-600',
-    activeText: 'text-white',
-    helpType: 'college',
-    mainDataKey: 'colleges',
-    refDataKey: 'primaires',
-    unitLabel: 'CEG',
-    refUnitLabel: 'EPP',
+    breadcrumb: "ORS COLLEGE",
+    gradientClass: "from-green-500/10 to-transparent",
+    activeBg: "bg-green-600",
+    activeText: "text-white",
+    helpType: "college",
+    mainDataKey: "colleges",
+    refDataKey: "primaires",
+    unitLabel: "CEG",
+    refUnitLabel: "EPP",
     defaultRadius: 5000,
-    filenamePrefix: 'ORS_COLLEGE',
+    filenamePrefix: "ORS_COLLEGE",
   },
   lycee: {
-    label: 'Lycée',
+    label: "Lycée",
     icon: GraduationCap,
-    breadcrumb: 'ORS LYCEE',
-    gradientClass: 'from-purple-500/10 to-transparent',
-    activeBg: 'bg-purple-600',
-    activeText: 'text-white',
-    helpType: 'lycee',
-    mainDataKey: 'lycees',
-    refDataKey: 'colleges',
-    unitLabel: 'Lycées',
-    refUnitLabel: 'CEG',
+    breadcrumb: "ORS LYCEE",
+    gradientClass: "from-purple-500/10 to-transparent",
+    activeBg: "bg-purple-600",
+    activeText: "text-white",
+    helpType: "lycee",
+    mainDataKey: "lycees",
+    refDataKey: "colleges",
+    unitLabel: "Lycées",
+    refUnitLabel: "CEG",
     defaultRadius: 8000,
-    filenamePrefix: 'ORS_LYCEE',
+    filenamePrefix: "ORS_LYCEE",
   },
 };
 
-const NIVEAUX_ORDER: OrsNiveau[] = ['primaire', 'college', 'lycee'];
+const NIVEAUX_ORDER: OrsNiveau[] = ["primaire", "college", "lycee"];
 
-const formatExportValue = (
-  etab: Etablissement,
-  key: string
-): string | number | boolean => {
+const normalizeSectorValue = (value: unknown): 0 | 1 | 2 | null => {
+  if (value === null || value === undefined || value === "") return null;
+
+  if (typeof value === "number") {
+    if (value === 0 || value === 2) return value;
+    if (value === 1) return 1;
+    return null;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toUpperCase();
+    if (["0", "PUBLIC", "PUBLIQUE"].includes(normalized)) return 0;
+    if (["2", "PUBLIC_2", "PUBLIQUE_2"].includes(normalized)) return 2;
+    if (["1", "PRIVE", "PRIVÉ", "PRIVEE", "PRIVATE"].includes(normalized)) return 1;
+    return null;
+  }
+
+  return null;
+};
+
+const isPublicSector = (item: Pick<Etablissement, "SECTEUR"> | null | undefined): boolean => {
+  const normalized = normalizeSectorValue(item?.SECTEUR);
+  return normalized === 0 || normalized === 2;
+};
+
+const isPrivateSector = (item: Pick<Etablissement, "SECTEUR"> | null | undefined): boolean =>
+  normalizeSectorValue(item?.SECTEUR) === 1;
+
+const getSectorLabel = (value: unknown): string => {
+  const normalized = normalizeSectorValue(value);
+  if (normalized === 1) return "PRIVÉ";
+  if (normalized === 0 || normalized === 2) return "PUBLIC";
+  return "Non déterminé";
+};
+
+const getCoordinateLabel = (
+  etab: Pick<Etablissement, "latitude" | "longitude"> | null | undefined,
+) => {
+  const latRaw = etab?.latitude;
+  const lngRaw = etab?.longitude;
+
+  // Normaliser en string puis en nombre pour éviter des comparaisons
+  // directes entre `number` et `string` qui posent problème en TS.
+  const latStr = latRaw === null || latRaw === undefined ? "" : String(latRaw).trim();
+  const lngStr = lngRaw === null || lngRaw === undefined ? "" : String(lngRaw).trim();
+
+  if (!latStr || !lngStr) return "Non renseigné";
+
+  const latNumber = Number(latStr);
+  const lngNumber = Number(lngStr);
+  if (Number.isNaN(latNumber) || Number.isNaN(lngNumber)) return "Non renseigné";
+
+  return `${latNumber.toFixed(6)}, ${lngNumber.toFixed(6)}`;
+};
+
+const formatExportValue = (etab: Etablissement, key: string): string | number | boolean => {
   const data = etab as unknown as Record<string, unknown>;
   const firstAvailable = (...keys: string[]) =>
-    keys.map((candidate) => data[candidate]).find(
-      (value) => value !== null && value !== undefined && value !== ''
-    );
+    keys
+      .map((candidate) => data[candidate])
+      .find((value) => value !== null && value !== undefined && value !== "");
 
   // Les couches ORS ne donnent pas systématiquement le même nom à l'effectif.
   // Cette normalisation garantit une valeur dans le canevas commun d'export.
-  
+
   const v =
-    key === 'effectifs'
-      ? firstAvailable('effectifs', 'eff_2024', 'eff_t5')
-      : key === 'eff_t5'
-        ? firstAvailable('eff_t5', 'effectifs', 'eff_2024')
-        : key === 'eff_2024'
-          ? firstAvailable('eff_2024', 'effectifs', 'eff_t5')
+    key === "effectifs"
+      ? firstAvailable("effectifs", "eff_2024", "eff_t5")
+      : key === "eff_t5"
+        ? firstAvailable("eff_t5", "effectifs", "eff_2024")
+        : key === "eff_2024"
+          ? firstAvailable("eff_2024", "effectifs", "eff_t5")
           : data[key];
 
-  if (key === 'SECTEUR')
-    return v === 0 || v === '0'
-      ? 'PUBLIC'
-      : v === 1 || v === '1'
-        ? 'PRIVÉ'
-        : 'Non renseigné';
-  if (key === 'eligible_reconstruction' || key === 'eligible_rehabilitation')
-    return v === true || v === 1 || v === '1' || v === 'true'
-      ? 'OUI'
-      : 'NON';
+  if (key === "SECTEUR")
+    return v === 0 || v === "0" || v === 2 || v === "2"
+      ? "PUBLIC"
+      : v === 1 || v === "1"
+        ? "PRIVÉ"
+        : "Non renseigné";
+  if (key === "eligible_reconstruction" || key === "eligible_rehabilitation")
+    return v === true || v === 1 || v === "1" || v === "true" ? "OUI" : "NON";
   // Ne jamais produire de cellule vide : le libellé indique clairement que la
   // donnée n'était pas fournie par la source, sans inventer une valeur métier.
-  if (v === null || v === undefined || v === '') return 'Non renseigné';
-  if (typeof v === 'object') return JSON.stringify(v);
-  if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean')
-    return v;
+  if (v === null || v === undefined || v === "") return "Non renseigné";
+  if (typeof v === "object") return JSON.stringify(v);
+  if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") return v;
   return String(v);
 };
 
 // Légende unique du panneau droit. La pastille flottante <MapLegend> de
 // ORSMap est désactivée via showLegend={false} pour éviter la duplication.
+//
+// Fix #1 (audit du 19/08/2026) : cette légende était une table STATIQUE et
+// fausse sur deux points vérifiés en la comparant au rendu réel de
+// ORSMap.tsx :
+//   - "CEG public" et "Lycée public" étaient annoncés en cyan (#36b9cc) alors
+//     que le marqueur principal est réellement rendu en vert (#16a34a) pour
+//     le CEG et en violet (#8b5cf6) pour le Lycée.
+//   - Elle ne documentait JAMAIS les couleurs des filtres "Extension /
+//     Reconstruction / Réhabilitation / Table-bancs" pour collège et lycée,
+//     alors que ces filtres sont sélectionnables (RadioGroup "Catégorie de
+//     la carte" ci-dessous) et recolorent bel et bien les marqueurs.
+//   - Elle listait "Nouvelle création" bien qu'aucune option de l'UI ne
+//     permette de sélectionner ce filtre (entrée morte, supprimée ici).
+//
+// Elle est remplacée par une fonction qui (a) importe ses couleurs de
+// ORS_COLORS / NIVEAU_MAIN_COLOR — exportées par ORSMap.tsx, seule source de
+// vérité — pour ne plus jamais diverger du rendu réel, et (b) s'adapte au
+// filtre de catégorie actif pour toujours documenter les couleurs
+// effectivement visibles sur la carte.
 interface LegendItem {
   color: string;
   label: string;
   iconClass?: string;
 }
 
-const LEGEND_ITEMS: Record<OrsNiveau, LegendItem[]> = {
-  primaire: [
-    { color: '#36b9cc', label: 'École Primaire Publique', iconClass: 'fas fa-book-open' },
-    { color: '#f6c23e', label: 'École Primaire Privée', iconClass: 'fas fa-book-open' },
-    { color: '#8b5cf6', label: 'Nouvelle création' },
-    { color: '#dc2626', label: 'Reconstruction' },
-    { color: '#f97316', label: 'Extension' },
-    { color: '#eab308', label: 'Réhabilitation' },
-    { color: '#FF0000', label: 'Village hors zone' },
-    { color: '#4e73df', label: 'Limite DREN' },
-    { color: '#22afbe', label: 'Limite CISCO' },
-  ],
-  college: [
-    { color: 'green', label: 'CEG (Collège public)', iconClass: 'fas fa-school' },
-    { color: '#36b9cc', label: 'EPP dans zone CEG', iconClass: 'fas fa-book-open' },
-    { color: '#dc2626', label: 'EPP hors zone (éligible)', iconClass: 'fas fa-book-open' },
-    { color: '#ffffcc', label: 'École privée', iconClass: 'fas fa-book-open' },
-    { color: '#e74a3b', label: 'Village' },
-    { color: '#4e73df', label: 'Limite DREN' },
-    { color: '#22afbe', label: 'Limite CISCO' },
-  ],
-  lycee: [
-    { color: '#8b5cf6', label: 'Lycée public', iconClass: 'fas fa-building' },
-    { color: '#36b9cc', label: 'Collège existant', iconClass: 'fas fa-school' },
-    { color: '#ffffcc', label: 'Établissement privé', iconClass: 'fas fa-school' },
-    { color: '#e74a3b', label: 'Village' },
-    { color: '#4e73df', label: 'Limite DREN' },
-    { color: '#22afbe', label: 'Limite CISCO' },
-  ],
+const CATEGORY_FILTER_INFO: Record<string, { label: string; color: string }> = {
+  extension: { label: "Extension requise", color: ORS_COLORS.extension },
+  reconstruction: { label: "Reconstruction requise", color: ORS_COLORS.reconstruction },
+  rehabilitation: { label: "Réhabilitation requise", color: ORS_COLORS.rehabilitation },
+  tablebanc: { label: "Table-bancs insuffisants", color: ORS_COLORS.tablebanc },
 };
+
+function getLegendItems(niveau: OrsNiveau, categoryFilter: string): LegendItem[] {
+  const filterInfo = CATEGORY_FILTER_INFO[categoryFilter];
+  const items: LegendItem[] = [];
+
+  if (niveau === "primaire") {
+    if (filterInfo) {
+      items.push(
+        { color: filterInfo.color, label: filterInfo.label, iconClass: "fas fa-book-open" },
+        {
+          color: ORS_COLORS.conforme,
+          label: "Conforme (critère satisfait)",
+          iconClass: "fas fa-book-open",
+        },
+      );
+    } else {
+      items.push({
+        color: ORS_COLORS.default,
+        label: "École Primaire Publique",
+        iconClass: "fas fa-book-open",
+      });
+    }
+    items.push(
+      { color: ORS_COLORS.prive, label: "École Primaire Privée", iconClass: "fas fa-book-open" },
+      { color: ORS_COLORS.villageHorsZone, label: "Village hors zone", iconClass: "fas fa-home" },
+      { color: ORS_COLORS.villageCouvert, label: "Village couvert", iconClass: "fas fa-home" },
+    );
+  } else {
+    const isCollege = niveau === "college";
+    const mainLabel = isCollege ? "CEG public" : "Lycée public";
+    const mainIcon = isCollege ? "fas fa-school" : "fas fa-building";
+    const secondaryLabel = isCollege ? "EPP dans zone CEG" : "Collège existant";
+    const exclusionLabel = isCollege
+      ? "EPP hors zone (éligible à un nouveau CEG)"
+      : "Collège hors zone (éligible à un nouveau lycée)";
+    const privateLabel = isCollege ? "École privée" : "Établissement privé";
+
+    if (filterInfo) {
+      items.push(
+        {
+          color: filterInfo.color,
+          label: `${mainLabel} / ${secondaryLabel} — ${filterInfo.label}`,
+          iconClass: mainIcon,
+        },
+        {
+          color: ORS_COLORS.conforme,
+          label: "Conforme (critère satisfait)",
+          iconClass: mainIcon,
+        },
+      );
+    } else {
+      items.push(
+        { color: NIVEAU_MAIN_COLOR[niveau], label: mainLabel, iconClass: mainIcon },
+        { color: ORS_COLORS.default, label: secondaryLabel, iconClass: "fas fa-book-open" },
+      );
+    }
+    items.push(
+      { color: ORS_COLORS.horsZoneEligible, label: exclusionLabel, iconClass: "fas fa-book-open" },
+      { color: ORS_COLORS.prive, label: privateLabel, iconClass: "fas fa-school" },
+      { color: ORS_COLORS.villageAutre, label: "Village", iconClass: "fas fa-home" },
+    );
+  }
+
+  items.push(
+    { color: ORS_COLORS.limiteDren, label: "Limite DREN" },
+    { color: ORS_COLORS.limiteCisco, label: "Limite CISCO" },
+  );
+  return items;
+}
 
 const ORS = () => {
   const { niveau: niveauParam } = useParams<{ niveau: string }>();
   const niveau: OrsNiveau = (
-    NIVEAUX_ORDER.includes(niveauParam as OrsNiveau) ? niveauParam : 'primaire'
+    NIVEAUX_ORDER.includes(niveauParam as OrsNiveau) ? niveauParam : "primaire"
   ) as OrsNiveau;
   const meta = NIVEAU_META[niveau];
   const NiveauIcon = meta.icon;
@@ -244,68 +358,64 @@ const ORS = () => {
   // laisse un peu plus de place qu'une simple page à un seul panneau),
   // repliés par défaut sur mobile/tablette pour laisser la carte respirer.
   const [leftOpen, setLeftOpen] = useState<boolean>(() =>
-    typeof window !== 'undefined' ? window.innerWidth >= 1024 : true
+    typeof window !== "undefined" ? window.innerWidth >= 1024 : true,
   );
   const [rightOpen, setRightOpen] = useState<boolean>(() =>
-    typeof window !== 'undefined' ? window.innerWidth >= 1024 : true
+    typeof window !== "undefined" ? window.innerWidth >= 1024 : true,
   );
 
   const [radius, setRadius] = useState(meta.defaultRadius);
-  const [mapCenter, setMapCenter] = useState<[number, number]>([
-    -18.9189596, 47.5135653,
-  ]);
+  const [mapCenter, setMapCenter] = useState<[number, number]>([-18.9189596, 47.5135653]);
   const [mapZoom, setMapZoom] = useState(6);
-  const [selectedEtablissement, setSelectedEtablissement] =
-    useState<Etablissement | null>(null);
-  const [categoryFilter, setCategoryFilter] = useState<string>('aucune');
-  const [analysisResult, setAnalysisResult] =
-    useState<VillageAnalysisResult | null>(null);
+  const [selectedEtablissement, setSelectedEtablissement] = useState<Etablissement | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState<string>("aucune");
+  const [analysisResult, setAnalysisResult] = useState<VillageAnalysisResult | null>(null);
   const [layerVisibility, setLayerVisibility] = useState<LayerVisibility>({
     publiques: true,
     prives: true,
     villages: true,
-    nouvelleCreation: true,
   });
-  const [tableBancFilter, setTableBancFilter] =
-    useState<TableBancFilter>('tous');
+  const [etabInfoVisible, setEtabInfoVisible] = useState(true);
+  const [tableBancFilter, setTableBancFilter] = useState<TableBancFilter>("tous");
   const [showDownloadModal, setShowDownloadModal] = useState(false);
-  const [downloadFormat, setDownloadFormat] = useState<'csv' | 'xlsx'>('csv');
+  const [downloadFormat, setDownloadFormat] = useState<"csv" | "xlsx">("csv");
   const [downloadCategory, setDownloadCategory] = useState<
-    'tous' | 'reconstruction' | 'nouvelle_creation' | 'rehabilitation'
-  >('tous');
+    "tous" | "reconstruction" | "nouvelle_creation" | "rehabilitation"
+  >("tous");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   // ====================== DONNÉES SELON LE NIVEAU ACTIF ======================
   const mainData: Etablissement[] =
-    meta.mainDataKey === 'primaires'
+    meta.mainDataKey === "primaires"
       ? primaires
-      : meta.mainDataKey === 'colleges'
+      : meta.mainDataKey === "colleges"
         ? colleges
         : lycees;
   const refData: Etablissement[] =
-    meta.refDataKey === 'primaires'
-      ? primaires
-      : meta.refDataKey === 'colleges'
-        ? colleges
-        : [];
+    meta.refDataKey === "primaires" ? primaires : meta.refDataKey === "colleges" ? colleges : [];
 
   const filteredMainData = useMemo(
     () =>
-      mainData.filter((e) =>
-        e.SECTEUR === 0 ? layerVisibility.publiques : layerVisibility.prives
-      ),
-    [mainData, layerVisibility.publiques, layerVisibility.prives]
+      mainData.filter((e) => {
+        if (isPublicSector(e)) return layerVisibility.publiques;
+        if (isPrivateSector(e)) return layerVisibility.prives;
+        return layerVisibility.publiques || layerVisibility.prives;
+      }),
+    [mainData, layerVisibility.publiques, layerVisibility.prives],
   );
+
   const filteredRefData = useMemo(
     () =>
-      refData.filter((e) =>
-        e.SECTEUR === 0 ? layerVisibility.publiques : layerVisibility.prives
-      ),
-    [refData, layerVisibility.publiques, layerVisibility.prives]
+      refData.filter((e) => {
+        if (isPublicSector(e)) return layerVisibility.publiques;
+        if (isPrivateSector(e)) return layerVisibility.prives;
+        return layerVisibility.publiques || layerVisibility.prives;
+      }),
+    [refData, layerVisibility.publiques, layerVisibility.prives],
   );
   const filteredVillages = useMemo(
     () => (layerVisibility.villages ? villages : []),
-    [villages, layerVisibility.villages]
+    [villages, layerVisibility.villages],
   );
   const downloadCategories = useMemo(() => {
     const data = mainData;
@@ -321,7 +431,7 @@ const ORS = () => {
         (e) =>
           Boolean((e as any).nouvelle_creation) ||
           Boolean((e as any).nouvelleCreation) ||
-          Boolean((e as any).eligible_nouvelle_creation)
+          Boolean((e as any).eligible_nouvelle_creation),
       ),
     };
   }, [mainData]);
@@ -333,26 +443,22 @@ const ORS = () => {
   // le lycée, ce sont les données lycées qui y transitent — comportement
   // volontaire d'ORSMap, on le respecte tel quel).
   const mapColleges =
-    niveau === 'lycee'
-      ? filteredRefData
-      : niveau === 'college'
-        ? filteredMainData
-        : [];
+    niveau === "lycee" ? filteredRefData : niveau === "college" ? filteredMainData : [];
   const mapPrimaires =
-    niveau === 'primaire'
+    niveau === "primaire"
       ? filteredMainData
-      : niveau === 'college'
+      : niveau === "college"
         ? filteredRefData
         : filteredMainData;
 
   // ====================== STATISTIQUES ======================
   const stats = useMemo(() => {
     const total = mainData.length;
-    const publics = mainData.filter((e) => e.SECTEUR === 0).length;
-    const prives = mainData.filter((e) => e.SECTEUR === 1).length;
+    const publics = mainData.filter(isPublicSector).length;
+    const prives = mainData.filter(isPrivateSector).length;
     const refTotal = refData.length;
-    const eligiblesReconstruction = mainData.filter(
-      (e) => e.eligible_reconstruction
+    const eligiblesReconstruction = mainData.filter((e) =>
+      Boolean(e.eligible_reconstruction),
     ).length;
     return { total, publics, prives, refTotal, eligiblesReconstruction };
   }, [mainData, refData]);
@@ -364,7 +470,7 @@ const ORS = () => {
     prevNiveauRef.current = niveau;
 
     setRadius(meta.defaultRadius);
-    setCategoryFilter('aucune');
+    setCategoryFilter("aucune");
     setSelectedEtablissement(null);
     setAnalysisResult(null);
 
@@ -376,10 +482,10 @@ const ORS = () => {
 
   const handleApplyFilter = useCallback(async () => {
     if (selectedDren === 0) {
-      toast.error('Veuillez sélectionner une DREN');
+      toast.error("Veuillez sélectionner une DREN");
       return;
     }
-    setActionLoading('Application du filtre...');
+    setActionLoading("Application du filtre...");
     try {
       await fetchEtablissements(selectedDren, selectedCisco);
       setMapZoom(selectedCisco > 0 ? 10 : 8);
@@ -414,20 +520,19 @@ const ORS = () => {
   // ====================== TÉLÉCHARGEMENT ======================
   const drenLabel =
     drens.find((d) => d.CODE_DREN === selectedDren)?.DREN ??
-    (selectedDren > 0 ? `DREN ${selectedDren}` : 'Toutes DREN');
+    (selectedDren > 0 ? `DREN ${selectedDren}` : "Toutes DREN");
   const ciscoLabel =
     selectedCisco > 0
-      ? (ciscos.find((c) => c.CODE_CISCO === selectedCisco)?.CISCO ??
-        `CISCO ${selectedCisco}`)
-      : 'Toutes CISCO';
+      ? (ciscos.find((c) => c.CODE_CISCO === selectedCisco)?.CISCO ?? `CISCO ${selectedCisco}`)
+      : "Toutes CISCO";
 
   const runDownload = useCallback(async () => {
     if (!downloadData.length) {
-      toast.error('Aucune donnée à télécharger');
+      toast.error("Aucune donnée à télécharger");
       return;
     }
 
-    setActionLoading('Génération du fichier...');
+    setActionLoading("Génération du fichier...");
 
     try {
       // Canevas ORS fixe : les entêtes sont identiques dans chaque export,
@@ -435,36 +540,30 @@ const ORS = () => {
       const columns = ORS_CSV_COLUMNS;
 
       const categorySuffix =
-        downloadCategory === 'tous' ? '' : `_${downloadCategory.toUpperCase()}`;
+        downloadCategory === "tous" ? "" : `_${downloadCategory.toUpperCase()}`;
 
       const filename =
         `${meta.filenamePrefix}_${drenLabel}_${ciscoLabel}` +
         `${categorySuffix}_${new Date().toISOString().slice(0, 10)}`;
 
-      if (downloadFormat === 'csv') {
-        const headerRow = columns.map((c) => c.label).join(';');
+      if (downloadFormat === "csv") {
+        const headerRow = columns.map((c) => c.label).join(";");
 
         const rows = downloadData.map((etab) =>
           columns
-            .map(
-              (c) =>
-                `"${String(formatExportValue(etab, c.key)).replace(
-                  /"/g,
-                  '""'
-                )}"`
-            )
-            .join(';')
+            .map((c) => `"${String(formatExportValue(etab, c.key)).replace(/"/g, '""')}"`)
+            .join(";"),
         );
 
-        const csv = [headerRow, ...rows].join('\n');
+        const csv = [headerRow, ...rows].join("\n");
 
-        const blob = new Blob(['\ufeff' + csv], {
-          type: 'text/csv;charset=utf-8;',
+        const blob = new Blob(["\ufeff" + csv], {
+          type: "text/csv;charset=utf-8;",
         });
 
         const url = URL.createObjectURL(blob);
 
-        const a = document.createElement('a');
+        const a = document.createElement("a");
         a.href = url;
         a.download = `${filename}.csv`;
 
@@ -498,29 +597,40 @@ const ORS = () => {
     } finally {
       setActionLoading(null);
     }
-  }, [
-    downloadData,
-    downloadCategory,
-    niveau,
-    meta,
-    drenLabel,
-    ciscoLabel,
-    downloadFormat,
-  ]);
+  }, [downloadData, downloadCategory, niveau, meta, drenLabel, ciscoLabel, downloadFormat]);
 
   const eligibleReconstructionBadge = (value: boolean | undefined) =>
     value ? (
-      <Badge variant="destructive" className="gap-1">
-        <XCircle className="w-3 h-3" /> OUI
+      <Badge variant="outline" className="gap-1 text-emerald-600 border-emerald-600">
+        <CheckCircle className="w-3 h-3" /> OUI
       </Badge>
     ) : (
-      <Badge
-        variant="outline"
-        className="gap-1 text-green-600 border-green-600"
-      >
-        <CheckCircle className="w-3 h-3" /> NON
+      <Badge variant="destructive" className="gap-1">
+        <XCircle className="w-3 h-3" /> NON
       </Badge>
     );
+
+  const InfoRow = ({
+    icon,
+    label,
+    value,
+    isBadge = false,
+    className,
+  }: {
+    icon: React.ReactNode;
+    label: string;
+    value: React.ReactNode;
+    isBadge?: boolean;
+    className?: string;
+  }) => (
+    <div className={cn("rounded-md border bg-muted/20 p-2", className)}>
+      <div className="flex items-center gap-1.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+        {icon}
+        {label}
+      </div>
+      <div className={cn("mt-1 text-xs font-medium", isBadge && "flex")}>{value}</div>
+    </div>
+  );
 
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col w-full overflow-hidden bg-muted/20">
@@ -533,9 +643,7 @@ const ORS = () => {
         <div className="flex items-center justify-between flex-wrap gap-2">
           <span className="text-sm font-semibold text-muted-foreground flex items-center gap-2 min-w-0">
             <NiveauIcon className="w-4 h-4 shrink-0" />
-            <span className="truncate">
-              CARTE SCOLAIRE / ORS / {meta.breadcrumb}
-            </span>
+            <span className="truncate">CARTE SCOLAIRE / ORS / {meta.breadcrumb}</span>
           </span>
 
           <div className="flex items-center gap-1.5 flex-wrap">
@@ -560,10 +668,7 @@ const ORS = () => {
                   {stats.total} {meta.unitLabel}
                 </Badge>
                 {meta.refUnitLabel && (
-                  <Badge
-                    variant="outline"
-                    className="text-xs bg-cyan-500/10 text-cyan-700"
-                  >
+                  <Badge variant="outline" className="text-xs bg-cyan-500/10 text-cyan-700">
                     {stats.refTotal} {meta.refUnitLabel} alentour
                   </Badge>
                 )}
@@ -596,7 +701,7 @@ const ORS = () => {
                 variant="outline"
                 className="h-7 text-xs gap-1.5"
                 onClick={() => {
-                  setDownloadCategory('tous');
+                  setDownloadCategory("tous");
                   setShowDownloadModal(true);
                 }}
               >
@@ -605,11 +710,7 @@ const ORS = () => {
               </Button>
             )}
 
-            <DataActionsBar
-              table="fpe_a1"
-              tableLabel={`Établissements (${meta.label})`}
-              compact
-            />
+            <DataActionsBar table="fpe_a1" tableLabel={`Établissements (${meta.label})`} compact />
           </div>
         </div>
 
@@ -624,12 +725,12 @@ const ORS = () => {
                 key={n}
                 to={`/ors/${n}`}
                 className={cn(
-                  'inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide transition-colors',
+                  "inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide transition-colors",
                   active
-                    ? cn(m.activeBg, m.activeText, 'shadow-inner')
-                    : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'
+                    ? cn(m.activeBg, m.activeText, "shadow-inner")
+                    : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground",
                 )}
-                aria-current={active ? 'page' : undefined}
+                aria-current={active ? "page" : undefined}
               >
                 <Icon className="h-3 w-3" /> {m.label}
               </Link>
@@ -650,14 +751,14 @@ const ORS = () => {
         {/* ---------- PANNEAU GAUCHE ---------- */}
         <aside
           className={cn(
-            'shrink-0 h-full min-h-0 bg-background/80 backdrop-blur-xl border-r shadow-xl flex flex-col overflow-hidden transition-[width] duration-300 ease-in-out',
-            leftOpen ? 'w-[88vw] sm:w-[320px]' : 'w-0 border-r-0'
+            "relative z-10 shrink-0 h-full min-h-0 bg-background/80 backdrop-blur-xl border-r shadow-xl flex flex-col overflow-hidden transition-[width] duration-300 ease-in-out",
+            leftOpen ? "w-[300px] min-w-[300px] max-w-[300px] flex-[0_0_300px]" : "w-0 border-r-0",
           )}
           aria-hidden={!leftOpen}
         >
           {/* Conteneur scrollable propre au panneau gauche */}
-          <div className="h-full w-full overflow-y-auto overflow-x-hidden overscroll-contain">
-            <div className="w-full min-w-[min(85vw,320px)] sm:min-w-[320px] flex flex-col gap-4 px-3 py-4">
+          <div className="h-full w-full overflow-y-auto overflow-x-hidden overscroll-contain smooth-scroll">
+            <div className="mx-auto flex w-full max-w-[270px] flex-col justify-center gap-3 px-3 py-5">
               {/* Filtres + Recherche (layerVisibility / tableBancFilter → panneau droit) */}
               <MapFilters
                 drens={drens}
@@ -681,26 +782,18 @@ const ORS = () => {
               <HelpPanel type={meta.helpType} />
 
               {mainData.length > 0 && (
-                <ORSAnalysisPanel
-                  type={niveau}
-                  primaires={
-                    niveau === 'primaire'
-                      ? mainData
-                      : niveau === 'college'
-                        ? refData
-                        : []
-                  }
-                  colleges={
-                    niveau === 'college'
-                      ? mainData
-                      : niveau === 'lycee'
-                        ? refData
-                        : []
-                  }
-                  lycees={niveau === 'lycee' ? mainData : []}
-                  villages={villages}
-                  radius={radius}
-                />
+                <div className="w-full">
+                  <ORSAnalysisPanel
+                    type={niveau}
+                    primaires={
+                      niveau === "primaire" ? mainData : niveau === "college" ? refData : []
+                    }
+                    colleges={niveau === "college" ? mainData : niveau === "lycee" ? refData : []}
+                    lycees={niveau === "lycee" ? mainData : []}
+                    villages={villages}
+                    radius={radius}
+                  />
+                </div>
               )}
             </div>
           </div>
@@ -710,30 +803,20 @@ const ORS = () => {
         <button
           type="button"
           onClick={() => setLeftOpen((v) => !v)}
-          title={
-            leftOpen
-              ? 'Réduire le panneau filtres'
-              : 'Développer le panneau filtres'
-          }
-          className="absolute top-1/2 -translate-y-1/2 z-[1500] bg-background border shadow-xl rounded-full w-9 h-9 flex items-center justify-center hover:bg-muted transition-all"
-          style={{ left: leftOpen ? 'clamp(0px, 85vw, 320px)' : '0px' }}
+          title={leftOpen ? "Réduire le panneau filtres" : "Développer le panneau filtres"}
+          className="absolute top-1/2 -translate-y-1/2 -ml-4 z-[1500] bg-background border shadow-xl rounded-full w-9 h-9 flex items-center justify-center hover:bg-muted transition-[left] duration-300 ease-in-out"
+          style={{ left: leftOpen ? "calc(300px - 18px)" : "0px" }}
         >
-          {leftOpen ? (
-            <ChevronLeft className="h-4 w-4" />
-          ) : (
-            <ChevronRight className="h-4 w-4" />
-          )}
+          {leftOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </button>
 
         {/* ---------- PANNEAU CENTRE (carte, s'étend sur tout l'espace restant) ---------- */}
-        <div className="flex-1 relative overflow-hidden min-w-0 min-h-0 h-full">
+        <div className="relative z-0 overflow-hidden min-w-0 min-h-0 h-full flex-1">
           {loading && (
             <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-[1400] flex items-center justify-center">
               <div className="flex flex-col items-center gap-3">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-                <span className="text-sm text-muted-foreground">
-                  Chargement des données...
-                </span>
+                <span className="text-sm text-muted-foreground">Chargement des données...</span>
               </div>
             </div>
           )}
@@ -750,6 +833,8 @@ const ORS = () => {
             villages={filteredVillages}
             onVillageAnalysis={setAnalysisResult}
             showLegend={false}
+            layerVisibility={layerVisibility}
+            etabInfoVisible={etabInfoVisible}
           />
         </div>
 
@@ -757,43 +842,35 @@ const ORS = () => {
         <button
           type="button"
           onClick={() => setRightOpen((v) => !v)}
-          title={
-            rightOpen
-              ? 'Réduire le panneau couches'
-              : 'Développer le panneau couches'
-          }
-          className="absolute top-1/2 -translate-y-1/2 z-[1500] bg-background border shadow-xl rounded-full w-9 h-9 flex items-center justify-center hover:bg-muted transition-all"
-          style={{ right: rightOpen ? 'clamp(0px, 85vw, 300px)' : '0px' }}
+          title={rightOpen ? "Réduire le panneau couches" : "Développer le panneau couches"}
+          className="absolute top-1/2 -translate-y-1/2 -mr-4 z-[1500] bg-background border shadow-xl rounded-full w-9 h-9 flex items-center justify-center hover:bg-muted transition-[right] duration-300 ease-in-out"
+          style={{ right: rightOpen ? "calc(300px - 18px)" : "0px" }}
         >
-          {rightOpen ? (
-            <ChevronRight className="h-4 w-4" />
-          ) : (
-            <ChevronLeft className="h-4 w-4" />
-          )}
+          {rightOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
         </button>
 
         {/* ---------- PANNEAU DROITE ---------- */}
         <aside
           className={cn(
-            'shrink-0 h-full min-h-0 bg-background/80 backdrop-blur-xl border-l shadow-xl flex flex-col overflow-hidden transition-[width] duration-300 ease-in-out',
-            rightOpen ? 'w-[85vw] sm:w-[300px]' : 'w-0 border-l-0'
+            "relative z-10 shrink-0 h-full min-h-0 bg-background/80 backdrop-blur-xl border-l shadow-xl flex flex-col overflow-hidden transition-[width] duration-300 ease-in-out",
+            rightOpen ? "w-[300px] min-w-[300px] max-w-[300px] flex-[0_0_300px]" : "w-0 border-l-0",
           )}
           aria-hidden={!rightOpen}
         >
           {/* Conteneur scrollable propre au panneau droit */}
-          <div className="h-full w-full overflow-y-auto overflow-x-hidden overscroll-contain">
-            <div className="w-full min-w-[min(80vw,300px)] sm:min-w-[300px] flex flex-col gap-4 px-3 py-4">
+          <div className="h-full w-full overflow-y-auto overflow-x-hidden overscroll-contain smooth-scroll">
+            <div className="mx-auto flex w-full max-w-[270px] flex-col justify-center gap-2.5 px-3 py-5">
               {/* Couches à afficher */}
-              <Card className="shadow-sm">
-                <CardHeader className="py-3 px-4">
+              <Card className="shadow-sm border-border/80 w-full">
+                <CardHeader className="py-2 px-3">
                   <CardTitle className="text-sm font-semibold flex items-center gap-2">
                     <Layers className="w-4 h-4 text-primary" />
                     Couches à afficher
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="px-4 pb-4 pt-0 space-y-3">
-                  <div className="grid grid-cols-1 gap-2">
-                    <label className="flex items-center gap-2 p-2 rounded hover:bg-muted/50 cursor-pointer transition-colors">
+                <CardContent className="px-3 pb-3 pt-0 space-y-1.5">
+                  <div className="grid grid-cols-1 gap-1">
+                    <label className="flex items-center gap-2 p-1 rounded hover:bg-muted/50 cursor-pointer transition-colors">
                       <Checkbox
                         checked={layerVisibility.publiques}
                         onCheckedChange={(checked) =>
@@ -808,7 +885,7 @@ const ORS = () => {
                         Établissements publiques
                       </span>
                     </label>
-                    <label className="flex items-center gap-2 p-2 rounded hover:bg-muted/50 cursor-pointer transition-colors">
+                    <label className="flex items-center gap-2 p-1.5 rounded hover:bg-muted/50 cursor-pointer transition-colors">
                       <Checkbox
                         checked={layerVisibility.prives}
                         onCheckedChange={(checked) =>
@@ -823,7 +900,7 @@ const ORS = () => {
                         Établissements privées
                       </span>
                     </label>
-                    <label className="flex items-center gap-2 p-2 rounded hover:bg-muted/50 cursor-pointer transition-colors">
+                    <label className="flex items-center gap-2 p-1.5 rounded hover:bg-muted/50 cursor-pointer transition-colors">
                       <Checkbox
                         checked={layerVisibility.villages}
                         onCheckedChange={(checked) =>
@@ -838,62 +915,43 @@ const ORS = () => {
                         Villages
                       </span>
                     </label>
-                    <label className="flex items-center gap-2 p-2 rounded hover:bg-muted/50 cursor-pointer transition-colors">
+                    <label className="flex items-center gap-2 p-1.5 rounded hover:bg-muted/50 cursor-pointer transition-colors">
                       <Checkbox
-                        checked={layerVisibility.nouvelleCreation}
-                        onCheckedChange={(checked) =>
-                          setLayerVisibility((v) => ({
-                            ...v,
-                            nouvelleCreation: !!checked,
-                          }))
-                        }
+                        checked={etabInfoVisible}
+                        onCheckedChange={(checked) => setEtabInfoVisible(!!checked)}
                       />
                       <span className="text-xs flex items-center gap-1.5">
-                        <span className="inline-block w-2 h-2 rounded-full bg-rose-500" />
-                        Nouvelle création
+                        <span className="inline-block w-2 h-2 rounded-full bg-primary" />
+                        INFOS ÉTAB.
                       </span>
                     </label>
                   </div>
 
-                  {niveau !== 'primaire' && (
-                    <div className="pt-2 border-t border-border">
-                      <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2 block">
+                  {niveau !== "primaire" && (
+                    <div className="pt-1.5 border-t border-border">
+                      <Label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1.5 block">
                         Table-bancs
                       </Label>
                       <RadioGroup
                         value={tableBancFilter}
-                        onValueChange={(v) =>
-                          setTableBancFilter(v as TableBancFilter)
-                        }
+                        onValueChange={(v) => setTableBancFilter(v as TableBancFilter)}
                         className="space-y-1"
                       >
-                        <div className="flex items-center gap-2 p-1.5 rounded hover:bg-muted/50">
+                        <div className="flex items-center gap-2 p-1 rounded hover:bg-muted/50">
                           <RadioGroupItem value="tous" id="r-tb-tous" />
-                          <Label
-                            htmlFor="r-tb-tous"
-                            className="text-xs cursor-pointer flex-1"
-                          >
+                          <Label htmlFor="r-tb-tous" className="text-xs cursor-pointer flex-1">
                             Tous
                           </Label>
                         </div>
                         <div className="flex items-center gap-2 p-1.5 rounded hover:bg-muted/50">
                           <RadioGroupItem value="suffisant" id="r-tb-suff" />
-                          <Label
-                            htmlFor="r-tb-suff"
-                            className="text-xs cursor-pointer flex-1"
-                          >
+                          <Label htmlFor="r-tb-suff" className="text-xs cursor-pointer flex-1">
                             Suffisant
                           </Label>
                         </div>
                         <div className="flex items-center gap-2 p-1.5 rounded hover:bg-muted/50">
-                          <RadioGroupItem
-                            value="insuffisant"
-                            id="r-tb-insuff"
-                          />
-                          <Label
-                            htmlFor="r-tb-insuff"
-                            className="text-xs cursor-pointer flex-1"
-                          >
+                          <RadioGroupItem value="insuffisant" id="r-tb-insuff" />
+                          <Label htmlFor="r-tb-insuff" className="text-xs cursor-pointer flex-1">
                             Insuffisant
                           </Label>
                         </div>
@@ -905,45 +963,36 @@ const ORS = () => {
 
               {/* Catégorie de la carte */}
               {mainData.length > 0 && (
-                <Card className="shadow-sm">
-                  <CardHeader className="py-3 px-4">
+                <Card className="shadow-sm border-border/80 w-full">
+                  <CardHeader className="py-2 px-3">
                     <CardTitle className="text-sm font-semibold flex items-center gap-2">
                       <AlertTriangle className="w-4 h-4 text-primary" />
                       Catégorie de la carte
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="px-4 pb-4 pt-0">
+                  <CardContent className="px-3 pb-3 pt-0">
                     <RadioGroup
                       value={categoryFilter}
                       onValueChange={setCategoryFilter}
-                      className="space-y-2"
+                      className="space-y-1"
                     >
-                      <div className="flex items-center space-x-2 p-2 rounded-lg hover:bg-muted/50 transition-colors">
+                      <div className="flex items-center space-x-2 p-1.5 rounded-lg hover:bg-muted/50 transition-colors">
                         <RadioGroupItem value="aucune" id="cat-aucune" />
-                        <Label
-                          htmlFor="cat-aucune"
-                          className="text-sm cursor-pointer flex-1"
-                        >
+                        <Label htmlFor="cat-aucune" className="text-sm cursor-pointer flex-1">
                           Aucune
                         </Label>
                       </div>
-                      <div className="flex items-center space-x-2 p-2 rounded-lg hover:bg-muted/50 transition-colors">
+                      <div className="flex items-center space-x-2 p-1.5 rounded-lg hover:bg-muted/50 transition-colors">
                         <RadioGroupItem value="extension" id="cat-extension" />
-                        <Label
-                          htmlFor="cat-extension"
-                          className="text-sm cursor-pointer flex-1"
-                        >
+                        <Label htmlFor="cat-extension" className="text-sm cursor-pointer flex-1">
                           Extension
                         </Label>
                         <Badge variant="destructive" className="text-[10px]">
                           Prioritaire
                         </Badge>
                       </div>
-                      <div className="flex items-center space-x-2 p-2 rounded-lg hover:bg-muted/50 transition-colors">
-                        <RadioGroupItem
-                          value="reconstruction"
-                          id="cat-reconstruction"
-                        />
+                      <div className="flex items-center space-x-2 p-1.5 rounded-lg hover:bg-muted/50 transition-colors">
+                        <RadioGroupItem value="reconstruction" id="cat-reconstruction" />
                         <Label
                           htmlFor="cat-reconstruction"
                           className="text-sm cursor-pointer flex-1"
@@ -951,11 +1000,8 @@ const ORS = () => {
                           Reconstruction
                         </Label>
                       </div>
-                      <div className="flex items-center space-x-2 p-2 rounded-lg hover:bg-muted/50 transition-colors">
-                        <RadioGroupItem
-                          value="rehabilitation"
-                          id="cat-rehabilitation"
-                        />
+                      <div className="flex items-center space-x-2 p-1.5 rounded-lg hover:bg-muted/50 transition-colors">
+                        <RadioGroupItem value="rehabilitation" id="cat-rehabilitation" />
                         <Label
                           htmlFor="cat-rehabilitation"
                           className="text-sm cursor-pointer flex-1"
@@ -963,16 +1009,10 @@ const ORS = () => {
                           Réhabilitation
                         </Label>
                       </div>
-                      {niveau !== 'primaire' && (
-                        <div className="flex items-center space-x-2 p-2 rounded-lg hover:bg-muted/50 transition-colors">
-                          <RadioGroupItem
-                            value="tablebanc"
-                            id="cat-tablebanc"
-                          />
-                          <Label
-                            htmlFor="cat-tablebanc"
-                            className="text-sm cursor-pointer flex-1"
-                          >
+                      {niveau !== "primaire" && (
+                        <div className="flex items-center space-x-2 p-1.5 rounded-lg hover:bg-muted/50 transition-colors">
+                          <RadioGroupItem value="tablebanc" id="cat-tablebanc" />
+                          <Label htmlFor="cat-tablebanc" className="text-sm cursor-pointer flex-1">
                             Table-bancs
                           </Label>
                         </div>
@@ -983,17 +1023,17 @@ const ORS = () => {
               )}
 
               {/* Légende — seule source de vérité (pas de légende flottante sur la carte) */}
-              <Card className="shadow-sm">
-                <CardHeader className="py-3 px-4">
+              <Card className="shadow-sm border-border/80 w-full">
+                <CardHeader className="py-2 px-3">
                   <CardTitle className="text-sm font-semibold flex items-center gap-2">
                     <MapPin className="w-4 h-4 text-primary" />
                     Légende
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="px-4 pb-4 pt-0">
-                  <div className="space-y-2">
-                    {LEGEND_ITEMS[niveau].map((item, i) => (
-                      <div key={i} className="flex items-center gap-2.5">
+                <CardContent className="px-3 pb-3 pt-0">
+                  <div className="space-y-1">
+                    {getLegendItems(niveau, categoryFilter).map((item, i) => (
+                      <div key={i} className="flex items-center gap-2">
                         {item.iconClass ? (
                           <i
                             className={`${item.iconClass} inline-flex w-5 shrink-0 justify-center text-base`}
@@ -1006,9 +1046,7 @@ const ORS = () => {
                             style={{ backgroundColor: item.color }}
                           />
                         )}
-                        <span className="text-xs text-foreground">
-                          {item.label}
-                        </span>
+                        <span className="text-xs text-foreground">{item.label}</span>
                       </div>
                     ))}
                   </div>
@@ -1048,20 +1086,16 @@ const ORS = () => {
                 {/* TOUS */}
                 <Button
                   type="button"
-                  variant={downloadCategory === 'tous' ? 'default' : 'outline'}
+                  variant={downloadCategory === "tous" ? "default" : "outline"}
                   className="w-full h-11 justify-between"
-                  onClick={() => setDownloadCategory('tous')}
+                  onClick={() => setDownloadCategory("tous")}
                 >
                   <span className="flex items-center gap-2">
                     <School className="w-4 h-4" />
                     Tous les établissements
                   </span>
 
-                  <Badge
-                    variant={
-                      downloadCategory === 'tous' ? 'secondary' : 'outline'
-                    }
-                  >
+                  <Badge variant={downloadCategory === "tous" ? "secondary" : "outline"}>
                     {downloadCategories.tous.length}
                   </Badge>
                 </Button>
@@ -1070,13 +1104,9 @@ const ORS = () => {
                 {downloadCategories.reconstruction.length > 0 && (
                   <Button
                     type="button"
-                    variant={
-                      downloadCategory === 'reconstruction'
-                        ? 'default'
-                        : 'outline'
-                    }
+                    variant={downloadCategory === "reconstruction" ? "default" : "outline"}
                     className="w-full h-11 justify-between"
-                    onClick={() => setDownloadCategory('reconstruction')}
+                    onClick={() => setDownloadCategory("reconstruction")}
                   >
                     <span className="flex items-center gap-2">
                       <Building2 className="w-4 h-4" />
@@ -1084,11 +1114,7 @@ const ORS = () => {
                     </span>
 
                     <Badge
-                      variant={
-                        downloadCategory === 'reconstruction'
-                          ? 'secondary'
-                          : 'destructive'
-                      }
+                      variant={downloadCategory === "reconstruction" ? "secondary" : "destructive"}
                     >
                       {downloadCategories.reconstruction.length}
                     </Badge>
@@ -1099,13 +1125,9 @@ const ORS = () => {
                 {downloadCategories.nouvelle_creation.length > 0 && (
                   <Button
                     type="button"
-                    variant={
-                      downloadCategory === 'nouvelle_creation'
-                        ? 'default'
-                        : 'outline'
-                    }
+                    variant={downloadCategory === "nouvelle_creation" ? "default" : "outline"}
                     className="w-full h-11 justify-between"
-                    onClick={() => setDownloadCategory('nouvelle_creation')}
+                    onClick={() => setDownloadCategory("nouvelle_creation")}
                   >
                     <span className="flex items-center gap-2">
                       <School className="w-4 h-4" />
@@ -1113,11 +1135,7 @@ const ORS = () => {
                     </span>
 
                     <Badge
-                      variant={
-                        downloadCategory === 'nouvelle_creation'
-                          ? 'secondary'
-                          : 'outline'
-                      }
+                      variant={downloadCategory === "nouvelle_creation" ? "secondary" : "outline"}
                     >
                       {downloadCategories.nouvelle_creation.length}
                     </Badge>
@@ -1128,13 +1146,9 @@ const ORS = () => {
                 {downloadCategories.rehabilitation.length > 0 && (
                   <Button
                     type="button"
-                    variant={
-                      downloadCategory === 'rehabilitation'
-                        ? 'default'
-                        : 'outline'
-                    }
+                    variant={downloadCategory === "rehabilitation" ? "default" : "outline"}
                     className="w-full h-11 justify-between"
-                    onClick={() => setDownloadCategory('rehabilitation')}
+                    onClick={() => setDownloadCategory("rehabilitation")}
                   >
                     <span className="flex items-center gap-2">
                       <AlertTriangle className="w-4 h-4" />
@@ -1142,11 +1156,7 @@ const ORS = () => {
                     </span>
 
                     <Badge
-                      variant={
-                        downloadCategory === 'rehabilitation'
-                          ? 'secondary'
-                          : 'outline'
-                      }
+                      variant={downloadCategory === "rehabilitation" ? "secondary" : "outline"}
                     >
                       {downloadCategories.rehabilitation.length}
                     </Badge>
@@ -1160,23 +1170,20 @@ const ORS = () => {
       ========================================================= */}
             <div className="bg-muted/40 rounded-lg p-3">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">
-                  Établissements à exporter
-                </span>
+                <span className="text-muted-foreground">Établissements à exporter</span>
 
                 <Badge variant="secondary">{downloadData.length}</Badge>
               </div>
 
-              {downloadCategory !== 'tous' && (
+              {downloadCategory !== "tous" && (
                 <div className="mt-2 text-xs text-muted-foreground">
-                  Catégorie :{' '}
+                  Catégorie :{" "}
                   <span className="font-medium text-foreground">
-                    {downloadCategory === 'reconstruction' && 'Reconstruction'}
+                    {downloadCategory === "reconstruction" && "Reconstruction"}
 
-                    {downloadCategory === 'nouvelle_creation' &&
-                      'Nouvelle création'}
+                    {downloadCategory === "nouvelle_creation" && "Nouvelle création"}
 
-                    {downloadCategory === 'rehabilitation' && 'Réhabilitation'}
+                    {downloadCategory === "rehabilitation" && "Réhabilitation"}
                   </span>
                 </div>
               )}
@@ -1192,7 +1199,7 @@ const ORS = () => {
 
               <Select
                 value={downloadFormat}
-                onValueChange={(v) => setDownloadFormat(v as 'csv' | 'xlsx')}
+                onValueChange={(v) => setDownloadFormat(v as "csv" | "xlsx")}
               >
                 <SelectTrigger className="h-10">
                   <SelectValue />
@@ -1230,170 +1237,167 @@ const ORS = () => {
                 <Download className="w-4 h-4 mr-2" />
               )}
               Télécharger {downloadData.length} établissement
-              {downloadData.length > 1 ? 's' : ''}
+              {downloadData.length > 1 ? "s" : ""}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
 
-      <Dialog
-        open={!!selectedEtablissement}
-        onOpenChange={() => setSelectedEtablissement(null)}
-      >
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <NiveauIcon className="w-5 h-5 text-primary" />
-              {selectedEtablissement?.NOM_ETAB}
+      <Dialog open={!!selectedEtablissement} onOpenChange={() => setSelectedEtablissement(null)}>
+        <DialogContent className="max-w-2xl p-3 sm:p-4">
+          <DialogHeader className="pb-2">
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <NiveauIcon className="w-4 h-4 text-primary" />
+              {selectedEtablissement?.NOM_ETAB || "Établissement"}
             </DialogTitle>
           </DialogHeader>
           {selectedEtablissement && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-muted/50 rounded-lg p-3">
-                  <div className="text-xs text-muted-foreground">
-                    Code Établissement
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2 rounded-md border border-primary/15 bg-primary/5 px-2.5 py-2">
+                <div className="min-w-0">
+                  <div className="text-[9px] uppercase tracking-wide text-muted-foreground">
+                    Code
                   </div>
-                  <div className="font-semibold">
-                    {selectedEtablissement.CODE_ETAB}
+                  <div className="truncate text-sm font-semibold text-foreground">
+                    {selectedEtablissement.CODE_ETAB || "Non renseigné"}
                   </div>
                 </div>
-                <div className="bg-muted/50 rounded-lg p-3">
-                  {niveau === 'primaire' ? (
-                    <>
-                      <div className="text-xs text-muted-foreground">
-                        Secteur
-                      </div>
-                      <Badge
-                        variant={
-                          selectedEtablissement.SECTEUR === 0
-                            ? 'default'
-                            : 'secondary'
-                        }
-                      >
-                        {selectedEtablissement.SECTEUR === 0
-                          ? 'PUBLIC'
-                          : 'PRIVÉ'}
-                      </Badge>
-                    </>
-                  ) : (
-                    <>
-                      <div className="text-xs text-muted-foreground">
-                        Effectifs
-                      </div>
-                      <div className="font-semibold">
-                        {selectedEtablissement.effectifs ||
-                          selectedEtablissement.eff_2024 ||
-                          '-'}
-                      </div>
-                    </>
-                  )}
-                </div>
+                <Badge
+                  variant={
+                    normalizeSectorValue(selectedEtablissement.SECTEUR) === 1
+                      ? "secondary"
+                      : "default"
+                  }
+                  className="shrink-0 whitespace-nowrap text-[10px]"
+                >
+                  {getSectorLabel(selectedEtablissement.SECTEUR)}
+                </Badge>
               </div>
 
-              {niveau === 'primaire' ? (
-                <table className="w-full text-sm">
-                  <tbody className="divide-y divide-border">
-                    <tr className="hover:bg-muted/30">
-                      <td className="py-2 font-medium flex items-center gap-2">
-                        <Users className="w-4 h-4 text-muted-foreground" />{' '}
-                        Effectif T5
-                      </td>
-                      <td className="py-2 text-right font-semibold">
-                        {selectedEtablissement.eff_t5 || '-'}
-                      </td>
-                    </tr>
-                    <tr className="hover:bg-muted/30">
-                      <td className="py-2 font-medium flex items-center gap-2">
-                        <Users className="w-4 h-4 text-muted-foreground" />{' '}
-                        Effectif Total 2024
-                      </td>
-                      <td className="py-2 text-right font-semibold">
-                        {selectedEtablissement.eff_2024 || '-'}
-                      </td>
-                    </tr>
-                    <tr className="hover:bg-muted/30">
-                      <td className="py-2 font-medium flex items-center gap-2">
-                        <MapPin className="w-4 h-4 text-muted-foreground" />{' '}
-                        Commune
-                      </td>
-                      <td className="py-2 text-right">
-                        {selectedEtablissement.COMMUNE || '-'}
-                      </td>
-                    </tr>
-                    <tr className="hover:bg-muted/30">
-                      <td className="py-2 font-medium flex items-center gap-2">
-                        <MapPin className="w-4 h-4 text-muted-foreground" />{' '}
-                        Fokontany
-                      </td>
-                      <td className="py-2 text-right">
-                        {selectedEtablissement.FOKONTANY || '-'}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              ) : (
-                <table className="w-full text-sm">
-                  <tbody className="divide-y divide-border">
-                    <tr className="hover:bg-muted/30">
-                      <td className="py-2 font-medium">Salles Bon État</td>
-                      <td className="py-2 text-right font-semibold text-green-600">
-                        {selectedEtablissement.sdc_be || '-'}
-                      </td>
-                    </tr>
-                    <tr className="hover:bg-muted/30">
-                      <td className="py-2 font-medium">Salles Mauvais État</td>
-                      <td className="py-2 text-right font-semibold text-red-600">
-                        {selectedEtablissement.sdc_me || '-'}
-                      </td>
-                    </tr>
-                    <tr className="hover:bg-muted/30">
-                      <td className="py-2 font-medium">Salles Requises</td>
-                      <td className="py-2 text-right font-semibold">
-                        {selectedEtablissement.sdc_requis || '-'}
-                      </td>
-                    </tr>
-                    <tr className="hover:bg-muted/30">
-                      <td className="py-2 font-medium">Places Disponibles</td>
-                      <td className="py-2 text-right font-semibold">
-                        {selectedEtablissement.places || '-'}
-                      </td>
-                    </tr>
-                    <tr className="hover:bg-muted/30">
-                      <td className="py-2 font-medium">
-                        Éligible Reconstruction
-                      </td>
-                      <td className="py-2 text-right">
-                        {eligibleReconstructionBadge(
-                          Boolean(selectedEtablissement.eligible_reconstruction)
+              <Card className="border-0 shadow-none">
+                <CardContent className="p-0">
+                  <div className="grid gap-2 md:grid-cols-2">
+                    {selectedEtablissement.COMMUNE ? (
+                      <InfoRow
+                        icon={<MapPin className="w-3.5 h-3.5 text-muted-foreground" />}
+                        label="Commune"
+                        value={selectedEtablissement.COMMUNE}
+                      />
+                    ) : null}
+                    {selectedEtablissement.FOKONTANY ? (
+                      <InfoRow
+                        icon={<MapPin className="w-3.5 h-3.5 text-muted-foreground" />}
+                        label="Fokontany"
+                        value={selectedEtablissement.FOKONTANY}
+                      />
+                    ) : null}
+                    {selectedEtablissement.effectifs !== null &&
+                    selectedEtablissement.effectifs !== undefined &&
+                    selectedEtablissement.effectifs !== "" ? (
+                      <InfoRow
+                        icon={<Users className="w-3.5 h-3.5 text-muted-foreground" />}
+                        label="Effectif total"
+                        value={String(selectedEtablissement.effectifs)}
+                      />
+                    ) : null}
+                    {selectedEtablissement.eff_t5 !== null &&
+                    selectedEtablissement.eff_t5 !== undefined &&
+                    selectedEtablissement.eff_t5 !== "" ? (
+                      <InfoRow
+                        icon={<Users className="w-3.5 h-3.5 text-muted-foreground" />}
+                        label="Effectif T5"
+                        value={String(selectedEtablissement.eff_t5)}
+                      />
+                    ) : null}
+                    {selectedEtablissement.eff_2024 !== null &&
+                    selectedEtablissement.eff_2024 !== undefined &&
+                    selectedEtablissement.eff_2024 !== "" ? (
+                      <InfoRow
+                        icon={<Users className="w-3.5 h-3.5 text-muted-foreground" />}
+                        label="Effectif 2024"
+                        value={String(selectedEtablissement.eff_2024)}
+                      />
+                    ) : null}
+                    {selectedEtablissement.sdc_be !== null &&
+                    selectedEtablissement.sdc_be !== undefined &&
+                    selectedEtablissement.sdc_be !== "" ? (
+                      <InfoRow
+                        icon={<CheckCircle className="w-3.5 h-3.5 text-emerald-600" />}
+                        label="Salles bonnes"
+                        value={String(selectedEtablissement.sdc_be)}
+                      />
+                    ) : null}
+                    {selectedEtablissement.sdc_me !== null &&
+                    selectedEtablissement.sdc_me !== undefined &&
+                    selectedEtablissement.sdc_me !== "" ? (
+                      <InfoRow
+                        icon={<AlertTriangle className="w-3.5 h-3.5 text-rose-600" />}
+                        label="Salles dégradées"
+                        value={String(selectedEtablissement.sdc_me)}
+                      />
+                    ) : null}
+                    {selectedEtablissement.sdc_requis !== null &&
+                    selectedEtablissement.sdc_requis !== undefined &&
+                    selectedEtablissement.sdc_requis !== "" ? (
+                      <InfoRow
+                        icon={<XCircle className="w-3.5 h-3.5 text-muted-foreground" />}
+                        label="Salles requises"
+                        value={String(selectedEtablissement.sdc_requis)}
+                      />
+                    ) : null}
+                    {selectedEtablissement.places !== null &&
+                    selectedEtablissement.places !== undefined &&
+                    selectedEtablissement.places !== "" ? (
+                      <InfoRow
+                        icon={<Users className="w-3.5 h-3.5 text-muted-foreground" />}
+                        label="Places"
+                        value={String(selectedEtablissement.places)}
+                      />
+                    ) : null}
+                    {selectedEtablissement.eligible_reconstruction !== null &&
+                    selectedEtablissement.eligible_reconstruction !== undefined ? (
+                      <InfoRow
+                        icon={<Building2 className="w-3.5 h-3.5 text-rose-600" />}
+                        label="Reconstruction"
+                        value={eligibleReconstructionBadge(
+                          Boolean(selectedEtablissement.eligible_reconstruction),
                         )}
-                      </td>
-                    </tr>
-                    <tr className="hover:bg-muted/30">
-                      <td className="py-2 font-medium">
-                        Éligible Réhabilitation
-                      </td>
-                      <td className="py-2 text-right">
-                        {selectedEtablissement.eligible_rehabilitation ? (
-                          <Badge
-                            variant="secondary"
-                            className="gap-1 bg-amber-100 text-amber-700"
-                          >
-                            <AlertTriangle className="w-3 h-3" /> OUI
-                          </Badge>
-                        ) : (
-                          <Badge
-                            variant="outline"
-                            className="gap-1 text-green-600 border-green-600"
-                          >
-                            <CheckCircle className="w-3 h-3" /> NON
-                          </Badge>
-                        )}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              )}
+                        isBadge
+                      />
+                    ) : null}
+                    {selectedEtablissement.eligible_rehabilitation !== null &&
+                    selectedEtablissement.eligible_rehabilitation !== undefined ? (
+                      <InfoRow
+                        icon={<AlertTriangle className="w-3.5 h-3.5 text-amber-600" />}
+                        label="Réhabilitation"
+                        value={
+                          selectedEtablissement.eligible_rehabilitation ? (
+                            <Badge
+                              variant="outline"
+                              className="gap-1 text-emerald-600 border-emerald-600 text-[9px]"
+                            >
+                              <CheckCircle className="w-2.5 h-2.5" /> OUI
+                            </Badge>
+                          ) : (
+                            <Badge variant="destructive" className="gap-1 text-[9px]">
+                              <XCircle className="w-2.5 h-2.5" /> NON
+                            </Badge>
+                          )
+                        }
+                        isBadge
+                      />
+                    ) : null}
+                    {getCoordinateLabel(selectedEtablissement) !== "Non renseigné" ? (
+                      <InfoRow
+                        icon={<MapPin className="w-3.5 h-3.5 text-muted-foreground" />}
+                        label="Coordonnées"
+                        value={getCoordinateLabel(selectedEtablissement)}
+                        className="md:col-span-2"
+                      />
+                    ) : null}
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           )}
         </DialogContent>

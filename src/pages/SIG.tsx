@@ -1,17 +1,17 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
-import * as turf from '@turf/turf';
-import { Card, CardContent } from '@/components/ui/card';
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+import * as turf from "@turf/turf";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+} from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -19,9 +19,9 @@ import {
   DialogTitle,
   DialogFooter,
   DialogDescription,
-} from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import {
   X,
   Settings,
@@ -38,11 +38,11 @@ import {
   Download,
   FileImage,
   Archive,
-  PanelLeftClose,
-  PanelLeftOpen,
-} from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
-import { toast } from 'sonner';
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
 import {
   LineChart,
   Line,
@@ -51,45 +51,39 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-} from 'recharts';
-import DataActionsBar from '@/components/admin/DataActionsBar';
-import { sumFields, BE_FIELDS, ME_FIELDS, NIVEAU_LABEL } from '../utils/sig';
+} from "recharts";
+import DataActionsBar from "@/components/admin/DataActionsBar";
+import { sumFields, BE_FIELDS, ME_FIELDS, NIVEAU_LABEL } from "../utils/sig";
 
 // ====================== CONFIG ======================
-const DJANGO_BASE_URL = 'https://dpe-men.mg';
+const DJANGO_BASE_URL = "https://dpe-men.mg";
 
 async function djangoGet<T = any>(path: string): Promise<T> {
-  const url = `${DJANGO_BASE_URL}${path.startsWith('/') ? path : '/' + path}`;
-  const res = await fetch(url, { credentials: 'include' });
+  const url = `${DJANGO_BASE_URL}${path.startsWith("/") ? path : "/" + path}`;
+  const res = await fetch(url, { credentials: "include" });
   if (!res.ok) throw new Error(`Django GET ${path} → ${res.status}`);
   return res.json();
 }
 
-async function djangoPost<T = any>(
-  path: string,
-  data: Record<string, any>
-): Promise<T> {
-  const url = `${DJANGO_BASE_URL}${path.startsWith('/') ? path : '/' + path}`;
+async function djangoPost<T = any>(path: string, data: Record<string, any>): Promise<T> {
+  const url = `${DJANGO_BASE_URL}${path.startsWith("/") ? path : "/" + path}`;
   const formData = new FormData();
   Object.entries(data).forEach(([k, v]) => formData.append(k, String(v)));
   const res = await fetch(url, {
-    method: 'POST',
-    credentials: 'include',
+    method: "POST",
+    credentials: "include",
     body: formData,
   });
   if (!res.ok) throw new Error(`Django POST ${path} → ${res.status}`);
   return res.json();
 }
 
-async function djangoPostJSON<T = any>(
-  path: string,
-  data: Record<string, any>
-): Promise<T> {
-  const url = `${DJANGO_BASE_URL}${path.startsWith('/') ? path : '/' + path}`;
+async function djangoPostJSON<T = any>(path: string, data: Record<string, any>): Promise<T> {
+  const url = `${DJANGO_BASE_URL}${path.startsWith("/") ? path : "/" + path}`;
   const res = await fetch(url, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
   if (!res.ok) throw new Error(`Django POST JSON ${path} → ${res.status}`);
@@ -126,71 +120,66 @@ type SigConfig = {
 };
 
 // ====================== FIX DEFAULT MARKERS ======================
-delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })
-  ._getIconUrl;
+delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
 L.Icon.Default.mergeOptions({
-  iconRetinaUrl:
-    'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl:
-    'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl:
-    'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+  iconRetinaUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png",
+  iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png",
+  shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
 });
 
 // ====================== STYLES COUCHES ======================
 const STYLE_DREN = {
-  fillColor: '#4e73df',
-  color: '#4e73df',
+  fillColor: "#4e73df",
+  color: "#4e73df",
   weight: 4,
   opacity: 1,
   fillOpacity: 0.03,
 };
 const STYLE_CISCO = {
-  fillColor: '#22afbe',
-  color: '#22afbe',
+  fillColor: "#22afbe",
+  color: "#22afbe",
   weight: 3,
   opacity: 0.9,
   fillOpacity: 0.03,
 };
 const STYLE_COMMUNE = {
-  fillColor: '#c0c0c0',
-  color: '#c0c0c0',
+  fillColor: "#c0c0c0",
+  color: "#c0c0c0",
   weight: 2,
   opacity: 0.8,
   fillOpacity: 0.03,
 };
 const STYLE_FOKONTANY = {
-  fillColor: '#55ff00',
-  color: '#55ff00',
+  fillColor: "#55ff00",
+  color: "#55ff00",
   weight: 0.6,
   opacity: 0.5,
   fillOpacity: 0.03,
 };
 
 const MAPBOX_TOKEN =
-  'pk.eyJ1IjoidG9reSIsImEiOiJjbTE4djVndXIxNmQwMmxzam1nY3JzcWU0In0.KtMOpNhicsXZkbmcFtVd8w';
-const BING_KEY =
-  'AuhiCJHlGzhg93IqUH_oCpl_-ZUrIE6SPftlyGYUvr9Amx5nzA-WqGcPquyFZl4L';
+  "pk.eyJ1IjoidG9reSIsImEiOiJjbTE4djVndXIxNmQwMmxzam1nY3JzcWU0In0.KtMOpNhicsXZkbmcFtVd8w";
+const BING_KEY = "AuhiCJHlGzhg93IqUH_oCpl_-ZUrIE6SPftlyGYUvr9Amx5nzA-WqGcPquyFZl4L";
 
 const NIVEAU_CONFIG: Record<
   string,
   { fa: string; label: string; aireColor: string; rayon: number }
 > = {
-  n0: { fa: 'fas fa-book-open', label: 'PRESCO', aireColor: 'green', rayon: 2 },
+  n0: { fa: "fas fa-book-open", label: "PRESCO", aireColor: "green", rayon: 2 },
   n1: {
-    fa: 'fas fa-book-open',
-    label: 'PRIMAIRE',
-    aireColor: 'green',
+    fa: "fas fa-book-open",
+    label: "PRIMAIRE",
+    aireColor: "green",
     rayon: 2,
   },
-  n2: { fa: 'fas fa-school', label: 'COLLEGE', aireColor: 'blue', rayon: 5 },
-  n3: { fa: 'fas fa-building', label: 'LYCEE', aireColor: 'yellow', rayon: 20 },
+  n2: { fa: "fas fa-school", label: "COLLEGE", aireColor: "blue", rayon: 5 },
+  n3: { fa: "fas fa-building", label: "LYCEE", aireColor: "yellow", rayon: 20 },
 };
 
 const VILLAGE_CONFIG = {
-  fa: 'fas fa-home',
-  label: 'Village',
-  aireColor: '#a35b08',
+  fa: "fas fa-home",
+  label: "Village",
+  aireColor: "#a35b08",
   rayon: 5,
 };
 
@@ -234,7 +223,7 @@ const SIG = () => {
   // défaut sur desktop, replié par défaut sur mobile pour laisser la place à
   // la carte.
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(() =>
-    typeof window !== 'undefined' ? window.innerWidth >= 768 : true
+    typeof window !== "undefined" ? window.innerWidth >= 768 : true,
   );
 
   // ====================== STATE ======================
@@ -247,7 +236,7 @@ const SIG = () => {
   const [zoomLevel, setZoomLevel] = useState(6);
   const [sigMoveEnabled, setSigMoveEnabled] = useState(false);
   const [searchItems, setSearchItems] = useState<SearchItem[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState<SearchItem[]>([]);
   const [sigConfig, setSigConfig] = useState<SigConfig>({
     modules: {
@@ -285,15 +274,15 @@ const SIG = () => {
   const [etabNonPointe, setEtabNonPointe] = useState<any[]>([]);
   const [selectedEtabGeo, setSelectedEtabGeo] = useState<any | null>(null);
   const [showEtabNonPointeModal, setShowEtabNonPointeModal] = useState(false);
-  const [etabNonPointeSearch, setEtabNonPointeSearch] = useState('');
-  const [modalDrenFilter, setModalDrenFilter] = useState('');
-  const [modalCiscoFilter, setModalCiscoFilter] = useState('');
-  const [modalSecteurFilter, setModalSecteurFilter] = useState('all');
-  const [modalZapFilter, setModalZapFilter] = useState('');
-  const [filterEtabName, setFilterEtabName] = useState('');
+  const [etabNonPointeSearch, setEtabNonPointeSearch] = useState("");
+  const [modalDrenFilter, setModalDrenFilter] = useState("");
+  const [modalCiscoFilter, setModalCiscoFilter] = useState("");
+  const [modalSecteurFilter, setModalSecteurFilter] = useState("all");
+  const [modalZapFilter, setModalZapFilter] = useState("");
+  const [filterEtabName, setFilterEtabName] = useState("");
   const [villageForm, setVillageForm] = useState({
-    name: '',
-    population: '',
+    name: "",
+    population: "",
     airtel: false,
     orange: false,
     telma: false,
@@ -350,7 +339,7 @@ const SIG = () => {
 
     L.control
       .scale({
-        position: 'bottomright',
+        position: "bottomright",
         metric: true,
         imperial: false,
         maxWidth: 160,
@@ -358,38 +347,34 @@ const SIG = () => {
       .addTo(map);
 
     setTimeout(() => {
-      const sc = document.querySelector(
-        '.leaflet-control-scale'
-      ) as HTMLElement;
+      const sc = document.querySelector(".leaflet-control-scale") as HTMLElement;
       if (sc)
         Object.assign(sc.style, {
-          backgroundColor: 'rgba(255,255,255,0.96)',
-          border: '1px solid #d1d5db',
-          borderRadius: '8px',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
-          padding: '5px 10px',
-          fontSize: '12px',
-          fontWeight: '500',
-          color: '#1f2937',
-          marginBottom: '14px',
-          marginRight: '14px',
+          backgroundColor: "rgba(255,255,255,0.96)",
+          border: "1px solid #d1d5db",
+          borderRadius: "8px",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
+          padding: "5px 10px",
+          fontSize: "12px",
+          fontWeight: "500",
+          color: "#1f2937",
+          marginBottom: "14px",
+          marginRight: "14px",
         });
-      const sl = document.querySelector(
-        '.leaflet-control-scale-line'
-      ) as HTMLElement;
+      const sl = document.querySelector(".leaflet-control-scale-line") as HTMLElement;
       if (sl)
         Object.assign(sl.style, {
-          border: '2.5px solid #374151',
-          borderTop: 'none',
-          borderRadius: '3px',
-          padding: '3px 7px',
-          background: 'rgba(255,255,255,0.9)',
-          fontWeight: '700',
+          border: "2.5px solid #374151",
+          borderTop: "none",
+          borderRadius: "3px",
+          padding: "3px 7px",
+          background: "rgba(255,255,255,0.9)",
+          fontWeight: "700",
         });
     }, 400);
 
-    const compassDiv = L.DomUtil.create('div', 'leaflet-control');
-    compassDiv.id = 'compass-control';
+    const compassDiv = L.DomUtil.create("div", "leaflet-control");
+    compassDiv.id = "compass-control";
     compassDiv.style.cssText = `
       position:relative;top:10px;left:5px;z-index:1000;
       background:rgba(255,255,255,0.95);border:2px solid #ccc;border-radius:50px;
@@ -397,28 +382,25 @@ const SIG = () => {
       width:45px;height:45px;display:flex;align-items:center;justify-content:center;
     `;
     compassDiv.innerHTML = `<img src="/img/Nord.png" alt="Nord" style="width:36px;height:36px;object-fit:contain;" title="Nord"/>`;
-    document.getElementById('compass-control')?.remove();
+    document.getElementById("compass-control")?.remove();
     map.getContainer().appendChild(compassDiv);
     setTimeout(() => {
-      const zc = document.querySelector('.leaflet-control-zoom') as HTMLElement;
-      if (zc) zc.style.marginTop = '65px';
+      const zc = document.querySelector(".leaflet-control-zoom") as HTMLElement;
+      if (zc) zc.style.marginTop = "65px";
     }, 200);
 
-    const DEFAULT_LAYER = L.tileLayer('', {
+    const DEFAULT_LAYER = L.tileLayer("", {
       maxZoom: 24,
-      attribution: '© MEN/DPE',
+      attribution: "© MEN/DPE",
     });
 
-    const OSM_LAYER = L.tileLayer(
-      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-      {
-        maxZoom: 22,
-        attribution: '© OpenStreetMap',
-      }
-    ).addTo(map);
+    const OSM_LAYER = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 22,
+      attribution: "© OpenStreetMap",
+    }).addTo(map);
     const IMAGERY_LAYER = L.tileLayer(
-      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-      { maxZoom: 22, attribution: '&copy; Esri' }
+      "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+      { maxZoom: 22, attribution: "&copy; Esri" },
     );
     const MAP_BOX = L.tileLayer(
       `https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`,
@@ -426,17 +408,16 @@ const SIG = () => {
         maxZoom: 24,
         tileSize: 512,
         zoomOffset: -1,
-        attribution: '&copy; Mapbox',
-      }
+        attribution: "&copy; Mapbox",
+      },
     );
     const BING_LAYER = L.tileLayer(
-      'https://ecn.t{s}.tiles.virtualearth.net/tiles/a{z}{x}{y}.jpeg?g=587&n=z&key=' +
-        BING_KEY,
+      "https://ecn.t{s}.tiles.virtualearth.net/tiles/a{z}{x}{y}.jpeg?g=587&n=z&key=" + BING_KEY,
       {
         maxZoom: 19,
-        attribution: '&copy; Microsoft Bing',
-        subdomains: ['0', '1', '2', '3'],
-      } as any
+        attribution: "&copy; Microsoft Bing",
+        subdomains: ["0", "1", "2", "3"],
+      } as any,
     );
 
     const layerControl = L.control.layers(
@@ -448,25 +429,23 @@ const SIG = () => {
         MAPBOX: MAP_BOX,
       },
       {},
-      { position: 'topright', collapsed: false }
+      { position: "topright", collapsed: false },
     );
     layerControl.addTo(map);
     layerControlRef.current = layerControl;
 
     const ResetControl = L.Control.extend({
-      options: { position: 'topleft' as L.ControlPosition },
+      options: { position: "topleft" as L.ControlPosition },
       onAdd: () => {
-        const btn = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+        const btn = L.DomUtil.create("div", "leaflet-bar leaflet-control");
         btn.innerHTML =
           '<a href="#" title="Réinitialiser" style="font-size:16px;line-height:30px;width:30px;height:30px;display:flex;align-items:center;justify-content:center;"><i class="fas fa-redo-alt"></i></a>';
         btn.onclick = (e) => {
           e.preventDefault();
           const drenShp = shpRef.current.dren;
           const ciscoShp = shpRef.current.cisco;
-          if (drenShp && map.hasLayer(drenShp))
-            map.fitBounds(drenShp.getBounds());
-          else if (ciscoShp && map.hasLayer(ciscoShp))
-            map.fitBounds(ciscoShp.getBounds());
+          if (drenShp && map.hasLayer(drenShp)) map.fitBounds(drenShp.getBounds());
+          else if (ciscoShp && map.hasLayer(ciscoShp)) map.fitBounds(ciscoShp.getBounds());
           else map.setView([-18.9189596, 47.5135653], 6);
         };
         return btn;
@@ -475,9 +454,9 @@ const SIG = () => {
     new ResetControl().addTo(map);
 
     const FullscreenControl = L.Control.extend({
-      options: { position: 'topleft' as L.ControlPosition },
+      options: { position: "topleft" as L.ControlPosition },
       onAdd: () => {
-        const btn = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+        const btn = L.DomUtil.create("div", "leaflet-bar leaflet-control");
         btn.innerHTML =
           '<a href="#" title="Plein écran" style="font-size:16px;line-height:30px;width:30px;height:30px;display:flex;align-items:center;justify-content:center;"><i class="fas fa-expand"></i></a>';
         btn.onclick = (e) => {
@@ -492,9 +471,9 @@ const SIG = () => {
     new FullscreenControl().addTo(map);
 
     const DownloadControl = L.Control.extend({
-      options: { position: 'topleft' as L.ControlPosition },
+      options: { position: "topleft" as L.ControlPosition },
       onAdd: () => {
-        const btn = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+        const btn = L.DomUtil.create("div", "leaflet-bar leaflet-control");
         btn.innerHTML = `
           <a href="#" title="Télécharger coordonnées des marqueurs actifs" 
             style="font-size:16px;line-height:30px;width:30px;height:30px;display:flex;align-items:center;justify-content:center;">
@@ -506,7 +485,7 @@ const SIG = () => {
           const { total } = collectActiveMarkers();
           if (total === 0) {
             toast.error(
-              "Appliquez d'abord un filtre et activez au moins un groupe de marqueurs pour établissement et/ou village"
+              "Appliquez d'abord un filtre et activez au moins un groupe de marqueurs pour établissement et/ou village",
             );
             return;
           }
@@ -518,12 +497,12 @@ const SIG = () => {
     new DownloadControl().addTo(map);
 
     const legend = new (L.Control.extend({
-      options: { position: 'bottomleft' },
+      options: { position: "bottomleft" },
     }))();
     legend.onAdd = () => {
-      const div = L.DomUtil.create('div', 'legend');
+      const div = L.DomUtil.create("div", "legend");
       div.style.cssText =
-        'background:rgba(255,255,255,0.92);padding:10px 14px;border-radius:8px;font-size:12px;line-height:1.8;box-shadow:0 2px 12px rgba(0,0,0,0.15);';
+        "background:rgba(255,255,255,0.92);padding:10px 14px;border-radius:8px;font-size:12px;line-height:1.8;box-shadow:0 2px 12px rgba(0,0,0,0.15);";
       div.innerHTML = `
         <p style="font-size:14px;margin:0 0 4px"><strong><u>Légende</u></strong></p>
         <i class="fa fa-square text-primary"></i>&nbsp;Secteur Public<br/>
@@ -544,42 +523,40 @@ const SIG = () => {
     legend.addTo(map);
 
     setTimeout(() => {
-      const scale = document.querySelector(
-        '.leaflet-control-scale'
-      ) as HTMLElement;
+      const scale = document.querySelector(".leaflet-control-scale") as HTMLElement;
       if (scale) {
-        scale.style.marginLeft = '20px';
-        scale.style.marginBottom = '8px';
+        scale.style.marginLeft = "20px";
+        scale.style.marginBottom = "8px";
       }
     }, 400);
 
     const zoomCtrl = new (L.Control.extend({
-      options: { position: 'topleft' },
+      options: { position: "topleft" },
     }))();
     zoomCtrl.onAdd = () => {
-      const div = L.DomUtil.create('div', '');
+      const div = L.DomUtil.create("div", "");
       div.style.cssText =
-        'background:#272729af;padding:4px 10px;font-size:12px;color:#fff;border-radius:4px;';
-      div.id = 'zoom-indicator';
+        "background:#272729af;padding:4px 10px;font-size:12px;color:#fff;border-radius:4px;";
+      div.id = "zoom-indicator";
       div.innerHTML = `Niveau de Zoom: ${map.getZoom()}`;
       return div;
     };
     zoomCtrl.addTo(map);
 
-    map.on('zoomend', () => {
+    map.on("zoomend", () => {
       const z = map.getZoom();
       setZoomLevel(z);
-      const el = document.getElementById('zoom-indicator');
+      const el = document.getElementById("zoom-indicator");
       if (el) el.innerHTML = `Niveau de Zoom: ${z}`;
-      let fontSize = '0px';
-      if (z > 16) fontSize = '13px';
-      else if (z > 14) fontSize = '10px';
-      else if (z > 12) fontSize = '8px';
+      let fontSize = "0px";
+      if (z > 16) fontSize = "13px";
+      else if (z > 14) fontSize = "10px";
+      else if (z > 12) fontSize = "8px";
       document
-        .querySelectorAll<HTMLElement>('.label-etab')
+        .querySelectorAll<HTMLElement>(".label-etab")
         .forEach((el) => (el.style.fontSize = fontSize));
       document
-        .querySelectorAll<HTMLElement>('.label-village')
+        .querySelectorAll<HTMLElement>(".label-village")
         .forEach((el) => (el.style.fontSize = fontSize));
       // ⚠️ Correctif : la case "Déplacer" est un input React contrôlé
       // (`checked={sigMoveEnabled}`). La modifier directement via le DOM
@@ -593,21 +570,21 @@ const SIG = () => {
       }
     });
 
-    map.on('baselayerchange', (e: any) => {
+    map.on("baselayerchange", (e: any) => {
       const z = map.getZoom();
-      const isDark = e.name !== 'DEFAULT' && e.name !== 'OSM';
-      const color = isDark ? 'white' : 'black';
+      const isDark = e.name !== "DEFAULT" && e.name !== "OSM";
+      const color = isDark ? "white" : "black";
       if (z > 12) {
         document
-          .querySelectorAll<HTMLElement>('.label-etab')
+          .querySelectorAll<HTMLElement>(".label-etab")
           .forEach((el) => (el.style.color = color));
         document
-          .querySelectorAll<HTMLElement>('.label-village')
+          .querySelectorAll<HTMLElement>(".label-village")
           .forEach((el) => (el.style.color = color));
       }
     });
 
-    map.on('click', () => setContextMenu(null));
+    map.on("click", () => setContextMenu(null));
 
     for (let n = 0; n < 4; n++) {
       for (let s = 0; s < 2; s++) {
@@ -618,7 +595,7 @@ const SIG = () => {
 
     mapRef.current = map;
 
-    djangoGet<Dren[]>('/sig/dren/').then(setDrens).catch(console.error);
+    djangoGet<Dren[]>("/sig/dren/").then(setDrens).catch(console.error);
 
     return () => {
       map.remove();
@@ -640,7 +617,7 @@ const SIG = () => {
         const data = await djangoGet(`/sig/tables-bancs/?${params}`);
         if (!cancelled) setTablesBancs(data);
       } catch (err) {
-        if (!cancelled) console.error('Erreur tables-bancs:', err);
+        if (!cancelled) console.error("Erreur tables-bancs:", err);
       }
     };
 
@@ -676,16 +653,16 @@ const SIG = () => {
   useEffect(() => {
     const loadConfig = async () => {
       try {
-        const res = await djangoGet('/sig/config/');
+        const res = await djangoGet("/sig/config/");
         const modules = res?.modules || {};
         const permissions = res?.permissions || {};
 
         const getModule = (key: string): boolean => {
           return Boolean(
             modules[key] ??
-            modules[key.replace(/([A-Z])/g, '_$1').toLowerCase()] ??
+            modules[key.replace(/([A-Z])/g, "_$1").toLowerCase()] ??
             modules[key.toLowerCase()] ??
-            false
+            false,
           );
         };
 
@@ -693,21 +670,19 @@ const SIG = () => {
 
         setSigConfig({
           modules: {
-            pointage: getModule('pointage'),
-            deplacement: getModule('deplacement'),
+            pointage: getModule("pointage"),
+            deplacement: getModule("deplacement"),
             validationDeplacement:
-              getModule('validationDeplacement') ||
-              getModule('validation_deplacement'),
+              getModule("validationDeplacement") || getModule("validation_deplacement"),
           },
           permissions: {
             // Seul un SuperUser peut valider/rejeter
-            valider: isAdmin && getModule('validationDeplacement'),
-            rejeter: isAdmin && getModule('validationDeplacement'),
+            valider: isAdmin && getModule("validationDeplacement"),
+            rejeter: isAdmin && getModule("validationDeplacement"),
             // Supprimer est autorisé pour tout le monde (user et admin)
-            supprimer: getModule('validationDeplacement'),
+            supprimer: getModule("validationDeplacement"),
             // Vérifier est autorisé pour tout le monde
-            verifier:
-              getModule('validationDeplacement') || getModule('pointage'),
+            verifier: getModule("validationDeplacement") || getModule("pointage"),
           },
         });
       } catch (err) {
@@ -739,7 +714,7 @@ const SIG = () => {
   const loadDeplacements = async () => {
     try {
       if (!selectedDren) {
-        toast.error('DREN obligatoire');
+        toast.error("DREN obligatoire");
         return;
       }
 
@@ -752,23 +727,18 @@ const SIG = () => {
         // Si l'utilisateur a une DREN et que la DREN sélectionnée n'est pas la sienne
         if (userDrenCode && userDrenCode !== selectedDren) {
           const drenName =
-            drens.find((d) => d.CODE_DREN === userDrenCode)?.DREN ||
-            `DREN ${userDrenCode}`;
+            drens.find((d) => d.CODE_DREN === userDrenCode)?.DREN || `DREN ${userDrenCode}`;
           toast.error(
-            `❌ Vous n'avez pas accès aux déplacements de cette DREN. Accès limité à : ${drenName}`
+            `❌ Vous n'avez pas accès aux déplacements de cette DREN. Accès limité à : ${drenName}`,
           );
           setDeplacements([]);
           return;
         }
 
         // Si l'utilisateur est un CISCO, vérifier que la CISCO sélectionnée est la sienne
-        if (
-          userCiscoCode &&
-          selectedCisco > 0 &&
-          selectedCisco !== userCiscoCode
-        ) {
+        if (userCiscoCode && selectedCisco > 0 && selectedCisco !== userCiscoCode) {
           toast.error(
-            `❌ Vous n'avez pas accès aux déplacements de cette CISCO. Accès limité à votre CISCO ${userCiscoCode}`
+            `❌ Vous n'avez pas accès aux déplacements de cette CISCO. Accès limité à votre CISCO ${userCiscoCode}`,
           );
           setDeplacements([]);
           return;
@@ -781,10 +751,9 @@ const SIG = () => {
       // Pour les utilisateurs non-admin, filtrer par leur CISCO si définie
       if (!isAdmin && userCiscoCode) {
         url += `&cisco=${userCiscoCode}`;
-        toast.info(
-          `🔍 Affichage des déplacements de votre CISCO ${userCiscoCode}`,
-          { duration: 3000 }
-        );
+        toast.info(`🔍 Affichage des déplacements de votre CISCO ${userCiscoCode}`, {
+          duration: 3000,
+        });
       } else if (selectedCisco > 0) {
         url += `&cisco=${selectedCisco}`;
       }
@@ -795,17 +764,15 @@ const SIG = () => {
       setDeplacements(data);
 
       if (data.length > 0) {
-        toast.success(
-          `📋 ${data.length} déplacement${data.length > 1 ? 's' : ''} en attente`
-        );
+        toast.success(`📋 ${data.length} déplacement${data.length > 1 ? "s" : ""} en attente`);
       } else {
-        toast.info('✅ Aucun déplacement en attente pour votre zone', {
+        toast.info("✅ Aucun déplacement en attente pour votre zone", {
           duration: 3000,
         });
       }
     } catch (e) {
       console.error(e);
-      toast.error('Impossible de charger les déplacements');
+      toast.error("Impossible de charger les déplacements");
       setDeplacements([]);
     }
   };
@@ -819,16 +786,14 @@ const SIG = () => {
       }
 
       try {
-        const data = await djangoGet<Cisco[]>(
-          `/sig/liste-cisco/${selectedDren}/`
-        );
+        const data = await djangoGet<Cisco[]>(`/sig/liste-cisco/${selectedDren}/`);
 
         setCiscos(Array.isArray(data) ? data : []);
         setSelectedCisco(0);
       } catch {
         setCiscos([]);
         setSelectedCisco(0);
-        toast.error('Erreur chargement CISCO');
+        toast.error("Erreur chargement CISCO");
       }
     };
 
@@ -876,8 +841,7 @@ const SIG = () => {
         if (layer && map.hasLayer(layer)) map.removeLayer(layer);
       }
     }
-    if (map.hasLayer(villageLayerRef.current))
-      map.removeLayer(villageLayerRef.current);
+    if (map.hasLayer(villageLayerRef.current)) map.removeLayer(villageLayerRef.current);
   };
 
   const showAllSigLayers = () => {
@@ -952,14 +916,14 @@ const SIG = () => {
     if (!code_etab) return;
 
     try {
-      await djangoPostJSON('/sig/deplacements/update-position-etablissement/', {
+      await djangoPostJSON("/sig/deplacements/update-position-etablissement/", {
         code_etab,
         nouveau_lat: lat,
         nouveau_lng: lng,
       });
       toast.success("Position de l'établissement mise à jour");
     } catch {
-      toast.error('Erreur lors de la mise à jour');
+      toast.error("Erreur lors de la mise à jour");
       if (positionAvantDeplacementRef.current) {
         event.target.setLatLng(positionAvantDeplacementRef.current);
       }
@@ -982,9 +946,7 @@ const SIG = () => {
     const { lat, lng } = event.target.getLatLng();
 
     if (!id) {
-      toast.error(
-        "Impossible d'identifier ce village (données manquantes) — déplacement annulé"
-      );
+      toast.error("Impossible d'identifier ce village (données manquantes) — déplacement annulé");
       if (positionAvantDeplacementRef.current) {
         event.target.setLatLng(positionAvantDeplacementRef.current);
       }
@@ -992,14 +954,14 @@ const SIG = () => {
     }
 
     try {
-      await djangoPostJSON('/sig/deplacements/update-position-village/', {
+      await djangoPostJSON("/sig/deplacements/update-position-village/", {
         id_village: id,
         nouveau_lat: lat,
         nouveau_lng: lng,
       });
-      toast.success('Position du village mise à jour');
+      toast.success("Position du village mise à jour");
     } catch {
-      toast.error('Erreur lors de la mise à jour');
+      toast.error("Erreur lors de la mise à jour");
       if (positionAvantDeplacementRef.current)
         event.target.setLatLng(positionAvantDeplacementRef.current);
     }
@@ -1025,7 +987,7 @@ const SIG = () => {
     const map = mapRef.current;
     if (!map) return [];
     const config = NIVEAU_CONFIG[niveauKey];
-    const nIdx = niveauKey.replace('n', '');
+    const nIdx = niveauKey.replace("n", "");
     const items: SearchItem[] = [];
     // Le marqueur n'est réellement déplaçable que si le module "déplacement"
     // est activé pour l'utilisateur — évite un drag visuel suivi d'un
@@ -1035,19 +997,11 @@ const SIG = () => {
     data.forEach((dataEtab) => {
       const lat = parseFloat(dataEtab.latitude);
       const lng = parseFloat(dataEtab.longitude);
-      if (
-        isNaN(lat) ||
-        isNaN(lng) ||
-        lat < -90 ||
-        lat > 90 ||
-        lng < -180 ||
-        lng > 180
-      )
-        return;
+      if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) return;
 
-      const cls = dataEtab.SECTEUR === 0 ? 'text-primary' : 'text-warning';
+      const cls = dataEtab.SECTEUR === 0 ? "text-primary" : "text-warning";
       const icon = L.divIcon({
-        className: 'custom-icon',
+        className: "custom-icon",
         iconSize: [20, 20],
         html: `<i class="${config.fa} ${cls}"></i><span class="label-etab" style="font-size:0px;position:absolute;top:10px;white-space:nowrap;">${dataEtab.NOM_ETAB}</span>`,
       });
@@ -1056,7 +1010,7 @@ const SIG = () => {
       items.push({
         latLng,
         id: dataEtab.CODE_ETAB,
-        name: `${dataEtab.NOM_ETAB} / ${dataEtab.FOKONTANY || ''}`,
+        name: `${dataEtab.NOM_ETAB} / ${dataEtab.FOKONTANY || ""}`,
       });
 
       const marker = L.marker(latLng, {
@@ -1065,24 +1019,25 @@ const SIG = () => {
         properties: dataEtab,
       } as any);
 
-      marker.bindTooltip(
-        `<div class="custom-tooltip">${dataEtab.NOM_ETAB}</div>`,
-        { permanent: false, opacity: 1, direction: 'top' }
-      );
+      marker.bindTooltip(`<div class="custom-tooltip">${dataEtab.NOM_ETAB}</div>`, {
+        permanent: false,
+        opacity: 1,
+        direction: "top",
+      });
 
-      marker.on('mouseover', () => setHoveredEtab(dataEtab));
-      marker.on('mouseout', () => setHoveredEtab(null));
-      marker.on('click', () => {
-        setNiveau(Number(niveauKey.replace('n', '')));
+      marker.on("mouseover", () => setHoveredEtab(dataEtab));
+      marker.on("mouseout", () => setHoveredEtab(null));
+      marker.on("click", () => {
+        setNiveau(Number(niveauKey.replace("n", "")));
         setSelectedSchool(dataEtab);
       });
 
-      marker.on('dragstart', onDragMarkerStart);
-      marker.on('dragend', onDragEtabEnd);
+      marker.on("dragstart", onDragMarkerStart);
+      marker.on("dragend", onDragEtabEnd);
 
       try {
         const buffer = turf.buffer(turf.point([lng, lat]), config.rayon, {
-          units: 'kilometers',
+          units: "kilometers",
         });
         if (buffer) {
           const bufferPolygon = L.geoJSON(buffer as any, {
@@ -1094,33 +1049,29 @@ const SIG = () => {
             },
           });
           bufferPolygon.eachLayer((layer: any) => {
-            layer.on('mouseover', (e: any) =>
+            layer.on("mouseover", (e: any) =>
               e.target.setStyle({
                 weight: 2,
-                color: '#ff0000',
+                color: "#ff0000",
                 fillOpacity: 0.1,
-              })
+              }),
             );
-            layer.on('mouseout', (e: any) =>
+            layer.on("mouseout", (e: any) =>
               e.target.setStyle({
                 color: config.aireColor,
                 fillColor: config.aireColor,
                 weight: 1,
                 fillOpacity: 0.05,
-              })
+              }),
             );
           });
-          aireLayersRef.current[
-            `aire_etabN${nIdx}S${dataEtab.SECTEUR}`
-          ]?.addLayer(bufferPolygon);
+          aireLayersRef.current[`aire_etabN${nIdx}S${dataEtab.SECTEUR}`]?.addLayer(bufferPolygon);
         }
       } catch (err) {
         console.warn(`Buffer failed for etab ${dataEtab.CODE_ETAB}`, err);
       }
 
-      etabLayersRef.current[`layer_etabN${nIdx}S${dataEtab.SECTEUR}`]?.addLayer(
-        marker
-      );
+      etabLayersRef.current[`layer_etabN${nIdx}S${dataEtab.SECTEUR}`]?.addLayer(marker);
     });
 
     return items;
@@ -1133,7 +1084,7 @@ const SIG = () => {
     if (!map || !lc) return;
 
     if (selectedDren === 0) {
-      toast.error('Veuillez sélectionner une DREN');
+      toast.error("Veuillez sélectionner une DREN");
       return;
     }
 
@@ -1180,25 +1131,20 @@ const SIG = () => {
         djangoGet(`/sig/layer-etab-n1/${codeDren}/${codeCisco}/`),
         djangoGet(`/sig/layer-etab-n2/${codeDren}/${codeCisco}/`),
         djangoGet(`/sig/layer-etab-n3/${codeDren}/${codeCisco}/`),
-        djangoGet(
-          `/sig/etablissements-non-geolocalises/${codeDren}/${codeCisco}/`
-        ),
+        djangoGet(`/sig/etablissements-non-geolocalises/${codeDren}/${codeCisco}/`),
       ]);
 
-      const drenData = drenRes.status === 'fulfilled' ? drenRes.value : [];
-      const ciscoData = ciscoRes.status === 'fulfilled' ? ciscoRes.value : [];
-      const communeData =
-        communeRes.status === 'fulfilled' ? communeRes.value : [];
-      const fktData =
-        fokontanyRes.status === 'fulfilled' ? fokontanyRes.value : [];
-      const villagesData =
-        villagesRes.status === 'fulfilled' ? villagesRes.value : [];
-      const n0Data = n0Res.status === 'fulfilled' ? n0Res.value : [];
-      const n1Data = n1Res.status === 'fulfilled' ? n1Res.value : [];
-      const n2Data = n2Res.status === 'fulfilled' ? n2Res.value : [];
-      const n3Data = n3Res.status === 'fulfilled' ? n3Res.value : [];
+      const drenData = drenRes.status === "fulfilled" ? drenRes.value : [];
+      const ciscoData = ciscoRes.status === "fulfilled" ? ciscoRes.value : [];
+      const communeData = communeRes.status === "fulfilled" ? communeRes.value : [];
+      const fktData = fokontanyRes.status === "fulfilled" ? fokontanyRes.value : [];
+      const villagesData = villagesRes.status === "fulfilled" ? villagesRes.value : [];
+      const n0Data = n0Res.status === "fulfilled" ? n0Res.value : [];
+      const n1Data = n1Res.status === "fulfilled" ? n1Res.value : [];
+      const n2Data = n2Res.status === "fulfilled" ? n2Res.value : [];
+      const n3Data = n3Res.status === "fulfilled" ? n3Res.value : [];
 
-      setEtabNonPointe(nonGeoRes.status === 'fulfilled' ? nonGeoRes.value : []);
+      setEtabNonPointe(nonGeoRes.status === "fulfilled" ? nonGeoRes.value : []);
 
       if (drenData?.[0]?.shape) {
         shpRef.current.dren = L.geoJSON(drenData[0].shape, {
@@ -1209,10 +1155,10 @@ const SIG = () => {
         shpRef.current.cisco = L.geoJSON(ciscoData[0].shape, {
           style: STYLE_CISCO,
           onEachFeature: (feature, layer) => {
-            layer.bindTooltip(`CISCO: ${feature.properties?.name || ''}`, {
+            layer.bindTooltip(`CISCO: ${feature.properties?.name || ""}`, {
               permanent: false,
             });
-            layer.on('contextmenu', handleContextMenu);
+            layer.on("contextmenu", handleContextMenu);
           },
         });
       }
@@ -1225,10 +1171,10 @@ const SIG = () => {
         shpRef.current.fokontany = L.geoJSON(fktData[0].shape, {
           style: STYLE_FOKONTANY,
           onEachFeature: (feature, layer) => {
-            layer.bindTooltip(`Fokontany: ${feature.properties?.name || ''}`, {
+            layer.bindTooltip(`Fokontany: ${feature.properties?.name || ""}`, {
               permanent: false,
             });
-            layer.on('contextmenu', handleContextMenu);
+            layer.on("contextmenu", handleContextMenu);
           },
         });
       }
@@ -1245,10 +1191,10 @@ const SIG = () => {
       }
 
       const allSearchItems: SearchItem[] = [];
-      allSearchItems.push(...(createLayerEtab(n0Data, 'n0') || []));
-      allSearchItems.push(...(createLayerEtab(n1Data, 'n1') || []));
-      allSearchItems.push(...(createLayerEtab(n2Data, 'n2') || []));
-      allSearchItems.push(...(createLayerEtab(n3Data, 'n3') || []));
+      allSearchItems.push(...(createLayerEtab(n0Data, "n0") || []));
+      allSearchItems.push(...(createLayerEtab(n1Data, "n1") || []));
+      allSearchItems.push(...(createLayerEtab(n2Data, "n2") || []));
+      allSearchItems.push(...(createLayerEtab(n3Data, "n3") || []));
 
       villageLayerRef.current.clearLayers();
       const villageItems: SearchItem[] = [];
@@ -1260,7 +1206,7 @@ const SIG = () => {
         if (isNaN(lat) || isNaN(lng)) return;
 
         const icon = L.divIcon({
-          className: 'custom-icon',
+          className: "custom-icon",
           iconSize: [18, 18],
           html: `<i class="${VILLAGE_CONFIG.fa}" style="color:${VILLAGE_CONFIG.aireColor}; font-size:18px;"></i>`,
         });
@@ -1279,12 +1225,12 @@ const SIG = () => {
 
         marker.bindTooltip(`Village: ${v.name}`, {
           permanent: false,
-          direction: 'top',
+          direction: "top",
         });
-        marker.on('mouseover', () => setHoveredEtab(v));
-        marker.on('mouseout', () => setHoveredEtab(null));
-        marker.on('dragstart', onDragMarkerStart);
-        marker.on('dragend', onDragVillageEnd);
+        marker.on("mouseover", () => setHoveredEtab(v));
+        marker.on("mouseout", () => setHoveredEtab(null));
+        marker.on("dragstart", onDragMarkerStart);
+        marker.on("dragend", onDragVillageEnd);
 
         villageLayerRef.current.addLayer(marker);
         villageItems.push({ latLng: [lat, lng], id: v.id, name: v.name });
@@ -1317,22 +1263,22 @@ const SIG = () => {
         villages: villageItems.length,
       });
 
-      lc.addOverlay(etabLayersRef.current['layer_etabN0S0'], 'PRESCO PUBLIC');
-      lc.addOverlay(etabLayersRef.current['layer_etabN0S1'], 'PRESCO PRIVÉ');
-      lc.addOverlay(etabLayersRef.current['layer_etabN1S0'], 'PRIMAIRE PUBLIC');
-      lc.addOverlay(etabLayersRef.current['layer_etabN1S1'], 'PRIMAIRE PRIVÉ');
-      lc.addOverlay(etabLayersRef.current['layer_etabN2S0'], 'COLLEGE PUBLIC');
-      lc.addOverlay(etabLayersRef.current['layer_etabN2S1'], 'COLLEGE PRIVÉ');
-      lc.addOverlay(etabLayersRef.current['layer_etabN3S0'], 'LYCEE PUBLIC');
-      lc.addOverlay(etabLayersRef.current['layer_etabN3S1'], 'LYCEE PRIVÉ');
-      lc.addOverlay(villageLayerRef.current, 'VILLAGES');
+      lc.addOverlay(etabLayersRef.current["layer_etabN0S0"], "PRESCO PUBLIC");
+      lc.addOverlay(etabLayersRef.current["layer_etabN0S1"], "PRESCO PRIVÉ");
+      lc.addOverlay(etabLayersRef.current["layer_etabN1S0"], "PRIMAIRE PUBLIC");
+      lc.addOverlay(etabLayersRef.current["layer_etabN1S1"], "PRIMAIRE PRIVÉ");
+      lc.addOverlay(etabLayersRef.current["layer_etabN2S0"], "COLLEGE PUBLIC");
+      lc.addOverlay(etabLayersRef.current["layer_etabN2S1"], "COLLEGE PRIVÉ");
+      lc.addOverlay(etabLayersRef.current["layer_etabN3S0"], "LYCEE PUBLIC");
+      lc.addOverlay(etabLayersRef.current["layer_etabN3S1"], "LYCEE PRIVÉ");
+      lc.addOverlay(villageLayerRef.current, "VILLAGES");
 
       const aireCtrl = new (L.Control.extend({
-        options: { position: 'topright' },
+        options: { position: "topright" },
       }))();
 
       aireCtrl.onAdd = () => {
-        const div = L.DomUtil.create('div', 'control-aire');
+        const div = L.DomUtil.create("div", "control-aire");
         div.innerHTML = `
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin:4px 0;">
             <input id="aireN1S0" type="checkbox" style="width:16px;height:16px;" />
@@ -1351,13 +1297,11 @@ const SIG = () => {
         L.DomEvent.disableClickPropagation(div);
 
         setTimeout(() => {
-          ['N1S0', 'N2S0', 'N3S0'].forEach((niveau) => {
-            const cb = document.getElementById(
-              `aire${niveau}`
-            ) as HTMLInputElement;
+          ["N1S0", "N2S0", "N3S0"].forEach((niveau) => {
+            const cb = document.getElementById(`aire${niveau}`) as HTMLInputElement;
             if (!cb) return;
 
-            cb.addEventListener('change', () => {
+            cb.addEventListener("change", () => {
               const aireLayer = aireLayersRef.current[`aire_etab${niveau}`];
               if (cb.checked) {
                 aireLayer?.addTo(map);
@@ -1375,11 +1319,11 @@ const SIG = () => {
       ctrlAireRef.current = aireCtrl;
 
       toast.success(
-        `Chargement terminé : ${n0Data.length + n1Data.length + n2Data.length + n3Data.length} établissements`
+        `Chargement terminé : ${n0Data.length + n1Data.length + n2Data.length + n3Data.length} établissements`,
       );
     } catch (err: any) {
-      console.error('Erreur handleApplyFilters:', err);
-      toast.error('Erreur lors du chargement des données SIG');
+      console.error("Erreur handleApplyFilters:", err);
+      toast.error("Erreur lors du chargement des données SIG");
     } finally {
       setLoading(false);
     }
@@ -1393,9 +1337,7 @@ const SIG = () => {
     }
     const term = searchTerm.toLowerCase();
     setSearchResults(
-      searchItems
-        .filter((item) => item.name.toLowerCase().includes(term))
-        .slice(0, 20)
+      searchItems.filter((item) => item.name.toLowerCase().includes(term)).slice(0, 20),
     );
   }, [searchTerm, searchItems]);
 
@@ -1406,8 +1348,8 @@ const SIG = () => {
     if (searchMarkerRef.current) searchMarkerRef.current.remove();
     searchMarkerRef.current = L.circle(item.latLng, {
       radius: 500,
-      color: 'green',
-      fillColor: 'yellow',
+      color: "green",
+      fillColor: "yellow",
       fillOpacity: 0.3,
     })
       .addTo(map)
@@ -1417,27 +1359,27 @@ const SIG = () => {
       searchMarkerRef.current?.remove();
       searchMarkerRef.current = null;
     }, 10000);
-    setSearchTerm('');
+    setSearchTerm("");
     setSearchResults([]);
   };
 
   // ====================== GÉOLOCALISER ======================
   const handleSaveGeoEtab = async () => {
     if (!selectedEtabGeo) {
-      toast.warning('Sélectionnez un établissement');
+      toast.warning("Sélectionnez un établissement");
       return;
     }
     if (geoCoords.lat === 0 && geoCoords.lng === 0) {
-      toast.error('Erreur de coordonnées.');
+      toast.error("Erreur de coordonnées.");
       return;
     }
     try {
-      await djangoPost('/sig/geolocaliser-etablissement/', {
+      await djangoPost("/sig/geolocaliser-etablissement/", {
         code_etab: selectedEtabGeo.CODE_ETAB,
         longitude: geoCoords.lng,
         latitude: geoCoords.lat,
       });
-      toast.success('Établissement géolocalisé avec succès');
+      toast.success("Établissement géolocalisé avec succès");
       setShowGeoEtab(false);
       const map = mapRef.current;
       if (map)
@@ -1446,26 +1388,26 @@ const SIG = () => {
           .bindPopup(selectedEtabGeo.NOM_ETAB)
           .openPopup();
     } catch {
-      toast.error('Erreur lors de la géolocalisation');
+      toast.error("Erreur lors de la géolocalisation");
     }
   };
 
   const handleSaveGeoVillage = async () => {
     if (villageForm.name.length < 4) {
-      toast.warning('Nom du village invalide (min 4 caractères)');
+      toast.warning("Nom du village invalide (min 4 caractères)");
       return;
     }
     const pop = parseInt(villageForm.population);
     if (isNaN(pop) || pop < 10) {
-      toast.warning('Population invalide (min 10)');
+      toast.warning("Population invalide (min 10)");
       return;
     }
     if (geoCoords.lat === 0 && geoCoords.lng === 0) {
-      toast.error('Erreur de coordonnées.');
+      toast.error("Erreur de coordonnées.");
       return;
     }
     try {
-      await djangoPost('/sig/geolocaliser-village/', {
+      await djangoPost("/sig/geolocaliser-village/", {
         name: villageForm.name,
         dren: selectedDren,
         cisco: selectedCisco,
@@ -1481,8 +1423,8 @@ const SIG = () => {
       toast.success(`Village ${villageForm.name} géolocalisé avec succès`);
       setShowGeoVillage(false);
       setVillageForm({
-        name: '',
-        population: '',
+        name: "",
+        population: "",
         airtel: false,
         orange: false,
         telma: false,
@@ -1491,19 +1433,16 @@ const SIG = () => {
       });
       const map = mapRef.current;
       if (map)
-        L.marker([geoCoords.lat, geoCoords.lng])
-          .addTo(map)
-          .bindPopup(villageForm.name)
-          .openPopup();
+        L.marker([geoCoords.lat, geoCoords.lng]).addTo(map).bindPopup(villageForm.name).openPopup();
     } catch {
-      toast.error('Erreur lors de la géolocalisation');
+      toast.error("Erreur lors de la géolocalisation");
     }
   };
 
   const handleValider = async (item: any) => {
     // SEUL SuperUser peut valider
     if (!isSuperUser(user)) {
-      toast.error('❌ Seul un administrateur peut valider des déplacements');
+      toast.error("❌ Seul un administrateur peut valider des déplacements");
       return;
     }
 
@@ -1514,31 +1453,31 @@ const SIG = () => {
 
     if (
       !confirm(
-        `Voulez-vous vraiment VALIDER le déplacement de ${item.type_objet === 'ETAB' ? "l'établissement" : 'le village'} ${item.code || ''} ?`
+        `Voulez-vous vraiment VALIDER le déplacement de ${item.type_objet === "ETAB" ? "l'établissement" : "le village"} ${item.code || ""} ?`,
       )
     ) {
       return;
     }
 
     try {
-      await djangoPostJSON('/sig/deplacements/valider/', {
+      await djangoPostJSON("/sig/deplacements/valider/", {
         type_objet: item.type_objet,
         id: item.id,
       });
       toast.success(
-        `✅ Déplacement ${item.type_objet === 'ETAB' ? "de l'établissement" : 'du village'} ${item.code || ''} validé`
+        `✅ Déplacement ${item.type_objet === "ETAB" ? "de l'établissement" : "du village"} ${item.code || ""} validé`,
       );
       await loadDeplacements();
     } catch (error: any) {
-      console.error('Erreur validation:', error);
-      toast.error(`❌ Erreur : ${error.message || 'Veuillez réessayer'}`);
+      console.error("Erreur validation:", error);
+      toast.error(`❌ Erreur : ${error.message || "Veuillez réessayer"}`);
     }
   };
 
   const handleRejeter = async (item: any) => {
     // SEUL SuperUser peut rejeter
     if (!isSuperUser(user)) {
-      toast.error('❌ Seul un administrateur peut rejeter des déplacements');
+      toast.error("❌ Seul un administrateur peut rejeter des déplacements");
       return;
     }
 
@@ -1549,24 +1488,24 @@ const SIG = () => {
 
     if (
       !confirm(
-        `Voulez-vous vraiment REJETER le déplacement de ${item.type_objet === 'ETAB' ? "l'établissement" : 'le village'} ${item.code || ''} ?`
+        `Voulez-vous vraiment REJETER le déplacement de ${item.type_objet === "ETAB" ? "l'établissement" : "le village"} ${item.code || ""} ?`,
       )
     ) {
       return;
     }
 
     try {
-      await djangoPostJSON('/sig/deplacements/rejeter/', {
+      await djangoPostJSON("/sig/deplacements/rejeter/", {
         type_objet: item.type_objet,
         id: item.id,
       });
       toast.success(
-        `⛔ Déplacement ${item.type_objet === 'ETAB' ? "de l'établissement" : 'du village'} ${item.code || ''} rejeté`
+        `⛔ Déplacement ${item.type_objet === "ETAB" ? "de l'établissement" : "du village"} ${item.code || ""} rejeté`,
       );
       await loadDeplacements();
     } catch (error: any) {
-      console.error('Erreur rejet:', error);
-      toast.error(`❌ Erreur : ${error.message || 'Veuillez réessayer'}`);
+      console.error("Erreur rejet:", error);
+      toast.error(`❌ Erreur : ${error.message || "Veuillez réessayer"}`);
     }
   };
 
@@ -1579,24 +1518,24 @@ const SIG = () => {
 
     if (
       !confirm(
-        `⚠️ Voulez-vous vraiment SUPPRIMER définitivement le déplacement de ${item.type_objet === 'ETAB' ? "l'établissement" : 'le village'} ${item.code || ''} ?\n\nCette action est irréversible !`
+        `⚠️ Voulez-vous vraiment SUPPRIMER définitivement le déplacement de ${item.type_objet === "ETAB" ? "l'établissement" : "le village"} ${item.code || ""} ?\n\nCette action est irréversible !`,
       )
     ) {
       return;
     }
 
     try {
-      await djangoPostJSON('/sig/deplacements/supprimer/', {
+      await djangoPostJSON("/sig/deplacements/supprimer/", {
         type_objet: item.type_objet,
         id: item.id,
       });
       toast.success(
-        `🗑️ Déplacement ${item.type_objet === 'ETAB' ? "de l'établissement" : 'du village'} ${item.code || ''} supprimé`
+        `🗑️ Déplacement ${item.type_objet === "ETAB" ? "de l'établissement" : "du village"} ${item.code || ""} supprimé`,
       );
       await loadDeplacements();
     } catch (error: any) {
-      console.error('Erreur suppression:', error);
-      toast.error(`❌ Erreur : ${error.message || 'Veuillez réessayer'}`);
+      console.error("Erreur suppression:", error);
+      toast.error(`❌ Erreur : ${error.message || "Veuillez réessayer"}`);
     }
   };
 
@@ -1605,11 +1544,11 @@ const SIG = () => {
     if (!map) return;
 
     // Notification avec détails
-    const typeLabel = item.type_objet === 'ETAB' ? 'Établissement' : 'Village';
-    const message = `🔍 Vérification de ${typeLabel} ${item.code || ''}
+    const typeLabel = item.type_objet === "ETAB" ? "Établissement" : "Village";
+    const message = `🔍 Vérification de ${typeLabel} ${item.code || ""}
   \n📍 Ancienne position : ${item.ancien_lat?.toFixed(6)}, ${item.ancien_lng?.toFixed(6)}
   \n📍 Nouvelle position : ${item.nouveau_lat?.toFixed(6)}, ${item.nouveau_lng?.toFixed(6)}
-  ${item.is_duplicate ? '\n⚠️ Attention : Ce déplacement est marqué comme DOUBLON !' : ''}`;
+  ${item.is_duplicate ? "\n⚠️ Attention : Ce déplacement est marqué comme DOUBLON !" : ""}`;
 
     toast.info(message, { duration: 5000 });
 
@@ -1621,19 +1560,19 @@ const SIG = () => {
 
     const oldMarker = L.circleMarker([item.ancien_lat, item.ancien_lng], {
       radius: 10,
-      color: 'green',
-      fillColor: 'green',
+      color: "green",
+      fillColor: "green",
       fillOpacity: 1,
       weight: 2,
-    }).bindTooltip('Ancienne position', { permanent: true, direction: 'top' });
+    }).bindTooltip("Ancienne position", { permanent: true, direction: "top" });
 
     const newMarker = L.circleMarker([item.nouveau_lat, item.nouveau_lng], {
       radius: 10,
-      color: 'red',
-      fillColor: 'red',
+      color: "red",
+      fillColor: "red",
       fillOpacity: 1,
       weight: 2,
-    }).bindTooltip('Nouvelle position', { permanent: true, direction: 'top' });
+    }).bindTooltip("Nouvelle position", { permanent: true, direction: "top" });
 
     verificationMarkersRef.current.addLayer(oldMarker);
     verificationMarkersRef.current.addLayer(newMarker);
@@ -1646,12 +1585,12 @@ const SIG = () => {
         [item.nouveau_lat, item.nouveau_lng],
       ],
       {
-        color: 'orange',
+        color: "orange",
         weight: 2,
-        dashArray: '5, 5',
+        dashArray: "5, 5",
         opacity: 0.8,
-      }
-    ).bindTooltip('Déplacement', { permanent: true, direction: 'center' });
+      },
+    ).bindTooltip("Déplacement", { permanent: true, direction: "center" });
 
     verificationMarkersRef.current.addLayer(line);
 
@@ -1673,31 +1612,26 @@ const SIG = () => {
   const getElevesChartData = (school: any) => {
     if (!school) return [];
     return [
-      { annee: '2022', effectif: parseInt(school.eff_2022) || 0 },
-      { annee: '2023', effectif: parseInt(school.eff_2023) || 0 },
-      { annee: '2024', effectif: parseInt(school.eff_2024) || 0 },
-      { annee: '2025', effectif: parseInt(school.eff_2025) || 0 },
+      { annee: "2022", effectif: parseInt(school.eff_2022) || 0 },
+      { annee: "2023", effectif: parseInt(school.eff_2023) || 0 },
+      { annee: "2024", effectif: parseInt(school.eff_2024) || 0 },
+      { annee: "2025", effectif: parseInt(school.eff_2025) || 0 },
     ].filter((d) => d.effectif > 0);
   };
 
   const filteredEtabNonPointe = etabNonPointe.filter(
     (e) =>
       filterEtabName.length === 0 ||
-      (e.NOM_ETAB &&
-        e.NOM_ETAB.toLowerCase().includes(filterEtabName.toLowerCase()))
+      (e.NOM_ETAB && e.NOM_ETAB.toLowerCase().includes(filterEtabName.toLowerCase())),
   );
 
   // Calcul des valeurs uniques pour les filtres dans liste etab Non pointé
   const uniqueDrens = useMemo(() => {
-    return [
-      ...new Set(etabNonPointe.map((e) => e.DREN).filter(Boolean)),
-    ].sort();
+    return [...new Set(etabNonPointe.map((e) => e.DREN).filter(Boolean))].sort();
   }, [etabNonPointe]);
 
   const uniqueCiscos = useMemo(() => {
-    return [
-      ...new Set(etabNonPointe.map((e) => e.CISCO).filter(Boolean)),
-    ].sort();
+    return [...new Set(etabNonPointe.map((e) => e.CISCO).filter(Boolean))].sort();
   }, [etabNonPointe]);
 
   const uniqueZaps = useMemo(() => {
@@ -1705,10 +1639,8 @@ const SIG = () => {
   }, [etabNonPointe]);
 
   const uniqueSecteurs = useMemo(() => {
-    return [
-      ...new Set(etabNonPointe.map((e) => String(e.SECTEUR ?? '').trim())),
-    ]
-      .filter((v) => v !== '')
+    return [...new Set(etabNonPointe.map((e) => String(e.SECTEUR ?? "").trim()))]
+      .filter((v) => v !== "")
       .sort();
   }, [etabNonPointe]);
 
@@ -1717,36 +1649,28 @@ const SIG = () => {
     const search = etabNonPointeSearch.trim().toLowerCase();
 
     return etabNonPointe.filter((etab) => {
-      const secteur = String(etab.SECTEUR ?? '').trim();
-      const dren = String(etab.DREN ?? '').trim();
-      const cisco = String(etab.CISCO ?? '').trim();
-      const zap = String(etab.ZAP ?? '').trim();
+      const secteur = String(etab.SECTEUR ?? "").trim();
+      const dren = String(etab.DREN ?? "").trim();
+      const cisco = String(etab.CISCO ?? "").trim();
+      const zap = String(etab.ZAP ?? "").trim();
 
       const matchesSearch =
-        search === '' ||
-        String(etab.NOM_ETAB ?? '')
+        search === "" ||
+        String(etab.NOM_ETAB ?? "")
           .toLowerCase()
           .includes(search) ||
-        String(etab.CODE_ETAB ?? '').includes(search);
+        String(etab.CODE_ETAB ?? "").includes(search);
 
-      const matchesDren = modalDrenFilter === '' || dren === modalDrenFilter;
+      const matchesDren = modalDrenFilter === "" || dren === modalDrenFilter;
 
-      const matchesCisco =
-        modalCiscoFilter === '' || cisco === modalCiscoFilter;
+      const matchesCisco = modalCiscoFilter === "" || cisco === modalCiscoFilter;
 
       const matchesSecteur =
-        modalSecteurFilter === 'all' ||
-        String(etab.SECTEUR ?? '').trim() === modalSecteurFilter;
+        modalSecteurFilter === "all" || String(etab.SECTEUR ?? "").trim() === modalSecteurFilter;
 
-      const matchesZap = modalZapFilter === '' || zap === modalZapFilter;
+      const matchesZap = modalZapFilter === "" || zap === modalZapFilter;
 
-      return (
-        matchesSearch &&
-        matchesDren &&
-        matchesCisco &&
-        matchesSecteur &&
-        matchesZap
-      );
+      return matchesSearch && matchesDren && matchesCisco && matchesSecteur && matchesZap;
     });
   }, [
     etabNonPointe,
@@ -1759,23 +1683,18 @@ const SIG = () => {
 
   const exportEtabNonPointeCSV = () => {
     if (reportEtabNonPointe.length === 0) return;
-    const headers = ['CODE_ETAB', 'NOM_ETAB', 'SECTEUR', 'ZAP'];
+    const headers = ["CODE_ETAB", "NOM_ETAB", "SECTEUR", "ZAP"];
     const rows = reportEtabNonPointe.map((e) =>
-      [
-        e.CODE_ETAB ?? '',
-        e.NOM_ETAB ?? '',
-        e.SECTEUR === 1 ? 'PRIVE' : 'PUBLIC',
-        e.ZAP ?? '',
-      ]
+      [e.CODE_ETAB ?? "", e.NOM_ETAB ?? "", e.SECTEUR === 1 ? "PRIVE" : "PUBLIC", e.ZAP ?? ""]
         .map((v) => `"${String(v).replace(/"/g, '""')}"`)
-        .join(';')
+        .join(";"),
     );
-    const csv = [headers.join(';'), ...rows].join('\n');
-    const blob = new Blob(['\ufeff' + csv], {
-      type: 'text/csv;charset=utf-8;',
+    const csv = [headers.join(";"), ...rows].join("\n");
+    const blob = new Blob(["\ufeff" + csv], {
+      type: "text/csv;charset=utf-8;",
     });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
     a.download = `etablissements_non_pointes_dren${selectedDren}_cisco${selectedCisco}.csv`;
     a.click();
@@ -1784,9 +1703,9 @@ const SIG = () => {
 
   const teacherStats = useMemo(() => {
     if (!selectedSchool) return null;
-    const niveaux = ['PRÉSCOLAIRE', 'PRIMAIRE', 'COLLÈGE', 'LYCÉE'];
+    const niveaux = ["PRÉSCOLAIRE", "PRIMAIRE", "COLLÈGE", "LYCÉE"];
     return {
-      niveau: niveaux[niveau] ?? 'INCONNU',
+      niveau: niveaux[niveau] ?? "INCONNU",
       total: Number(selectedSchool.pers_total ?? 0),
       en_classe: Number(selectedSchool.en_classe ?? 0),
       fonctionnaire: Number(selectedSchool.fonctionnaire ?? 0),
@@ -1806,9 +1725,7 @@ const SIG = () => {
 
   const latest = useMemo(() => {
     if (!tablesBancs?.length) return null;
-    return [...tablesBancs].sort(
-      (a, b) => b.ANNEE_SCOLAIRE - a.ANNEE_SCOLAIRE
-    )[0];
+    return [...tablesBancs].sort((a, b) => b.ANNEE_SCOLAIRE - a.ANNEE_SCOLAIRE)[0];
   }, [tablesBancs]);
 
   const tbc = useMemo(() => {
@@ -1818,19 +1735,11 @@ const SIG = () => {
     return { bon, mauvais, total: bon + mauvais };
   }, [latest]);
 
-  const sdc = infraStats(
-    selectedSchool?.sdc_be,
-    selectedSchool?.sdc_me,
-    selectedSchool?.sdc_total
-  );
+  const sdc = infraStats(selectedSchool?.sdc_be, selectedSchool?.sdc_me, selectedSchool?.sdc_total);
   const elec = isPositive(selectedSchool?.elec);
   const eau = isPositive(selectedSchool?.point_eau);
-  const latrineG = isPositive(
-    selectedSchool?.latrine_g || selectedSchool?.latrince_g
-  );
-  const latrineF = isPositive(
-    selectedSchool?.latrine_f || selectedSchool?.latrince_f
-  );
+  const latrineG = isPositive(selectedSchool?.latrine_g || selectedSchool?.latrince_g);
+  const latrineF = isPositive(selectedSchool?.latrine_f || selectedSchool?.latrince_f);
   const latrineC = isPositive(selectedSchool?.latrine);
 
   // ====================== DOWNLOAD HELPERS ======================
@@ -1869,11 +1778,11 @@ const SIG = () => {
     };
   }, []);
 
-  const downloadData = (format: 'csv' | 'excel' | 'json' | 'geojson') => {
+  const downloadData = (format: "csv" | "excel" | "json" | "geojson") => {
     const { etabs, villages, total } = collectActiveMarkers();
 
     if (total === 0) {
-      toast.error('Aucun marqueur actif à exporter');
+      toast.error("Aucun marqueur actif à exporter");
       return;
     }
 
@@ -1881,96 +1790,81 @@ const SIG = () => {
 
     etabs.forEach((etab) => {
       data.push({
-        TYPE: 'ETABLISSEMENT',
-        DREN: etab.DREN || '',
+        TYPE: "ETABLISSEMENT",
+        DREN: etab.DREN || "",
         CODE_DREN: selectedDren,
-        CISCO: etab.CISCO || '',
+        CISCO: etab.CISCO || "",
         CODE_CISCO: selectedCisco,
-        COMMUNE: etab.COMMUNE || '',
-        ZAP: etab.ZAP || '',
-        FOKONTANY: etab.FOKONTANY || '',
+        COMMUNE: etab.COMMUNE || "",
+        ZAP: etab.ZAP || "",
+        FOKONTANY: etab.FOKONTANY || "",
         CODE_ETAB: etab.CODE_ETAB,
         NOM_ETAB: etab.NOM_ETAB,
-        SECTEUR: etab.SECTEUR === 0 ? 'PUBLIC' : 'PRIVÉ',
+        SECTEUR: etab.SECTEUR === 0 ? "PUBLIC" : "PRIVÉ",
         LATITUDE: parseFloat(etab.latitude || 0).toFixed(6),
         LONGITUDE: parseFloat(etab.longitude || 0).toFixed(6),
-        NIVEAU: NIVEAU_CONFIG[`n${etab.NIVEAU || 1}`]?.label || '',
+        NIVEAU: NIVEAU_CONFIG[`n${etab.NIVEAU || 1}`]?.label || "",
       });
     });
 
     villages.forEach((v) => {
       data.push({
-        TYPE: 'VILLAGE',
-        DREN: '',
+        TYPE: "VILLAGE",
+        DREN: "",
         CODE_DREN: selectedDren,
-        CISCO: '',
+        CISCO: "",
         CODE_CISCO: selectedCisco,
-        COMMUNE: '',
-        ZAP: '',
-        FOKONTANY: v.fokontany || '',
+        COMMUNE: "",
+        ZAP: "",
+        FOKONTANY: v.fokontany || "",
         NOM_VILLAGE: v.name,
-        POPULATION: v.population || '',
+        POPULATION: v.population || "",
         LATITUDE: parseFloat(v.latitude || 0).toFixed(6),
         LONGITUDE: parseFloat(v.longitude || 0).toFixed(6),
       });
     });
 
-    const timestamp = new Date()
-      .toISOString()
-      .slice(0, 19)
-      .replace(/[:T]/g, '-');
-    const baseName = `SIG_${selectedDren || 'national'}_${timestamp}`;
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    const baseName = `SIG_${selectedDren || "national"}_${timestamp}`;
 
-    if (format === 'csv' || format === 'excel') {
+    if (format === "csv" || format === "excel") {
       const headers = Object.keys(data[0] || {});
       let csvContent =
-        headers.join(',') +
-        '\n' +
+        headers.join(",") +
+        "\n" +
         data
           .map((row) =>
-            headers
-              .map((h) => `"${String(row[h] || '').replace(/"/g, '""')}"`)
-              .join(',')
+            headers.map((h) => `"${String(row[h] || "").replace(/"/g, '""')}"`).join(","),
           )
-          .join('\n');
+          .join("\n");
 
-      const extension = format === 'excel' ? 'xlsx' : 'csv';
-      downloadFile(csvContent, `${baseName}.${extension}`, 'text/csv');
+      const extension = format === "excel" ? "xlsx" : "csv";
+      downloadFile(csvContent, `${baseName}.${extension}`, "text/csv");
 
-      toast.success(
-        `${total} enregistrements exportés (${format.toUpperCase()})`
-      );
-    } else if (format === 'json') {
-      downloadFile(
-        JSON.stringify(data, null, 2),
-        `${baseName}.json`,
-        'application/json'
-      );
-    } else if (format === 'geojson') {
+      toast.success(`${total} enregistrements exportés (${format.toUpperCase()})`);
+    } else if (format === "json") {
+      downloadFile(JSON.stringify(data, null, 2), `${baseName}.json`, "application/json");
+    } else if (format === "geojson") {
       const features = data.map((item) => ({
-        type: 'Feature',
+        type: "Feature",
         geometry: {
-          type: 'Point',
+          type: "Point",
           coordinates: [parseFloat(item.LONGITUDE), parseFloat(item.LATITUDE)],
         },
         properties: { ...item },
       }));
 
       const geojson = {
-        type: 'FeatureCollection',
+        type: "FeatureCollection",
         features,
-        name: 'SIG Markers',
+        name: "SIG Markers",
         crs: {
-          type: 'name',
-          properties: { name: 'urn:ogc:def:crs:EPSG::4326' },
+          type: "name",
+          properties: { name: "urn:ogc:def:crs:EPSG::4326" },
         },
       };
 
-      downloadFile(
-        JSON.stringify(geojson, null, 2),
-        `${baseName}.geojson`,
-        'application/geo+json'
-      );
+      downloadFile(JSON.stringify(geojson, null, 2), `${baseName}.geojson`, "application/geo+json");
     }
 
     setShowDownloadModal(false);
@@ -1979,7 +1873,7 @@ const SIG = () => {
   const downloadFile = (content: string, filename: string, mime: string) => {
     const blob = new Blob([content], { type: mime });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
     a.download = filename;
     document.body.appendChild(a);
@@ -1992,53 +1886,50 @@ const SIG = () => {
     const { etabs, villages, total } = collectActiveMarkers();
 
     if (total === 0) {
-      toast.error('Aucun marqueur actif à exporter');
+      toast.error("Aucun marqueur actif à exporter");
       return;
     }
 
     try {
-      const JSZip = (await import('jszip')).default;
+      const JSZip = (await import("jszip")).default;
       const zip = new JSZip();
 
-      const timestamp = new Date()
-        .toISOString()
-        .slice(0, 19)
-        .replace(/[:T]/g, '-');
-      const baseName = `SIG_${selectedDren || 'national'}_${timestamp}`;
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+      const baseName = `SIG_${selectedDren || "national"}_${timestamp}`;
 
       const data: any[] = [];
 
       etabs.forEach((etab) => {
         data.push({
-          TYPE: 'ETABLISSEMENT',
-          DREN: etab.DREN || '',
+          TYPE: "ETABLISSEMENT",
+          DREN: etab.DREN || "",
           CODE_DREN: selectedDren,
-          CISCO: etab.CISCO || '',
+          CISCO: etab.CISCO || "",
           CODE_CISCO: selectedCisco,
-          COMMUNE: etab.COMMUNE || '',
-          ZAP: etab.ZAP || '',
-          FOKONTANY: etab.FOKONTANY || '',
+          COMMUNE: etab.COMMUNE || "",
+          ZAP: etab.ZAP || "",
+          FOKONTANY: etab.FOKONTANY || "",
           CODE_ETAB: etab.CODE_ETAB,
           NOM_ETAB: etab.NOM_ETAB,
-          SECTEUR: etab.SECTEUR === 0 ? 'PUBLIC' : 'PRIVÉ',
+          SECTEUR: etab.SECTEUR === 0 ? "PUBLIC" : "PRIVÉ",
           LATITUDE: parseFloat(etab.latitude || 0).toFixed(6),
           LONGITUDE: parseFloat(etab.longitude || 0).toFixed(6),
-          NIVEAU: NIVEAU_CONFIG[`n${etab.NIVEAU || 1}`]?.label || '',
+          NIVEAU: NIVEAU_CONFIG[`n${etab.NIVEAU || 1}`]?.label || "",
         });
       });
 
       villages.forEach((v) => {
         data.push({
-          TYPE: 'VILLAGE',
-          DREN: '',
+          TYPE: "VILLAGE",
+          DREN: "",
           CODE_DREN: selectedDren,
-          CISCO: '',
+          CISCO: "",
           CODE_CISCO: selectedCisco,
-          COMMUNE: '',
-          ZAP: '',
-          FOKONTANY: v.fokontany || '',
+          COMMUNE: "",
+          ZAP: "",
+          FOKONTANY: v.fokontany || "",
           NOM_VILLAGE: v.name,
-          POPULATION: v.population || '',
+          POPULATION: v.population || "",
           LATITUDE: parseFloat(v.latitude || 0).toFixed(6),
           LONGITUDE: parseFloat(v.longitude || 0).toFixed(6),
         });
@@ -2046,41 +1937,39 @@ const SIG = () => {
 
       const headers = Object.keys(data[0] || {});
       const csvContent =
-        headers.join(',') +
-        '\n' +
+        headers.join(",") +
+        "\n" +
         data
           .map((row) =>
-            headers
-              .map((h) => `"${String(row[h] || '').replace(/"/g, '""')}"`)
-              .join(',')
+            headers.map((h) => `"${String(row[h] || "").replace(/"/g, '""')}"`).join(","),
           )
-          .join('\n');
+          .join("\n");
       zip.file(`${baseName}.csv`, csvContent);
 
       zip.file(`${baseName}.json`, JSON.stringify(data, null, 2));
 
       const features = data.map((item) => ({
-        type: 'Feature',
+        type: "Feature",
         geometry: {
-          type: 'Point',
+          type: "Point",
           coordinates: [parseFloat(item.LONGITUDE), parseFloat(item.LATITUDE)],
         },
         properties: { ...item },
       }));
 
       const geojson = {
-        type: 'FeatureCollection',
+        type: "FeatureCollection",
         features,
-        name: 'SIG Markers',
+        name: "SIG Markers",
         crs: {
-          type: 'name',
-          properties: { name: 'urn:ogc:def:crs:EPSG::4326' },
+          type: "name",
+          properties: { name: "urn:ogc:def:crs:EPSG::4326" },
         },
       };
       zip.file(`${baseName}.geojson`, JSON.stringify(geojson, null, 2));
 
-      const blob = await zip.generateAsync({ type: 'blob' });
-      const { saveAs } = await import('file-saver');
+      const blob = await zip.generateAsync({ type: "blob" });
+      const { saveAs } = await import("file-saver");
 
       saveAs(blob, `SIG_Export_Complet_${timestamp}.zip`);
 
@@ -2088,7 +1977,7 @@ const SIG = () => {
       setShowDownloadModal(false);
     } catch (error) {
       console.error(error);
-      toast.error('Erreur lors de la création du ZIP');
+      toast.error("Erreur lors de la création du ZIP");
     }
   };
 
@@ -2096,16 +1985,16 @@ const SIG = () => {
     const map = mapRef.current;
     if (!map) return;
 
-    import('html2canvas').then(({ default: html2canvas }) => {
+    import("html2canvas").then(({ default: html2canvas }) => {
       html2canvas(map.getContainer(), {
         useCORS: true,
         scale: 2,
       }).then((canvas) => {
-        const link = document.createElement('a');
-        link.download = `SIG_Carte_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.png`;
-        link.href = canvas.toDataURL('image/png');
+        const link = document.createElement("a");
+        link.download = `SIG_Carte_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.png`;
+        link.href = canvas.toDataURL("image/png");
         link.click();
-        toast.success('Capture de la carte enregistrée');
+        toast.success("Capture de la carte enregistrée");
       });
     });
   };
@@ -2115,7 +2004,7 @@ const SIG = () => {
     <div className="h-[calc(100vh-4rem)] relative flex w-full overflow-hidden bg-muted/20">
       {/* Panneau latéral repliable */}
       <div
-        className={` ${sidebarOpen ? 'w-[88vw] sm:w-[320px]' : 'w-0'} shrink-0 h-full bg-background/80 backdrop-blur-xl border-r shadow-xl flex flex-col overflow-y-auto
+        className={` ${sidebarOpen ? "w-[88vw] sm:w-[320px]" : "w-0"} shrink-0 h-full bg-background/80 backdrop-blur-xl border-r shadow-xl flex flex-col overflow-y-auto
     overflow-x-hidden ransition-all duration-300 ease-in-out`}
       >
         <div className="w-[85vw] max-w-[300px] h-full flex flex-col">
@@ -2136,7 +2025,7 @@ const SIG = () => {
                 variant="outline"
                 onClick={async () => {
                   if (!selectedDren) {
-                    toast.error('Veuillez sélectionner une DREN');
+                    toast.error("Veuillez sélectionner une DREN");
                     return;
                   }
 
@@ -2145,11 +2034,7 @@ const SIG = () => {
                   const userCiscoCode = getUserCiscoCode(user);
 
                   // Vérifier l'accès à la DREN sélectionnée
-                  if (
-                    !isAdmin &&
-                    userDrenCode &&
-                    userDrenCode !== selectedDren
-                  ) {
+                  if (!isAdmin && userDrenCode && userDrenCode !== selectedDren) {
                     const drenName =
                       drens.find((d) => d.CODE_DREN === userDrenCode)?.DREN ||
                       `DREN ${userDrenCode}`;
@@ -2164,9 +2049,7 @@ const SIG = () => {
                     selectedCisco > 0 &&
                     selectedCisco !== userCiscoCode
                   ) {
-                    toast.error(
-                      `❌ Accès limité à votre CISCO : ${userCiscoCode}`
-                    );
+                    toast.error(`❌ Accès limité à votre CISCO : ${userCiscoCode}`);
                     return;
                   }
 
@@ -2186,7 +2069,7 @@ const SIG = () => {
                         ? `CISCO ${getUserCiscoCode(user)}`
                         : getUserDrenCode(user)
                           ? `DREN ${getUserDrenCode(user)}`
-                          : 'Restreint'}
+                          : "Restreint"}
                     </Badge>
                   )}
                 </div>
@@ -2199,10 +2082,10 @@ const SIG = () => {
                 variant="outline"
                 onClick={() => {
                   if (!selectedDren) {
-                    toast.error('Veuillez sélectionner un DREN');
+                    toast.error("Veuillez sélectionner un DREN");
                     return;
                   }
-                  setEtabNonPointeSearch('');
+                  setEtabNonPointeSearch("");
                   setShowEtabNonPointeModal(true);
                 }}
                 className="w-full h-10 shadow-md"
@@ -2236,26 +2119,26 @@ const SIG = () => {
                     <span className="font-semibold text-sm">Récapitulatif</span>
                   </div>
                   <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                    {showRecap ? '−' : '+'}
+                    {showRecap ? "−" : "+"}
                   </Button>
                 </div>
 
                 {showRecap && (
                   <div className="p-4 text-xs space-y-3">
-                    {' '}
+                    {" "}
                     {/* Zone sélectionnée */}
                     <div className="flex justify-between text-muted-foreground">
                       <span>Zone</span>
                       <strong className="text-foreground text-right">
-                        {drens.find((d) => d.CODE_DREN === selectedDren)
-                          ?.DREN || `DREN ${selectedDren}`}
+                        {drens.find((d) => d.CODE_DREN === selectedDren)?.DREN ||
+                          `DREN ${selectedDren}`}
 
                         {selectedCisco > 0 && ciscos.length > 0 && (
                           <>
-                            {' '}
-                            —{' '}
-                            {ciscos.find((c) => c.CODE_CISCO === selectedCisco)
-                              ?.CISCO || `CISCO ${selectedCisco}`}
+                            {" "}
+                            —{" "}
+                            {ciscos.find((c) => c.CODE_CISCO === selectedCisco)?.CISCO ||
+                              `CISCO ${selectedCisco}`}
                           </>
                         )}
                       </strong>
@@ -2265,8 +2148,7 @@ const SIG = () => {
                     <div className="flex justify-between items-center">
                       <span className="font-semibold">Établissements</span>
                       <Badge variant="secondary" className="tabular-nums">
-                        {(stats.public?.total || 0) +
-                          (stats.private?.total || 0)}
+                        {(stats.public?.total || 0) + (stats.private?.total || 0)}
                       </Badge>
                     </div>
                     {/* Public */}
@@ -2281,27 +2163,19 @@ const SIG = () => {
                       <div className="pl-3 space-y-0.5 text-[10px] text-muted-foreground">
                         <div className="flex justify-between">
                           <span>Préscolaire</span>
-                          <span className="tabular-nums">
-                            {stats.public?.prescolaire || 0}
-                          </span>
+                          <span className="tabular-nums">{stats.public?.prescolaire || 0}</span>
                         </div>
                         <div className="flex justify-between">
                           <span>Primaire</span>
-                          <span className="tabular-nums">
-                            {stats.public?.primaire || 0}
-                          </span>
+                          <span className="tabular-nums">{stats.public?.primaire || 0}</span>
                         </div>
                         <div className="flex justify-between">
                           <span>Collège</span>
-                          <span className="tabular-nums">
-                            {stats.public?.college || 0}
-                          </span>
+                          <span className="tabular-nums">{stats.public?.college || 0}</span>
                         </div>
                         <div className="flex justify-between">
                           <span>Lycée</span>
-                          <span className="tabular-nums">
-                            {stats.public?.lycee || 0}
-                          </span>
+                          <span className="tabular-nums">{stats.public?.lycee || 0}</span>
                         </div>
                       </div>
                     </div>
@@ -2317,27 +2191,19 @@ const SIG = () => {
                       <div className="pl-3 space-y-0.5 text-[10px] text-muted-foreground">
                         <div className="flex justify-between">
                           <span>Préscolaire</span>
-                          <span className="tabular-nums">
-                            {stats.private?.prescolaire || 0}
-                          </span>
+                          <span className="tabular-nums">{stats.private?.prescolaire || 0}</span>
                         </div>
                         <div className="flex justify-between">
                           <span>Primaire</span>
-                          <span className="tabular-nums">
-                            {stats.private?.primaire || 0}
-                          </span>
+                          <span className="tabular-nums">{stats.private?.primaire || 0}</span>
                         </div>
                         <div className="flex justify-between">
                           <span>Collège</span>
-                          <span className="tabular-nums">
-                            {stats.private?.college || 0}
-                          </span>
+                          <span className="tabular-nums">{stats.private?.college || 0}</span>
                         </div>
                         <div className="flex justify-between">
                           <span>Lycée</span>
-                          <span className="tabular-nums">
-                            {stats.private?.lycee || 0}
-                          </span>
+                          <span className="tabular-nums">{stats.private?.lycee || 0}</span>
                         </div>
                       </div>
                     </div>
@@ -2353,9 +2219,7 @@ const SIG = () => {
                     </div>
                     {/* Ratio Établissements non pointés / pointés */}
                     <div className="flex justify-between items-center pt-2 border-t">
-                      <span className="font-semibold">
-                        Établissements non pointés
-                      </span>
+                      <span className="font-semibold">Établissements non pointés</span>
                       <Badge variant="destructive" className="tabular-nums">
                         {etabNonPointe.length}
                       </Badge>
@@ -2365,7 +2229,7 @@ const SIG = () => {
                       <span className="tabular-nums">
                         {stats.total > 0
                           ? `${Math.round((etabNonPointe.length / stats.total) * 100)}%`
-                          : '0%'}
+                          : "0%"}
                       </span>
                     </div>
                   </div>
@@ -2407,25 +2271,17 @@ const SIG = () => {
       <button
         type="button"
         onClick={() => setSidebarOpen((v) => !v)}
-        title={sidebarOpen ? 'Réduire le panneau' : 'Développer le panneau'}
+        title={sidebarOpen ? "Réduire le panneau" : "Développer le panneau"}
         className="absolute top-1/2 -translate-y-1/2 -ml-4 z-[1500] bg-background border shadow-xl rounded-full w-9 h-9 flex items-center justify-center hover:bg-muted transition-all"
-        style={{ left: sidebarOpen ? 'clamp(0px, 85vw, 300px)' : '0px' }}
+        style={{ left: sidebarOpen ? "clamp(0px, 85vw, 300px)" : "0px" }}
       >
-        {sidebarOpen ? (
-          <PanelLeftClose className="w-4 h-4" />
-        ) : (
-          <PanelLeftOpen className="w-4 h-4" />
-        )}
+        {sidebarOpen ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
       </button>
 
       {/* Zone MAP */}
       <div className="relative flex-1 min-w-0 overflow-hidden">
         <div className="absolute top-3 left-3 z-[1000] bg-background/90 backdrop-blur rounded-md shadow-lg px-1.5 py-0.5">
-          <DataActionsBar
-            table="sig_etablissement"
-            tableLabel="SIG Établissement"
-            compact
-          />
+          <DataActionsBar table="sig_etablissement" tableLabel="SIG Établissement" compact />
         </div>
 
         {/* Bouton Déplacer - Positionné comme contrôle Leaflet */}
@@ -2446,7 +2302,7 @@ const SIG = () => {
                     const zoom = mapRef.current?.getZoom() || 0;
                     if (e.target.checked && zoom < MOVE_MIN_ZOOM) {
                       toast.warning(
-                        `Le mode déplacement nécessite un zoom minimum de ${MOVE_MIN_ZOOM} pour plus de précision.`
+                        `Le mode déplacement nécessite un zoom minimum de ${MOVE_MIN_ZOOM} pour plus de précision.`,
                       );
                       return;
                     }
@@ -2464,10 +2320,7 @@ const SIG = () => {
 
         {/* Bouton pour arrêter le mode vérification coord etab ancien et nouveau*/}
         {verifyMode && (
-          <Button
-            className="absolute top-3 right-4 z-[2000]"
-            onClick={stopVerification}
-          >
+          <Button className="absolute top-3 right-4 z-[2000]" onClick={stopVerification}>
             Quitter la vérification
           </Button>
         )}
@@ -2485,11 +2338,7 @@ const SIG = () => {
                     </Badge>
                   )}
                 </h2>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowDeplacementsModal(false)}
-                >
+                <Button variant="outline" size="sm" onClick={() => setShowDeplacementsModal(false)}>
                   Fermer
                 </Button>
               </div>
@@ -2498,18 +2347,18 @@ const SIG = () => {
                 <div className="text-center py-12 text-muted-foreground">
                   <p className="text-lg">Aucun déplacement en attente</p>
                   <p className="text-sm mt-2">
-                    Pour la zone sélectionnée :{' '}
+                    Pour la zone sélectionnée :{" "}
                     <strong>
                       {selectedDren
-                        ? drens.find((d) => d.CODE_DREN === selectedDren)
-                            ?.DREN || `DREN ${selectedDren}`
-                        : 'Toutes les DREN'}
+                        ? drens.find((d) => d.CODE_DREN === selectedDren)?.DREN ||
+                          `DREN ${selectedDren}`
+                        : "Toutes les DREN"}
                       {selectedCisco > 0 && ciscos.length > 0 && (
                         <>
-                          {' '}
-                          —{' '}
-                          {ciscos.find((c) => c.CODE_CISCO === selectedCisco)
-                            ?.CISCO || `CISCO ${selectedCisco}`}
+                          {" "}
+                          —{" "}
+                          {ciscos.find((c) => c.CODE_CISCO === selectedCisco)?.CISCO ||
+                            `CISCO ${selectedCisco}`}
                         </>
                       )}
                     </strong>
@@ -2533,10 +2382,10 @@ const SIG = () => {
                     <tbody>
                       {deplacements.map((item) => {
                         const typeLabel =
-                          item.type_objet === 'ETAB'
-                            ? 'Établissement'
-                            : item.type_objet === 'VILLAGE'
-                              ? 'Village'
+                          item.type_objet === "ETAB"
+                            ? "Établissement"
+                            : item.type_objet === "VILLAGE"
+                              ? "Village"
                               : item.type_objet;
 
                         return (
@@ -2544,37 +2393,27 @@ const SIG = () => {
                             key={`dep-${item.type_objet}-${item.id}`}
                             className="border-t hover:bg-gray-50"
                           >
-                            <td className="p-3 border font-medium">
-                              {item.code}
-                            </td>
+                            <td className="p-3 border font-medium">{item.code}</td>
                             <td className="p-3 border">
                               <Badge variant="outline">{typeLabel}</Badge>
                             </td>
-                            <td className="p-3 border">
-                              {item.demande_par || '-'}
-                            </td>
+                            <td className="p-3 border">{item.demande_par || "-"}</td>
                             <td className="p-3 border text-xs font-mono text-muted-foreground">
-                              {item.ancien_lat?.toFixed(6)},{' '}
-                              {item.ancien_lng?.toFixed(6)}
+                              {item.ancien_lat?.toFixed(6)}, {item.ancien_lng?.toFixed(6)}
                             </td>
                             <td className="p-3 border text-xs font-mono text-blue-600">
-                              {item.nouveau_lat?.toFixed(6)},{' '}
-                              {item.nouveau_lng?.toFixed(6)}
+                              {item.nouveau_lat?.toFixed(6)}, {item.nouveau_lng?.toFixed(6)}
                             </td>
                             <td className="p-3 border text-xs text-muted-foreground">
                               {item.date_demande
-                                ? new Date(item.date_demande).toLocaleString(
-                                    'fr-FR'
-                                  )
-                                : '-'}
+                                ? new Date(item.date_demande).toLocaleString("fr-FR")
+                                : "-"}
                             </td>
                             <td className="p-3 border text-center">
                               {item.is_duplicate ? (
                                 <Badge variant="destructive">Doublon</Badge>
                               ) : (
-                                <span className="text-emerald-600">
-                                  ✓ Unique
-                                </span>
+                                <span className="text-emerald-600">✓ Unique</span>
                               )}
                             </td>
                             <td className="p-3 border">
@@ -2596,32 +2435,30 @@ const SIG = () => {
                                     )}
 
                                     {/* Valider - UNIQUEMENT pour les SuperUsers */}
-                                    {sigConfig.permissions.valider &&
-                                      isSuperUser(user) && (
-                                        <Button
-                                          size="sm"
-                                          className="bg-green-600 hover:bg-green-700 text-white"
-                                          onClick={() => handleValider(item)}
-                                          title="Valider ce déplacement"
-                                        >
-                                          <Check className="h-3 w-3 mr-1" />
-                                          Valider
-                                        </Button>
-                                      )}
+                                    {sigConfig.permissions.valider && isSuperUser(user) && (
+                                      <Button
+                                        size="sm"
+                                        className="bg-green-600 hover:bg-green-700 text-white"
+                                        onClick={() => handleValider(item)}
+                                        title="Valider ce déplacement"
+                                      >
+                                        <Check className="h-3 w-3 mr-1" />
+                                        Valider
+                                      </Button>
+                                    )}
 
                                     {/* Rejeter - UNIQUEMENT pour les SuperUsers */}
-                                    {sigConfig.permissions.rejeter &&
-                                      isSuperUser(user) && (
-                                        <Button
-                                          size="sm"
-                                          variant="destructive"
-                                          onClick={() => handleRejeter(item)}
-                                          title="Rejeter ce déplacement"
-                                        >
-                                          <X className="h-3 w-3 mr-1" />
-                                          Rejeter
-                                        </Button>
-                                      )}
+                                    {sigConfig.permissions.rejeter && isSuperUser(user) && (
+                                      <Button
+                                        size="sm"
+                                        variant="destructive"
+                                        onClick={() => handleRejeter(item)}
+                                        title="Rejeter ce déplacement"
+                                      >
+                                        <X className="h-3 w-3 mr-1" />
+                                        Rejeter
+                                      </Button>
+                                    )}
 
                                     {/* Supprimer - disponible pour tout le monde (user et admin) */}
                                     {sigConfig.permissions.supprimer && (
@@ -2686,18 +2523,18 @@ const SIG = () => {
               </div>
 
               <p className="text-xs text-muted-foreground mb-4">
-                Zone filtrée :{' '}
+                Zone filtrée :{" "}
                 <strong>
                   {selectedDren
                     ? drens.find((d) => d.CODE_DREN === selectedDren)?.DREN ||
                       `DREN ${selectedDren}`
-                    : 'Toutes les DREN'}
+                    : "Toutes les DREN"}
                   {selectedCisco > 0 && ciscos.length > 0 && (
                     <>
-                      {' '}
-                      —{' '}
-                      {ciscos.find((c) => c.CODE_CISCO === selectedCisco)
-                        ?.CISCO || `CISCO ${selectedCisco}`}
+                      {" "}
+                      —{" "}
+                      {ciscos.find((c) => c.CODE_CISCO === selectedCisco)?.CISCO ||
+                        `CISCO ${selectedCisco}`}
                     </>
                   )}
                 </strong>
@@ -2708,10 +2545,7 @@ const SIG = () => {
                 {/* DREN */}
                 <div>
                   <Label className="text-xs">DREN</Label>
-                  <Select
-                    value={modalDrenFilter}
-                    onValueChange={setModalDrenFilter}
-                  >
+                  <Select value={modalDrenFilter} onValueChange={setModalDrenFilter}>
                     <SelectTrigger className="h-9">
                       <SelectValue placeholder="Toutes les DREN" />
                     </SelectTrigger>
@@ -2727,10 +2561,7 @@ const SIG = () => {
                 {/* CISCO */}
                 <div>
                   <Label className="text-xs">CISCO</Label>
-                  <Select
-                    value={modalCiscoFilter}
-                    onValueChange={setModalCiscoFilter}
-                  >
+                  <Select value={modalCiscoFilter} onValueChange={setModalCiscoFilter}>
                     <SelectTrigger className="h-9">
                       <SelectValue placeholder="Toutes les CISCO" />
                     </SelectTrigger>
@@ -2746,10 +2577,7 @@ const SIG = () => {
                 {/* ZAP */}
                 <div>
                   <Label className="text-xs">ZAP</Label>
-                  <Select
-                    value={modalZapFilter}
-                    onValueChange={setModalZapFilter}
-                  >
+                  <Select value={modalZapFilter} onValueChange={setModalZapFilter}>
                     <SelectTrigger className="h-9">
                       <SelectValue placeholder="Tous les ZAP" />
                     </SelectTrigger>
@@ -2765,10 +2593,7 @@ const SIG = () => {
                 {/* SECTEUR */}
                 <div>
                   <Label className="text-xs">Secteur</Label>
-                  <Select
-                    value={modalSecteurFilter}
-                    onValueChange={setModalSecteurFilter}
-                  >
+                  <Select value={modalSecteurFilter} onValueChange={setModalSecteurFilter}>
                     <SelectTrigger>
                       <SelectValue placeholder="Secteur" />
                     </SelectTrigger>
@@ -2778,10 +2603,10 @@ const SIG = () => {
 
                       {uniqueSecteurs.map((secteur) => (
                         <SelectItem key={secteur} value={secteur}>
-                          {secteur === '0'
-                            ? 'Public'
-                            : secteur === '1'
-                              ? 'Privé'
+                          {secteur === "0"
+                            ? "Public"
+                            : secteur === "1"
+                              ? "Privé"
                               : `Secteur ${secteur}`}
                         </SelectItem>
                       ))}
@@ -2808,8 +2633,8 @@ const SIG = () => {
                   <MapPin className="h-12 w-12 mx-auto mb-4 opacity-30" />
                   <p className="text-lg">
                     {etabNonPointe.length === 0
-                      ? 'Aucun établissement non pointé dans cette zone'
-                      : 'Aucun résultat correspondant aux filtres'}
+                      ? "Aucun établissement non pointé dans cette zone"
+                      : "Aucun résultat correspondant aux filtres"}
                   </p>
                 </div>
               ) : (
@@ -2831,30 +2656,18 @@ const SIG = () => {
                           key={`nonpointe-${etab.CODE_ETAB}-${i}`}
                           className="border-t hover:bg-gray-50 transition-colors"
                         >
-                          <td className="p-3 font-mono font-medium">
-                            {etab.CODE_ETAB}
-                          </td>
+                          <td className="p-3 font-mono font-medium">{etab.CODE_ETAB}</td>
                           <td className="p-3 font-medium">{etab.NOM_ETAB}</td>
-                          <td className="p-3 text-muted-foreground">
-                            {etab.DREN}
-                          </td>
-                          <td className="p-3 text-muted-foreground">
-                            {etab.CISCO}
-                          </td>
+                          <td className="p-3 text-muted-foreground">{etab.DREN}</td>
+                          <td className="p-3 text-muted-foreground">{etab.CISCO}</td>
                           <td className="p-3">{etab.ZAP}</td>
                           <td className="p-3">
                             {etab.SECTEUR === 1 ? (
-                              <Badge
-                                variant="outline"
-                                className="text-amber-700"
-                              >
+                              <Badge variant="outline" className="text-amber-700">
                                 Privé
                               </Badge>
                             ) : (
-                              <Badge
-                                variant="outline"
-                                className="text-blue-700"
-                              >
+                              <Badge variant="outline" className="text-blue-700">
                                 Public
                               </Badge>
                             )}
@@ -2867,8 +2680,7 @@ const SIG = () => {
               )}
 
               <p className="text-xs text-center text-muted-foreground mt-3">
-                {reportEtabNonPointe.length} affiché(s) sur{' '}
-                {etabNonPointe.length}
+                {reportEtabNonPointe.length} affiché(s) sur {etabNonPointe.length}
               </p>
             </div>
           </div>
@@ -2893,17 +2705,13 @@ const SIG = () => {
                     <div className="text-2xl font-semibold text-primary">
                       {collectActiveMarkers().etabs.length}
                     </div>
-                    <div className="text-xs text-muted-foreground">
-                      Établissements
-                    </div>
+                    <div className="text-xs text-muted-foreground">Établissements</div>
                   </div>
                   <div>
                     <div className="text-2xl font-semibold text-primary">
                       {collectActiveMarkers().villages.length}
                     </div>
-                    <div className="text-xs text-muted-foreground">
-                      Villages
-                    </div>
+                    <div className="text-xs text-muted-foreground">Villages</div>
                   </div>
                   <div>
                     <div className="text-2xl font-semibold text-primary">
@@ -2920,20 +2728,18 @@ const SIG = () => {
                 </p>
                 <div className="grid grid-cols-2 gap-3">
                   <Button
-                    onClick={() => downloadData('csv')}
+                    onClick={() => downloadData("csv")}
                     variant="outline"
                     className="h-20 justify-start"
                   >
                     <Download className="mr-3 h-5 w-5" />
                     <div className="text-left">
                       <div>CSV</div>
-                      <div className="text-xs text-muted-foreground">
-                        Tableur
-                      </div>
+                      <div className="text-xs text-muted-foreground">Tableur</div>
                     </div>
                   </Button>
                   <Button
-                    onClick={() => downloadData('excel')}
+                    onClick={() => downloadData("excel")}
                     variant="outline"
                     className="h-20 justify-start"
                   >
@@ -2944,38 +2750,32 @@ const SIG = () => {
                     </div>
                   </Button>
                   <Button
-                    onClick={() => downloadData('json')}
+                    onClick={() => downloadData("json")}
                     variant="outline"
                     className="h-20 justify-start"
                   >
                     <Download className="mr-3 h-5 w-5" />
                     <div className="text-left">
                       <div>JSON</div>
-                      <div className="text-xs text-muted-foreground">
-                        Données brutes
-                      </div>
+                      <div className="text-xs text-muted-foreground">Données brutes</div>
                     </div>
                   </Button>
                   <Button
-                    onClick={() => downloadData('geojson')}
+                    onClick={() => downloadData("geojson")}
                     variant="outline"
                     className="h-20 justify-start"
                   >
                     <Download className="mr-3 h-5 w-5" />
                     <div className="text-left">
                       <div>GeoJSON</div>
-                      <div className="text-xs text-muted-foreground">
-                        Format cartographique
-                      </div>
+                      <div className="text-xs text-muted-foreground">Format cartographique</div>
                     </div>
                   </Button>
                 </div>
               </div>
 
               <div>
-                <p className="text-sm font-medium text-muted-foreground mb-3">
-                  ACTIONS GROUPÉES
-                </p>
+                <p className="text-sm font-medium text-muted-foreground mb-3">ACTIONS GROUPÉES</p>
                 <div className="grid grid-cols-2 gap-3">
                   <Button
                     onClick={downloadAllFormats}
@@ -2998,10 +2798,7 @@ const SIG = () => {
             </div>
 
             <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => setShowDownloadModal(false)}
-              >
+              <Button variant="outline" onClick={() => setShowDownloadModal(false)}>
                 Fermer
               </Button>
             </DialogFooter>
@@ -3012,9 +2809,7 @@ const SIG = () => {
           <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-[1001] flex items-center justify-center">
             <div className="text-center">
               <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground">
-                Chargement des données SIG...
-              </p>
+              <p className="text-sm text-muted-foreground">Chargement des données SIG...</p>
             </div>
           </div>
         )}
@@ -3029,19 +2824,15 @@ const SIG = () => {
               onClick={() => {
                 if (zoomLevel < MOVE_MIN_ZOOM) {
                   toast.warning(
-                    `Le niveau de zoom est trop bas. Le zoom minimum autorisé est de ${MOVE_MIN_ZOOM}.`
+                    `Le niveau de zoom est trop bas. Le zoom minimum autorisé est de ${MOVE_MIN_ZOOM}.`,
                   );
                   setContextMenu(null);
                   return;
                 }
                 setShowGeoEtab(true);
                 setContextMenu(null);
-                djangoGet(
-                  `/sig/etablissements-non-geolocalises/${selectedDren}/${selectedCisco}/`
-                )
-                  .then((data) =>
-                    setEtabNonPointe(Array.isArray(data) ? data : [])
-                  )
+                djangoGet(`/sig/etablissements-non-geolocalises/${selectedDren}/${selectedCisco}/`)
+                  .then((data) => setEtabNonPointe(Array.isArray(data) ? data : []))
                   .catch(() => {});
               }}
             >
@@ -3052,7 +2843,7 @@ const SIG = () => {
               onClick={() => {
                 if (zoomLevel < MOVE_MIN_ZOOM) {
                   toast.warning(
-                    `Le niveau de zoom est trop bas. Le zoom minimum autorisé est de ${MOVE_MIN_ZOOM}.`
+                    `Le niveau de zoom est trop bas. Le zoom minimum autorisé est de ${MOVE_MIN_ZOOM}.`,
                   );
                   setContextMenu(null);
                   return;
@@ -3085,8 +2876,7 @@ const SIG = () => {
             <button
               className="w-full text-left px-4 py-2 text-sm hover:bg-blue-50 flex items-center gap-2"
               onClick={() => {
-                if (contextMenu)
-                  mapRef.current?.flyTo([contextMenu.lat, contextMenu.lng], 16);
+                if (contextMenu) mapRef.current?.flyTo([contextMenu.lat, contextMenu.lng], 16);
                 setContextMenu(null);
               }}
             >
@@ -3100,15 +2890,14 @@ const SIG = () => {
             <DialogHeader>
               <DialogTitle>Paramètres</DialogTitle>
               <DialogDescription>
-                Sélectionnez les filtres DREN et CISCO pour afficher les données
-                SIG.
+                Sélectionnez les filtres DREN et CISCO pour afficher les données SIG.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label className="font-semibold">Filtres</Label>
                 <Select
-                  value={selectedDren === 0 ? '' : String(selectedDren)}
+                  value={selectedDren === 0 ? "" : String(selectedDren)}
                   onValueChange={(value) => {
                     const dren = Number(value);
                     setSelectedDren(dren);
@@ -3121,10 +2910,7 @@ const SIG = () => {
                   <SelectContent>
                     <SelectItem value="0">Toutes les DREN</SelectItem>
                     {drens.map((d) => (
-                      <SelectItem
-                        key={d.CODE_DREN}
-                        value={d.CODE_DREN.toString()}
-                      >
+                      <SelectItem key={d.CODE_DREN} value={d.CODE_DREN.toString()}>
                         {d.DREN}
                       </SelectItem>
                     ))}
@@ -3133,7 +2919,7 @@ const SIG = () => {
               </div>
               <div className="space-y-2">
                 <Select
-                  value={selectedCisco === 0 ? '' : String(selectedCisco)}
+                  value={selectedCisco === 0 ? "" : String(selectedCisco)}
                   onValueChange={(value) => setSelectedCisco(Number(value))}
                   disabled={selectedDren === 0}
                 >
@@ -3143,10 +2929,7 @@ const SIG = () => {
                   <SelectContent>
                     <SelectItem value="0">Toutes les CISCO</SelectItem>
                     {ciscos.map((c) => (
-                      <SelectItem
-                        key={c.CODE_CISCO}
-                        value={c.CODE_CISCO.toString()}
-                      >
+                      <SelectItem key={c.CODE_CISCO} value={c.CODE_CISCO.toString()}>
                         {c.CISCO}
                       </SelectItem>
                     ))}
@@ -3202,15 +2985,10 @@ const SIG = () => {
 
         <div ref={mapContainerRef} className="h-full w-full" />
 
-        <Dialog
-          open={!!selectedSchool}
-          onOpenChange={() => setSelectedSchool(null)}
-        >
+        <Dialog open={!!selectedSchool} onOpenChange={() => setSelectedSchool(null)}>
           <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto z-[10000]">
             <DialogHeader>
-              <DialogTitle>
-                Fiche école — {selectedSchool?.NOM_ETAB}
-              </DialogTitle>
+              <DialogTitle>Fiche école — {selectedSchool?.NOM_ETAB}</DialogTitle>
               <DialogDescription>
                 Informations détaillées de l'établissement scolaire.
               </DialogDescription>
@@ -3237,7 +3015,7 @@ const SIG = () => {
                                   className="w-full h-full object-cover"
                                   onError={(e) => {
                                     const target = e.target as HTMLImageElement;
-                                    target.style.display = 'none';
+                                    target.style.display = "none";
                                     const parent = target.parentElement;
                                     if (parent)
                                       parent.innerHTML = `<div class="flex flex-col items-center justify-center h-full text-gray-400"><span class="text-5xl mb-2">📷</span><span class="text-sm font-medium">Photo indisponible</span></div>`;
@@ -3246,58 +3024,46 @@ const SIG = () => {
                               </div>
                             </td>
                             <td className="border p-2">
-                              <strong>CODE ÉTABLISSEMENT :</strong>{' '}
-                              {selectedSchool.CODE_ETAB}
+                              <strong>CODE ÉTABLISSEMENT :</strong> {selectedSchool.CODE_ETAB}
                             </td>
                           </tr>
                           <tr>
                             <td className="border p-2">
-                              <strong>SECTEUR :</strong>{' '}
-                              {selectedSchool.SECTEUR === 0
-                                ? 'PUBLIQUE'
-                                : 'PRIVÉE'}
+                              <strong>SECTEUR :</strong>{" "}
+                              {selectedSchool.SECTEUR === 0 ? "PUBLIQUE" : "PRIVÉE"}
                             </td>
                           </tr>
                           <tr>
                             <td className="border p-2">
-                              <strong>DREN :</strong>{' '}
-                              {selectedSchool.DREN || '-'}
+                              <strong>DREN :</strong> {selectedSchool.DREN || "-"}
                             </td>
                           </tr>
                           <tr>
                             <td className="border p-2">
-                              <strong>CISCO :</strong>{' '}
-                              {selectedSchool.CISCO || '-'}
+                              <strong>CISCO :</strong> {selectedSchool.CISCO || "-"}
                             </td>
                           </tr>
                           <tr>
                             <td className="border p-2">
-                              <strong>COMMUNE :</strong>{' '}
-                              {selectedSchool.COMMUNE || '-'}
+                              <strong>COMMUNE :</strong> {selectedSchool.COMMUNE || "-"}
                             </td>
                           </tr>
                           <tr>
                             <td className="border p-2">
-                              <strong>ZAP :</strong> {selectedSchool.ZAP || '-'}
+                              <strong>ZAP :</strong> {selectedSchool.ZAP || "-"}
                             </td>
                           </tr>
                           <tr>
                             <td className="border p-2">
-                              <strong>FOKONTANY :</strong>{' '}
-                              {selectedSchool.FOKONTANY || '-'}
+                              <strong>FOKONTANY :</strong> {selectedSchool.FOKONTANY || "-"}
                             </td>
                           </tr>
                           <tr>
                             <td className="border p-2">
-                              <strong>COORDONNÉES GÉO :</strong>{' '}
+                              <strong>COORDONNÉES GÉO :</strong>{" "}
                               <span className="font-mono text-blue-600">
-                                {parseFloat(
-                                  selectedSchool.latitude || 0
-                                ).toFixed(6)}
-                                ,{' '}
-                                {parseFloat(
-                                  selectedSchool.longitude || 0
-                                ).toFixed(6)}
+                                {parseFloat(selectedSchool.latitude || 0).toFixed(6)},{" "}
+                                {parseFloat(selectedSchool.longitude || 0).toFixed(6)}
                               </span>
                             </td>
                           </tr>
@@ -3352,24 +3118,12 @@ const SIG = () => {
                         </thead>
                         <tbody>
                           <tr className="text-center">
-                            <td className="border p-1.5 font-semibold">
-                              {teacherStats.total}
-                            </td>
-                            <td className="border p-1.5">
-                              {teacherStats.en_classe}
-                            </td>
-                            <td className="border p-1.5">
-                              {teacherStats.fonctionnaire}
-                            </td>
-                            <td className="border p-1.5">
-                              {teacherStats.fram_sub}
-                            </td>
-                            <td className="border p-1.5">
-                              {teacherStats.fram_nonsub}
-                            </td>
-                            <td className="border p-1.5">
-                              {teacherStats.autres}
-                            </td>
+                            <td className="border p-1.5 font-semibold">{teacherStats.total}</td>
+                            <td className="border p-1.5">{teacherStats.en_classe}</td>
+                            <td className="border p-1.5">{teacherStats.fonctionnaire}</td>
+                            <td className="border p-1.5">{teacherStats.fram_sub}</td>
+                            <td className="border p-1.5">{teacherStats.fram_nonsub}</td>
+                            <td className="border p-1.5">{teacherStats.autres}</td>
                           </tr>
                         </tbody>
                       </table>
@@ -3388,100 +3142,58 @@ const SIG = () => {
                           <tr className="bg-muted/50">
                             <th className="border p-1.5 text-center">Type</th>
                             <th className="border p-1.5 text-center">Total</th>
-                            <th className="border p-1.5 text-center">
-                              Bon état
-                            </th>
-                            <th className="border p-1.5 text-center">
-                              Mauvais état
-                            </th>
+                            <th className="border p-1.5 text-center">Bon état</th>
+                            <th className="border p-1.5 text-center">Mauvais état</th>
                           </tr>
                         </thead>
                         <tbody>
                           <tr className="text-center">
-                            <td className="border p-1.5 font-medium">
-                              Salles de classe
-                            </td>
-                            <td className="border p-1.5 font-semibold">
-                              {sdc.total}
-                            </td>
+                            <td className="border p-1.5 font-medium">Salles de classe</td>
+                            <td className="border p-1.5 font-semibold">{sdc.total}</td>
                             <td className="border p-1.5">{sdc.bon}</td>
                             <td className="border p-1.5">{sdc.mauvais}</td>
                           </tr>
                           <tr className="text-center">
-                            <td className="border p-1.5 font-medium">
-                              Tables-bancs
-                            </td>
-                            <td className="border p-1.5 font-semibold">
-                              {tbc.total}
-                            </td>
+                            <td className="border p-1.5 font-medium">Tables-bancs</td>
+                            <td className="border p-1.5 font-semibold">{tbc.total}</td>
                             <td className="border p-1.5">{tbc.bon}</td>
                             <td className="border p-1.5">{tbc.mauvais}</td>
                           </tr>
                           <tr>
-                            <td
-                              colSpan={4}
-                              className="bg-slate-100 font-semibold text-center p-2"
-                            >
+                            <td colSpan={4} className="bg-slate-100 font-semibold text-center p-2">
                               Eau, Assainissement et Hygiène (EAH)
                             </td>
                           </tr>
                           <tr>
-                            <td className="border p-1.5 font-medium">
-                              Électricité
-                            </td>
-                            <td
-                              className="border p-1.5 text-center"
-                              colSpan={3}
-                            >
+                            <td className="border p-1.5 font-medium">Électricité</td>
+                            <td className="border p-1.5 text-center" colSpan={3}>
                               {elec
-                                ? `OUI (${selectedSchool?.TYPE_SOURCE_ELECTRICITE || '-'})`
-                                : 'NON'}
+                                ? `OUI (${selectedSchool?.TYPE_SOURCE_ELECTRICITE || "-"})`
+                                : "NON"}
                             </td>
                           </tr>
                           <tr>
-                            <td className="border p-1.5 font-medium">
-                              Point d'eau
-                            </td>
-                            <td
-                              className="border p-1.5 text-center"
-                              colSpan={3}
-                            >
-                              {eau
-                                ? `OUI (${selectedSchool?.TYPE_SOURCE_EAU || '-'})`
-                                : 'NON'}
+                            <td className="border p-1.5 font-medium">Point d'eau</td>
+                            <td className="border p-1.5 text-center" colSpan={3}>
+                              {eau ? `OUI (${selectedSchool?.TYPE_SOURCE_EAU || "-"})` : "NON"}
                             </td>
                           </tr>
                           <tr>
-                            <td className="border p-1.5 font-medium">
-                              Latrine garçons
-                            </td>
-                            <td
-                              className="border p-1.5 text-center"
-                              colSpan={3}
-                            >
-                              {latrineG ? 'OUI' : 'NON'}
+                            <td className="border p-1.5 font-medium">Latrine garçons</td>
+                            <td className="border p-1.5 text-center" colSpan={3}>
+                              {latrineG ? "OUI" : "NON"}
                             </td>
                           </tr>
                           <tr>
-                            <td className="border p-1.5 font-medium">
-                              Latrine filles
-                            </td>
-                            <td
-                              className="border p-1.5 text-center"
-                              colSpan={3}
-                            >
-                              {latrineF ? 'OUI' : 'NON'}
+                            <td className="border p-1.5 font-medium">Latrine filles</td>
+                            <td className="border p-1.5 text-center" colSpan={3}>
+                              {latrineF ? "OUI" : "NON"}
                             </td>
                           </tr>
                           <tr>
-                            <td className="border p-1.5 font-medium">
-                              Latrine commune
-                            </td>
-                            <td
-                              className="border p-1.5 text-center"
-                              colSpan={3}
-                            >
-                              {latrineC ? 'OUI' : 'NON'}
+                            <td className="border p-1.5 font-medium">Latrine commune</td>
+                            <td className="border p-1.5 text-center" colSpan={3}>
+                              {latrineC ? "OUI" : "NON"}
                             </td>
                           </tr>
                         </tbody>
@@ -3499,15 +3211,14 @@ const SIG = () => {
             <DialogHeader>
               <DialogTitle>Géolocaliser un établissement</DialogTitle>
               <DialogDescription>
-                Sélectionnez un établissement dans la liste et enregistrez sa
-                position.
+                Sélectionnez un établissement dans la liste et enregistrez sa position.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="flex gap-2">
                 <Input
                   placeholder="Code établissement"
-                  value={selectedEtabGeo?.CODE_ETAB || ''}
+                  value={selectedEtabGeo?.CODE_ETAB || ""}
                   readOnly
                   className="w-1/3"
                 />
@@ -3541,9 +3252,7 @@ const SIG = () => {
                       <tr
                         key={`geo-${etab.CODE_ETAB}-${i}`}
                         className={`cursor-pointer hover:bg-muted/50 ${
-                          selectedEtabGeo?.CODE_ETAB === etab.CODE_ETAB
-                            ? 'bg-green-100'
-                            : ''
+                          selectedEtabGeo?.CODE_ETAB === etab.CODE_ETAB ? "bg-green-100" : ""
                         }`}
                         onClick={() => {
                           setSelectedEtabGeo(etab);
@@ -3552,9 +3261,7 @@ const SIG = () => {
                       >
                         <td className="p-2 border-t">{etab.CODE_ETAB}</td>
                         <td className="p-2 border-t">{etab.NOM_ETAB}</td>
-                        <td className="p-2 border-t">
-                          {etab.SECTEUR === 1 ? 'Privée' : 'Public'}
-                        </td>
+                        <td className="p-2 border-t">{etab.SECTEUR === 1 ? "Privée" : "Public"}</td>
                         <td className="p-2 border-t">{etab.ZAP}</td>
                       </tr>
                     ))}
@@ -3562,8 +3269,7 @@ const SIG = () => {
                 </table>
               </div>
               <p className="text-xs text-muted-foreground">
-                Coordonnées: {geoCoords.lat.toFixed(6)},{' '}
-                {geoCoords.lng.toFixed(6)}
+                Coordonnées: {geoCoords.lat.toFixed(6)}, {geoCoords.lng.toFixed(6)}
               </p>
             </div>
           </DialogContent>
@@ -3581,9 +3287,7 @@ const SIG = () => {
               <Input
                 placeholder="Nom du village"
                 value={villageForm.name}
-                onChange={(e) =>
-                  setVillageForm((prev) => ({ ...prev, name: e.target.value }))
-                }
+                onChange={(e) => setVillageForm((prev) => ({ ...prev, name: e.target.value }))}
               />
               <Input
                 placeholder="Population du village"
@@ -3598,11 +3302,8 @@ const SIG = () => {
                 }
               />
               <div className="grid grid-cols-3 gap-3">
-                {(['airtel', 'orange', 'telma'] as const).map((field) => (
-                  <label
-                    key={field}
-                    className="flex items-center gap-2 text-sm capitalize"
-                  >
+                {(["airtel", "orange", "telma"] as const).map((field) => (
+                  <label key={field} className="flex items-center gap-2 text-sm capitalize">
                     <input
                       type="checkbox"
                       checked={villageForm[field]}
@@ -3618,11 +3319,8 @@ const SIG = () => {
                 ))}
               </div>
               <div className="grid grid-cols-2 gap-3">
-                {(['elec', 'eau'] as const).map((field) => (
-                  <label
-                    key={field}
-                    className="flex items-center gap-2 text-sm"
-                  >
+                {(["elec", "eau"] as const).map((field) => (
+                  <label key={field} className="flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"
                       checked={villageForm[field]}
@@ -3633,26 +3331,19 @@ const SIG = () => {
                         }))
                       }
                     />
-                    {field === 'elec' ? 'Électricité' : 'Eau potable'} ?
+                    {field === "elec" ? "Électricité" : "Eau potable"} ?
                   </label>
                 ))}
               </div>
               <p className="text-xs text-muted-foreground">
-                Coordonnées: {geoCoords.lat.toFixed(6)},{' '}
-                {geoCoords.lng.toFixed(6)}
+                Coordonnées: {geoCoords.lat.toFixed(6)}, {geoCoords.lng.toFixed(6)}
               </p>
             </div>
             <DialogFooter>
-              <Button
-                onClick={handleSaveGeoVillage}
-                className="bg-green-600 hover:bg-green-700"
-              >
+              <Button onClick={handleSaveGeoVillage} className="bg-green-600 hover:bg-green-700">
                 Enregistrer
               </Button>
-              <Button
-                variant="outline"
-                onClick={() => setShowGeoVillage(false)}
-              >
+              <Button variant="outline" onClick={() => setShowGeoVillage(false)}>
                 Annuler
               </Button>
             </DialogFooter>
@@ -3668,15 +3359,14 @@ const SIG = () => {
                   {hoveredEtab.NOM_ETAB || hoveredEtab.name}
                 </div>
                 <div className="text-xs text-muted-foreground font-mono">
-                  {parseFloat(hoveredEtab.latitude).toFixed(6)},{' '}
+                  {parseFloat(hoveredEtab.latitude).toFixed(6)},{" "}
                   {parseFloat(hoveredEtab.longitude).toFixed(6)}
                 </div>
               </div>
             </div>
             {hoveredEtab.SECTEUR !== undefined && (
               <div className="text-xs text-muted-foreground border-l pl-4">
-                {hoveredEtab.SECTEUR === 0 ? 'Public' : 'Privé'} •{' '}
-                {hoveredEtab.FOKONTANY || '—'}
+                {hoveredEtab.SECTEUR === 0 ? "Public" : "Privé"} • {hoveredEtab.FOKONTANY || "—"}
               </div>
             )}
           </div>

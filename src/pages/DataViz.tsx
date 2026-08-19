@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -8,20 +8,20 @@ import {
   useMap,
   LayersControl,
   useMapEvents,
-} from 'react-leaflet';
-import L from 'leaflet';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+} from "react-leaflet";
+import L from "leaflet";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
-import { Slider } from '@/components/ui/slider';
-import { Switch } from '@/components/ui/switch';
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -29,7 +29,7 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
-} from '@/components/ui/dialog';
+} from "@/components/ui/dialog";
 import {
   Loader2,
   Filter,
@@ -37,17 +37,17 @@ import {
   Map,
   MapPin,
   Info,
-  PanelLeftClose,
-  PanelLeftOpen,
+  ChevronLeft,
+  ChevronRight,
   Download,
   FileSpreadsheet,
   FileJson,
   FileImage,
-} from 'lucide-react';
-import { datavizApi, dashboardApi, Dren } from '@/services/api';
-import { toast } from 'sonner';
-import html2canvas from 'html2canvas';
-import * as XLSX from 'xlsx';
+} from "lucide-react";
+import { datavizApi, dashboardApi, Dren } from "@/services/api";
+import { toast } from "sonner";
+import html2canvas from "html2canvas";
+import * as XLSX from "xlsx";
 import {
   THEMES,
   NIVEAUX,
@@ -62,17 +62,17 @@ import {
   STYLE_DREN,
   STYLE_CISCO,
   STYLE_COMMUNE,
-} from './dataviz/dataviz-utils';
-import HeatmapLayer from './dataviz/HeatmapLayer';
-import 'leaflet/dist/leaflet.css';
-import DataActionsBar from '@/components/admin/DataActionsBar';
+} from "./dataviz/dataviz-utils";
+import HeatmapLayer from "./dataviz/HeatmapLayer";
+import "leaflet/dist/leaflet.css";
+import DataActionsBar from "@/components/admin/DataActionsBar";
 
 // Composant Boussole Statique pour react-leaflet
 const CompassControl = () => {
   const map = useMap();
   useEffect(() => {
-    const compassDiv = L.DomUtil.create('div', 'leaflet-control');
-    compassDiv.id = 'compass-control';
+    const compassDiv = L.DomUtil.create("div", "leaflet-control");
+    compassDiv.id = "compass-control";
     compassDiv.style.cssText = `
       position: absolute;
       top: 8px;
@@ -101,21 +101,21 @@ const CompassControl = () => {
     `;
 
     // Éviter les doublons
-    const old = document.getElementById('compass-control');
+    const old = document.getElementById("compass-control");
     if (old) old.remove();
 
     map.getContainer().appendChild(compassDiv);
 
     // Décaler le contrôle de zoom
     setTimeout(() => {
-      const zoomControl = document.querySelector('.leaflet-control-zoom');
+      const zoomControl = document.querySelector(".leaflet-control-zoom");
       if (zoomControl) {
-        (zoomControl as HTMLElement).style.marginTop = '75px';
+        (zoomControl as HTMLElement).style.marginTop = "75px";
       }
     }, 300);
 
     return () => {
-      const oldCompass = document.getElementById('compass-control');
+      const oldCompass = document.getElementById("compass-control");
       if (oldCompass) oldCompass.remove();
     };
   }, [map]);
@@ -161,7 +161,7 @@ const MapClickHandler = ({ onClose }: { onClose: () => void }) => {
   return null;
 };
 
-type ActiveLayer = 'dren' | 'cisco' | 'commune';
+type ActiveLayer = "dren" | "cisco" | "commune";
 
 interface RecapData {
   zone: string;
@@ -173,16 +173,16 @@ interface RecapData {
 
 const DataViz = () => {
   const [drens, setDrens] = useState<Dren[]>([]);
-  const [niveau, setNiveau] = useState<Niveau>('primaire');
-  const [theme, setTheme] = useState('0');
+  const [niveau, setNiveau] = useState<Niveau>("primaire");
+  const [theme, setTheme] = useState("0");
   const [loading, setLoading] = useState(false);
-  const [activeLayer, setActiveLayer] = useState<ActiveLayer>('dren');
+  const [activeLayer, setActiveLayer] = useState<ActiveLayer>("dren");
   const [showEtab, setShowEtab] = useState(false);
 
   // Panneau latéral repliable — même mécanique que SIG.tsx : ouvert par
   // défaut sur desktop, replié par défaut sur mobile.
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(() =>
-    typeof window !== 'undefined' ? window.innerWidth >= 768 : true
+    typeof window !== "undefined" ? window.innerWidth >= 768 : true,
   );
   const [showDownloadModal, setShowDownloadModal] = useState(false);
 
@@ -201,7 +201,7 @@ const DataViz = () => {
   const [dataCommune, setDataCommune] = useState<any[]>([]);
   const [dataEtab, setDataEtab] = useState<any[]>([]);
   const [recap, setRecap] = useState<RecapData>({
-    zone: '',
+    zone: "",
     total: 0,
     low: 0,
     medium: 0,
@@ -209,16 +209,12 @@ const DataViz = () => {
   });
   const [showRecap, setShowRecap] = useState(false);
   // Heatmap
-  const [heatmapPoints, setHeatmapPoints] = useState<
-    [number, number, number][]
-  >([]);
+  const [heatmapPoints, setHeatmapPoints] = useState<[number, number, number][]>([]);
   const [isHeatmapActive, setIsHeatmapActive] = useState(false);
 
   // Applied theme (for rendering)
-  const [appliedTheme, setAppliedTheme] = useState('0');
-  const [appliedBounds, setAppliedBounds] = useState<[number, number]>([
-    25, 75,
-  ]);
+  const [appliedTheme, setAppliedTheme] = useState("0");
+  const [appliedBounds, setAppliedBounds] = useState<[number, number]>([25, 75]);
 
   // Commune drill-down state
   const [communeCode, setCommuneCode] = useState<number>(0);
@@ -247,8 +243,8 @@ const DataViz = () => {
         if (drenLayer?.[0]?.shape) setDrenGeoJson(drenLayer[0].shape);
         if (ciscoLayer?.[0]?.shape) setCiscoGeoJson(ciscoLayer[0].shape);
       } catch (err) {
-        console.error('Init error:', err);
-        toast.error('Erreur lors du chargement des couches de base');
+        console.error("Init error:", err);
+        toast.error("Erreur lors du chargement des couches de base");
       } finally {
         setLoading(false);
       }
@@ -260,9 +256,9 @@ const DataViz = () => {
 
   const getNiveauNumber = (niveau: Niveau): number => {
     switch (niveau) {
-      case 'college':
+      case "college":
         return 2;
-      case 'lycee':
+      case "lycee":
         return 3;
       default:
         return 1;
@@ -271,7 +267,7 @@ const DataViz = () => {
 
   // Compute recap stats for a given set of items and zone type
   const computeRecap = (items: any[], zone: string) => {
-    if (!items?.length || appliedTheme === '0') {
+    if (!items?.length || appliedTheme === "0") {
       setRecap({
         zone,
         total: 0,
@@ -308,12 +304,12 @@ const DataViz = () => {
   };
   // Reset theme when niveau changes if current theme not available
   useEffect(() => {
-    if (!availableThemes.some((t) => t.value === theme)) setTheme('0');
+    if (!availableThemes.some((t) => t.value === theme)) setTheme("0");
   }, [niveau, availableThemes, theme]);
 
   // Update slider when theme changes
   useEffect(() => {
-    if (theme === '0') return;
+    if (theme === "0") return;
     const { range, start } = getSliderDefaults(theme);
     setSliderRange(range);
     setSliderValue(start);
@@ -321,7 +317,7 @@ const DataViz = () => {
 
   // Reset data when niveau changes to prevent stale data display
   useEffect(() => {
-    if (appliedTheme === '0') return;
+    if (appliedTheme === "0") return;
     // Clear data when level changes to prevent showing old niveau's data
     setDataDren([]);
     setDataCisco([]);
@@ -329,8 +325,8 @@ const DataViz = () => {
     setDataEtab([]);
     setIsHeatmapActive(false);
     setHeatmapPoints([]);
-    setAppliedTheme('0');
-    setActiveLayer('dren');
+    setAppliedTheme("0");
+    setActiveLayer("dren");
     setCommuneGeoJson(null);
   }, [niveau]);
 
@@ -338,7 +334,7 @@ const DataViz = () => {
   useEffect(() => {
     if (isHeatmapActive) {
       setRecap({
-        zone: 'HEATMAP',
+        zone: "HEATMAP",
         total: heatmapPoints.length,
         low: 0,
         medium: heatmapPoints.length,
@@ -348,16 +344,16 @@ const DataViz = () => {
     }
 
     switch (activeLayer) {
-      case 'dren':
-        computeRecap(dataDren, 'DREN');
+      case "dren":
+        computeRecap(dataDren, "DREN");
         break;
 
-      case 'cisco':
-        computeRecap(dataCisco, 'CISCO');
+      case "cisco":
+        computeRecap(dataCisco, "CISCO");
         break;
 
-      case 'commune':
-        computeRecap(dataCommune, 'COMMUNE');
+      case "commune":
+        computeRecap(dataCommune, "COMMUNE");
         break;
     }
   }, [
@@ -373,8 +369,8 @@ const DataViz = () => {
 
   // Apply filter
   const handleApply = useCallback(async () => {
-    if (theme === '0') {
-      toast.error('Veuillez choisir un thème');
+    if (theme === "0") {
+      toast.error("Veuillez choisir un thème");
       return;
     }
 
@@ -386,7 +382,7 @@ const DataViz = () => {
 
     try {
       const niveauIndex = getNiveauNumber(niveau);
-      if (theme === 'hm') {
+      if (theme === "hm") {
         const data = await (niveauIndex === 2
           ? datavizApi.getHeatmapN2()
           : niveauIndex === 3
@@ -403,9 +399,7 @@ const DataViz = () => {
         setHeatmapPoints(points);
         setIsHeatmapActive(true);
         setAppliedTheme(theme);
-        toast.success(
-          `${points.length.toLocaleString()} établissements affichés`
-        );
+        toast.success(`${points.length.toLocaleString()} établissements affichés`);
       } else {
         const [dren, cisco] = await Promise.all([
           datavizApi.getDataDren(niveauIndex),
@@ -415,14 +409,14 @@ const DataViz = () => {
         setDataCisco(cisco || []);
         setAppliedTheme(theme);
         setAppliedBounds([...sliderValue]);
-        setActiveLayer('dren');
+        setActiveLayer("dren");
         setCommuneGeoJson(null);
         setDataCommune([]);
-        toast.success('Carte thématique mise à jour');
+        toast.success("Carte thématique mise à jour");
       }
     } catch (err) {
-      console.error('Apply error:', err);
-      toast.error('Erreur lors du chargement des données');
+      console.error("Apply error:", err);
+      toast.error("Erreur lors du chargement des données");
     } finally {
       setLoading(false);
     }
@@ -431,7 +425,7 @@ const DataViz = () => {
   // Drill down to commune level
   const handleDrillCommune = useCallback(
     async (code: number) => {
-      if (appliedTheme === '0' || appliedTheme === 'hm' || !drenGeoJson) return;
+      if (appliedTheme === "0" || appliedTheme === "hm" || !drenGeoJson) return;
       const niveauIndex = getNiveauNumber(niveau);
       setLoading(true);
       try {
@@ -442,21 +436,21 @@ const DataViz = () => {
         if (layer?.[0]?.shape) setCommuneGeoJson(layer[0].shape);
         setDataCommune(data || []);
         setCommuneCode(code);
-        setActiveLayer('commune');
+        setActiveLayer("commune");
       } catch (err) {
-        console.error('Commune drill error:', err);
-        toast.error('Erreur lors du chargement des communes');
+        console.error("Commune drill error:", err);
+        toast.error("Erreur lors du chargement des communes");
       } finally {
         setLoading(false);
       }
     },
-    [appliedTheme, niveau]
+    [appliedTheme, niveau],
   );
 
   // Load establishment markers for a zone
   const handleShowEtab = useCallback(
     async (code: number) => {
-      if (appliedTheme === '0' || appliedTheme === 'hm' || !drenGeoJson) return;
+      if (appliedTheme === "0" || appliedTheme === "hm" || !drenGeoJson) return;
       const niveauIndex = getNiveauNumber(niveau);
       setLoading(true);
       try {
@@ -469,22 +463,22 @@ const DataViz = () => {
         if (communeLayer?.[0]?.shape) setCommuneGeoJson(communeLayer[0].shape);
         setDataCommune(communeData || []);
         setCommuneCode(code);
-        setActiveLayer('commune');
+        setActiveLayer("commune");
         setDataEtab(etabData || []);
         setShowEtab(true);
       } catch (err) {
-        console.error('Etab load error:', err);
+        console.error("Etab load error:", err);
       } finally {
         setLoading(false);
       }
     },
-    [appliedTheme, niveau]
+    [appliedTheme, niveau],
   );
 
   // Reset map
   const handleReset = useCallback(() => {
-    setAppliedTheme('0');
-    setTheme('0');
+    setAppliedTheme("0");
+    setTheme("0");
     setIsHeatmapActive(false);
     setHeatmapPoints([]);
     setDataDren([]);
@@ -493,11 +487,11 @@ const DataViz = () => {
     setDataEtab([]);
     setCommuneGeoJson(null);
     setShowEtab(false);
-    setActiveLayer('dren');
+    setActiveLayer("dren");
     setContextMenu(null);
     setShowRecap(false);
     setRecap({
-      zone: '',
+      zone: "",
       total: 0,
       low: 0,
       medium: 0,
@@ -515,59 +509,47 @@ const DataViz = () => {
       const canvas = await html2canvas(node, {
         useCORS: true,
         allowTaint: true,
-        backgroundColor: '#ffffff',
+        backgroundColor: "#ffffff",
         logging: false,
         scale: 2,
       });
-      const link = document.createElement('a');
-      const themeSlug = (
-        THEMES.find((t) => t.value === appliedTheme)?.label || 'carte'
-      )
+      const link = document.createElement("a");
+      const themeSlug = (THEMES.find((t) => t.value === appliedTheme)?.label || "carte")
         .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-|-$/g, '');
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "");
       const date = new Date().toISOString().slice(0, 10);
       link.download = `carte-thematique-${themeSlug}-${date}.png`;
-      link.href = canvas.toDataURL('image/png');
+      link.href = canvas.toDataURL("image/png");
       link.click();
-      toast.success('Carte téléchargée');
+      toast.success("Carte téléchargée");
     } catch (err) {
-      console.error('Capture error:', err);
-      toast.error('Impossible de capturer la carte');
+      console.error("Capture error:", err);
+      toast.error("Impossible de capturer la carte");
     }
   }, [appliedTheme]);
 
   // Jeu de données actuellement affiché sur la carte (le même que celui
   // utilisé pour la coloration thématique), pour l'export CSV/Excel/JSON.
   const activeExportDataset = useMemo(() => {
-    if (showEtab) return { label: 'etablissements', rows: dataEtab };
-    if (communeGeoJson) return { label: 'communes', rows: dataCommune };
-    if (activeLayer === 'cisco') return { label: 'cisco', rows: dataCisco };
-    return { label: 'dren', rows: dataDren };
-  }, [
-    showEtab,
-    communeGeoJson,
-    activeLayer,
-    dataEtab,
-    dataCommune,
-    dataCisco,
-    dataDren,
-  ]);
+    if (showEtab) return { label: "etablissements", rows: dataEtab };
+    if (communeGeoJson) return { label: "communes", rows: dataCommune };
+    if (activeLayer === "cisco") return { label: "cisco", rows: dataCisco };
+    return { label: "dren", rows: dataDren };
+  }, [showEtab, communeGeoJson, activeLayer, dataEtab, dataCommune, dataCisco, dataDren]);
 
   const themeSlugFor = (label: string) =>
     label
       .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '');
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
 
   const buildExportFilename = (ext: string) => {
-    const themeSlug = themeSlugFor(
-      THEMES.find((t) => t.value === appliedTheme)?.label || 'carte'
-    );
+    const themeSlug = themeSlugFor(THEMES.find((t) => t.value === appliedTheme)?.label || "carte");
     const date = new Date().toISOString().slice(0, 10);
     return `dataviz-${activeExportDataset.label}-${themeSlug}-${date}.${ext}`;
   };
@@ -575,65 +557,63 @@ const DataViz = () => {
   const downloadCSV = () => {
     const rows = activeExportDataset.rows;
     if (!rows.length) {
-      toast.error('Aucune donnée à exporter');
+      toast.error("Aucune donnée à exporter");
       return;
     }
     const headers = Object.keys(rows[0]);
     const csv = [
-      headers.join(';'),
+      headers.join(";"),
       ...rows.map((r) =>
-        headers
-          .map((h) => `"${String(r[h] ?? '').replace(/"/g, '""')}"`)
-          .join(';')
+        headers.map((h) => `"${String(r[h] ?? "").replace(/"/g, '""')}"`).join(";"),
       ),
-    ].join('\n');
-    const blob = new Blob(['\ufeff' + csv], {
-      type: 'text/csv;charset=utf-8;',
+    ].join("\n");
+    const blob = new Blob(["\ufeff" + csv], {
+      type: "text/csv;charset=utf-8;",
     });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = buildExportFilename('csv');
+    a.download = buildExportFilename("csv");
     a.click();
     URL.revokeObjectURL(url);
-    toast.success('Export CSV téléchargé');
+    toast.success("Export CSV téléchargé");
   };
 
   const downloadExcel = () => {
     const rows = activeExportDataset.rows;
     if (!rows.length) {
-      toast.error('Aucune donnée à exporter');
+      toast.error("Aucune donnée à exporter");
       return;
     }
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(rows);
-    XLSX.utils.book_append_sheet(wb, ws, 'Données');
-    XLSX.writeFile(wb, buildExportFilename('xlsx'));
-    toast.success('Export Excel téléchargé');
+    XLSX.utils.book_append_sheet(wb, ws, "Données");
+    XLSX.writeFile(wb, buildExportFilename("xlsx"));
+    toast.success("Export Excel téléchargé");
   };
 
   const downloadJSON = () => {
     const rows = activeExportDataset.rows;
     if (!rows.length) {
-      toast.error('Aucune donnée à exporter');
+      toast.error("Aucune donnée à exporter");
       return;
     }
     const blob = new Blob([JSON.stringify(rows, null, 2)], {
-      type: 'application/json',
+      type: "application/json",
     });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = buildExportFilename('json');
+    a.download = buildExportFilename("json");
     a.click();
     URL.revokeObjectURL(url);
-    toast.success('Export JSON téléchargé');
+    toast.success("Export JSON téléchargé");
   };
 
   // Context menu handlers
   const handleContextMenuOnLayer = useCallback(
     (code: number, name: string, e: any) => {
-      if (appliedTheme === '0') {
+      if (appliedTheme === "0") {
         toast.warning("Veuillez choisir un thème d'abord");
         return;
       }
@@ -651,238 +631,194 @@ const DataViz = () => {
 
       setContextMenu({ x, y, code, name, layerBounds: bounds });
     },
-    [appliedTheme]
+    [appliedTheme],
   );
 
   const handleContextMenuCommune = useCallback(
     (code: number, name: string) => {
-      if (appliedTheme === '0') {
+      if (appliedTheme === "0") {
         toast.warning("Veuillez choisir un thème d'abord");
         return;
       }
       setContextMenu(null);
       handleDrillCommune(code);
     },
-    [appliedTheme, handleDrillCommune]
+    [appliedTheme, handleDrillCommune],
   );
 
   const handleContextMenuEtab = useCallback(
     (code: number) => {
-      if (appliedTheme === '0') {
+      if (appliedTheme === "0") {
         toast.warning("Veuillez choisir un thème d'abord");
         return;
       }
       setContextMenu(null);
       handleShowEtab(code);
     },
-    [appliedTheme, handleShowEtab]
+    [appliedTheme, handleShowEtab],
   );
 
   // Style function for DREN GeoJSON
   const drenStyle = useCallback(
     (feature: any) => {
-      if (appliedTheme === '0' || appliedTheme === 'hm' || !dataDren.length)
-        return STYLE_DREN;
+      if (appliedTheme === "0" || appliedTheme === "hm" || !dataDren.length) return STYLE_DREN;
       const code = feature?.properties?.CODE;
-      const stat = dataDren.find(
-        (d: any) => parseInt(d.CODE_DREN) === parseInt(code)
-      );
+      const stat = dataDren.find((d: any) => parseInt(d.CODE_DREN) === parseInt(code));
       if (!stat) return STYLE_DREN;
       const ratio = calculateRatio(stat, appliedTheme);
       const color = getThematicColor(ratio, appliedBounds[0], appliedBounds[1]);
       return { ...STYLE_DREN, fillColor: color, fillOpacity: 1 };
     },
-    [appliedTheme, dataDren, appliedBounds]
+    [appliedTheme, dataDren, appliedBounds],
   );
 
   // Style function for CISCO GeoJSON
   const ciscoStyle = useCallback(
     (feature: any) => {
-      if (appliedTheme === '0' || appliedTheme === 'hm' || !dataCisco.length)
-        return STYLE_CISCO;
+      if (appliedTheme === "0" || appliedTheme === "hm" || !dataCisco.length) return STYLE_CISCO;
       const code = feature?.properties?.CODE;
-      const stat = dataCisco.find(
-        (d: any) => parseInt(d.CODE_CISCO) === parseInt(code)
-      );
+      const stat = dataCisco.find((d: any) => parseInt(d.CODE_CISCO) === parseInt(code));
       if (!stat) return STYLE_CISCO;
       const ratio = calculateRatio(stat, appliedTheme);
       const color = getThematicColor(ratio, appliedBounds[0], appliedBounds[1]);
       return { ...STYLE_CISCO, fillColor: color, fillOpacity: 1 };
     },
-    [appliedTheme, dataCisco, appliedBounds]
+    [appliedTheme, dataCisco, appliedBounds],
   );
 
   // Style for commune GeoJSON
   const communeStyle = useCallback(
     (feature: any) => {
-      if (appliedTheme === '0' || appliedTheme === 'hm' || !dataCommune.length)
+      if (appliedTheme === "0" || appliedTheme === "hm" || !dataCommune.length)
         return STYLE_COMMUNE;
       const code = feature?.properties?.CODE;
-      const stat = dataCommune.find(
-        (d: any) => parseInt(d.CODE_COMMUNE) === parseInt(code)
-      );
+      const stat = dataCommune.find((d: any) => parseInt(d.CODE_COMMUNE) === parseInt(code));
       if (!stat) return STYLE_COMMUNE;
       const ratio = calculateRatio(stat, appliedTheme);
       const color = getThematicColor(ratio, appliedBounds[0], appliedBounds[1]);
       return { ...STYLE_COMMUNE, fillColor: color, fillOpacity: 1 };
     },
-    [appliedTheme, dataCommune, appliedBounds]
+    [appliedTheme, dataCommune, appliedBounds],
   );
 
-  const ptg = isPercentageTheme(appliedTheme) ? '%' : '';
+  const ptg = isPercentageTheme(appliedTheme) ? "%" : "";
   const unit = getThemeUnit(appliedTheme);
-  const selectedThemeLabel =
-    THEMES.find((t) => t.value === appliedTheme)?.label || '';
+  const selectedThemeLabel = THEMES.find((t) => t.value === appliedTheme)?.label || "";
 
   // GeoJSON onEachFeature handlers
   const onEachDren = useCallback(
     (feature: any, layer: L.Layer) => {
-      const name = feature?.properties?.NAME || '';
+      const name = feature?.properties?.NAME || "";
       const code = feature?.properties?.CODE;
-      const stat = dataDren.find(
-        (d: any) => parseInt(d.CODE_DREN) === parseInt(code)
-      );
+      const stat = dataDren.find((d: any) => parseInt(d.CODE_DREN) === parseInt(code));
 
-      if (stat && appliedTheme !== '0' && appliedTheme !== 'hm') {
+      if (stat && appliedTheme !== "0" && appliedTheme !== "hm") {
         const ratio = calculateRatio(stat, appliedTheme);
         const valueHtml = `<span style="display:inline-block;min-width:80px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600">${formatThemeValue(ratio, appliedTheme)}${ptg ? ptg : unit}</span>`;
         const text = `<div style="font-size:12px"><strong>${name}</strong><br/>${selectedThemeLabel} : ${valueHtml}</div>`;
         (layer as any).bindTooltip(text, {
           permanent: false,
-          direction: 'top',
+          direction: "top",
         });
         (layer as any).bindPopup(text);
       } else {
         (layer as any).bindTooltip(`DREN ${name}`, {
           permanent: false,
-          direction: 'top',
+          direction: "top",
         });
       }
 
       // Right-click context menu
-      (layer as any).on('contextmenu', (e: any) => {
+      (layer as any).on("contextmenu", (e: any) => {
         handleContextMenuOnLayer(parseInt(code), name, e);
       });
     },
-    [
-      dataDren,
-      appliedTheme,
-      ptg,
-      unit,
-      selectedThemeLabel,
-      handleContextMenuOnLayer,
-    ]
+    [dataDren, appliedTheme, ptg, unit, selectedThemeLabel, handleContextMenuOnLayer],
   );
 
   // Similar onEachFeature for CISCO with context menu
   const onEachCisco = useCallback(
     (feature: any, layer: L.Layer) => {
-      const name = feature?.properties?.NAME || '';
+      const name = feature?.properties?.NAME || "";
       const code = feature?.properties?.CODE;
-      const stat = dataCisco.find(
-        (d: any) => parseInt(d.CODE_CISCO) === parseInt(code)
-      );
+      const stat = dataCisco.find((d: any) => parseInt(d.CODE_CISCO) === parseInt(code));
 
-      if (stat && appliedTheme !== '0' && appliedTheme !== 'hm') {
+      if (stat && appliedTheme !== "0" && appliedTheme !== "hm") {
         const ratio = calculateRatio(stat, appliedTheme);
         const valueHtml = `<span style="display:inline-block;min-width:80px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600">${formatThemeValue(ratio, appliedTheme)}${ptg ? ptg : unit}</span>`;
         const text = `<div style="font-size:12px"><strong>${name}</strong><br/>${selectedThemeLabel} : ${valueHtml}</div>`;
         (layer as any).bindTooltip(text, {
           permanent: false,
-          direction: 'top',
+          direction: "top",
         });
         (layer as any).bindPopup(text);
       } else {
         (layer as any).bindTooltip(`CISCO ${name}`, {
           permanent: false,
-          direction: 'top',
+          direction: "top",
         });
       }
 
       // Right-click context menu
-      (layer as any).on('contextmenu', (e: any) => {
+      (layer as any).on("contextmenu", (e: any) => {
         handleContextMenuOnLayer(parseInt(code), name, e);
       });
     },
-    [
-      dataCisco,
-      appliedTheme,
-      ptg,
-      unit,
-      selectedThemeLabel,
-      handleContextMenuOnLayer,
-    ]
+    [dataCisco, appliedTheme, ptg, unit, selectedThemeLabel, handleContextMenuOnLayer],
   );
 
   // Commune onEachFeature with drilldown on click
   const onEachCommune = useCallback(
     (feature: any, layer: L.Layer) => {
-      const name = feature?.properties?.NAME || '';
+      const name = feature?.properties?.NAME || "";
       const code = feature?.properties?.CODE;
-      const stat = dataCommune.find(
-        (d: any) => parseInt(d.CODE_COMMUNE) === parseInt(code)
-      );
+      const stat = dataCommune.find((d: any) => parseInt(d.CODE_COMMUNE) === parseInt(code));
 
-      if (stat && appliedTheme !== '0' && appliedTheme !== 'hm') {
+      if (stat && appliedTheme !== "0" && appliedTheme !== "hm") {
         const ratio = calculateRatio(stat, appliedTheme);
         const valueHtml = `<span style="display:inline-block;min-width:80px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600">${formatThemeValue(ratio, appliedTheme)}${ptg ? ptg : unit}</span>`;
         const text = `<div style="font-size:12px"><strong>${name}</strong><br/>${selectedThemeLabel} : ${valueHtml}</div>`;
         (layer as any).bindTooltip(text, {
           permanent: false,
-          direction: 'top',
+          direction: "top",
         });
         (layer as any).bindPopup(text);
       } else {
         (layer as any).bindTooltip(`COMMUNE ${name}`, {
           permanent: false,
-          direction: 'top',
+          direction: "top",
         });
       }
     },
-    [dataCommune, appliedTheme, ptg, unit, selectedThemeLabel]
+    [dataCommune, appliedTheme, ptg, unit, selectedThemeLabel],
   );
 
   // GeoJSON keys for forced re-render
   const drenKey = useMemo(
-    () => `dren-${appliedTheme}-${appliedBounds.join('-')}-${dataDren.length}`,
-    [appliedTheme, appliedBounds, dataDren]
+    () => `dren-${appliedTheme}-${appliedBounds.join("-")}-${dataDren.length}`,
+    [appliedTheme, appliedBounds, dataDren],
   );
   const ciscoKey = useMemo(
-    () =>
-      `cisco-${appliedTheme}-${appliedBounds.join('-')}-${dataCisco.length}`,
-    [appliedTheme, appliedBounds, dataCisco]
+    () => `cisco-${appliedTheme}-${appliedBounds.join("-")}-${dataCisco.length}`,
+    [appliedTheme, appliedBounds, dataCisco],
   );
   const communeKey = useMemo(
-    () =>
-      `commune-${appliedTheme}-${appliedBounds.join('-')}-${dataCommune.length}`,
-    [appliedTheme, appliedBounds, dataCommune]
+    () => `commune-${appliedTheme}-${appliedBounds.join("-")}-${dataCommune.length}`,
+    [appliedTheme, appliedBounds, dataCommune],
   );
 
   // Etab markers with color based on ratio
   const etabMarkers = useMemo(() => {
-    if (
-      !showEtab ||
-      !dataEtab.length ||
-      appliedTheme === '0' ||
-      appliedTheme === 'hm'
-    )
-      return [];
+    if (!showEtab || !dataEtab.length || appliedTheme === "0" || appliedTheme === "hm") return [];
     return dataEtab
-      .filter(
-        (e: any) =>
-          !isNaN(parseFloat(e.latitude)) && !isNaN(parseFloat(e.longitude))
-      )
+      .filter((e: any) => !isNaN(parseFloat(e.latitude)) && !isNaN(parseFloat(e.longitude)))
       .map((etab: any) => {
         const ratio = calculateRatio(etab, appliedTheme);
-        const color = getThematicColor(
-          ratio,
-          appliedBounds[0],
-          appliedBounds[1]
-        );
+        const color = getThematicColor(ratio, appliedBounds[0], appliedBounds[1]);
         return {
           lat: parseFloat(etab.latitude),
           lng: parseFloat(etab.longitude),
-          name: etab.NOM_ETAB || '',
+          name: etab.NOM_ETAB || "",
           ratio,
           color,
         };
@@ -908,7 +844,7 @@ const DataViz = () => {
     });
 
     setRecap({
-      zone: 'ETABLISSEMENTS',
+      zone: "ETABLISSEMENTS",
       total: etabMarkers.length,
       low,
       medium,
@@ -918,9 +854,9 @@ const DataViz = () => {
 
   // Active geojson to fit bounds to
   const activeBoundsData =
-    activeLayer === 'commune'
+    activeLayer === "commune"
       ? communeGeoJson
-      : activeLayer === 'cisco'
+      : activeLayer === "cisco"
         ? ciscoGeoJson
         : drenGeoJson;
 
@@ -929,8 +865,7 @@ const DataViz = () => {
       <div className="px-4 py-2 bg-muted/50 border-b border-border">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <span className="text-sm font-semibold text-muted-foreground">
-            SYSTEME D'INFORMATION GEOGRAPHIQUE / CARTE THEMATIQUE DES
-            INDICATEURS
+            SYSTEME D'INFORMATION GEOGRAPHIQUE / CARTE THEMATIQUE DES INDICATEURS
           </span>
           <div className="flex items-center gap-2">
             <Button
@@ -942,11 +877,7 @@ const DataViz = () => {
               <Download className="w-4 h-4 mr-2" />
               Télécharger
             </Button>
-            <DataActionsBar
-              table="sig_etablissement"
-              tableLabel="SIG Établissement"
-              compact
-            />
+            <DataActionsBar table="sig_etablissement" tableLabel="SIG Établissement" compact />
           </div>
         </div>
       </div>
@@ -958,8 +889,8 @@ const DataViz = () => {
             développer/réduire. */}
         <div
           className={
-            (sidebarOpen ? 'w-[85vw] max-w-[300px] ' : 'w-0 ') +
-            'shrink-0 h-full bg-background border-r border-border overflow-hidden transition-[width] duration-300 ease-in-out'
+            (sidebarOpen ? "w-[85vw] max-w-[300px] " : "w-0 ") +
+            "shrink-0 h-full bg-background border-r border-border overflow-hidden transition-[width] duration-300 ease-in-out"
           }
         >
           <div className="w-[85vw] max-w-[300px] h-full space-y-3 overflow-y-auto p-3">
@@ -975,10 +906,7 @@ const DataViz = () => {
                 {/* Niveau */}
                 <div className="space-y-2">
                   <Label className="text-xs font-medium">Niveau</Label>
-                  <Select
-                    value={niveau}
-                    onValueChange={(v) => setNiveau(v as Niveau)}
-                  >
+                  <Select value={niveau} onValueChange={(v) => setNiveau(v as Niveau)}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -1009,32 +937,22 @@ const DataViz = () => {
                 </div>
 
                 {/* Slider */}
-                {theme !== '0' && theme !== 'hm' && (
+                {theme !== "0" && theme !== "hm" && (
                   <div className="space-y-3 p-3 bg-muted/50 rounded-lg">
-                    <Label className="text-xs font-medium">
-                      Plage de valeurs (Min - Max)
-                    </Label>
+                    <Label className="text-xs font-medium">Plage de valeurs (Min - Max)</Label>
                     <Slider
                       min={sliderRange[0]}
                       max={sliderRange[1]}
                       step={1}
                       value={sliderValue}
-                      onValueChange={(v) =>
-                        setSliderValue(v as [number, number])
-                      }
+                      onValueChange={(v) => setSliderValue(v as [number, number])}
                     />
                     <div className="flex justify-between text-xs text-muted-foreground">
                       <span>
-                        Min:{' '}
-                        <strong className="text-foreground">
-                          {sliderValue[0]}
-                        </strong>
+                        Min: <strong className="text-foreground">{sliderValue[0]}</strong>
                       </span>
                       <span>
-                        Max:{' '}
-                        <strong className="text-foreground">
-                          {sliderValue[1]}
-                        </strong>
+                        Max: <strong className="text-foreground">{sliderValue[1]}</strong>
                       </span>
                     </div>
                   </div>
@@ -1044,7 +962,7 @@ const DataViz = () => {
                   <Button
                     onClick={handleApply}
                     className="flex-1"
-                    disabled={loading || theme === '0'}
+                    disabled={loading || theme === "0"}
                   >
                     {loading ? (
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -1053,12 +971,7 @@ const DataViz = () => {
                     )}
                     Appliquer
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={handleReset}
-                    title="Réinitialiser"
-                  >
+                  <Button variant="outline" size="icon" onClick={handleReset} title="Réinitialiser">
                     <RotateCcw className="w-4 h-4" />
                   </Button>
                 </div>
@@ -1079,20 +992,18 @@ const DataViz = () => {
             </Card>
 
             {/* Layer Controls — uniquement DREN / CISCO */}
-            {appliedTheme !== '0' && appliedTheme !== 'hm' && (
+            {appliedTheme !== "0" && appliedTheme !== "hm" && (
               <Card>
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-sm">
-                    Zone de délimitation
-                  </CardTitle>
+                  <CardTitle className="text-sm">Zone de délimitation</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="flex items-center justify-between">
                     <Label className="text-xs">DREN</Label>
                     <Switch
-                      checked={activeLayer === 'dren'}
+                      checked={activeLayer === "dren"}
                       onCheckedChange={() => {
-                        setActiveLayer('dren');
+                        setActiveLayer("dren");
                         setCommuneGeoJson(null);
                         setShowEtab(false);
                       }}
@@ -1101,9 +1012,9 @@ const DataViz = () => {
                   <div className="flex items-center justify-between">
                     <Label className="text-xs">CISCO</Label>
                     <Switch
-                      checked={activeLayer === 'cisco'}
+                      checked={activeLayer === "cisco"}
                       onCheckedChange={() => {
-                        setActiveLayer('cisco');
+                        setActiveLayer("cisco");
                         setCommuneGeoJson(null);
                         setShowEtab(false);
                       }}
@@ -1115,22 +1026,20 @@ const DataViz = () => {
                     </p>
                     <ul className="text-[10px] text-muted-foreground space-y-1 list-disc list-inside leading-relaxed">
                       <li>
-                        Choisissez le <strong>niveau</strong> et le{' '}
-                        <strong>thème</strong>, puis cliquez sur{' '}
-                        <em>Appliquer</em>.
+                        Choisissez le <strong>niveau</strong> et le <strong>thème</strong>, puis
+                        cliquez sur <em>Appliquer</em>.
                       </li>
                       <li>
-                        Basculez entre <strong>DREN</strong> et{' '}
-                        <strong>CISCO</strong> avec les interrupteurs ci-dessus.
+                        Basculez entre <strong>DREN</strong> et <strong>CISCO</strong> avec les
+                        interrupteurs ci-dessus.
                       </li>
                       <li>
-                        <strong>Clic droit</strong> sur une zone pour accéder à
-                        la carte par <em>Commune</em> ou par{' '}
-                        <em>Établissement</em>.
+                        <strong>Clic droit</strong> sur une zone pour accéder à la carte par{" "}
+                        <em>Commune</em> ou par <em>Établissement</em>.
                       </li>
                       <li>
-                        Utilisez <em>Capturer la carte</em> pour télécharger une
-                        image PNG de la vue.
+                        Utilisez <em>Capturer la carte</em> pour télécharger une image PNG de la
+                        vue.
                       </li>
                     </ul>
                   </div>
@@ -1139,53 +1048,41 @@ const DataViz = () => {
             )}
 
             {/* Legend */}
-            {appliedTheme !== '0' && (
+            {appliedTheme !== "0" && (
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm">Légende</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2 text-xs">
                   <p className="font-medium">{selectedThemeLabel}</p>
-                  {appliedTheme === 'hm' ? (
+                  {appliedTheme === "hm" ? (
                     <div className="flex items-center gap-2">
                       <span
                         className="w-3 h-3 rounded-full"
-                        style={{ backgroundColor: 'rgba(0,0,255,0.6)' }}
+                        style={{ backgroundColor: "rgba(0,0,255,0.6)" }}
                       />
                       <span>Densité des établissements</span>
                     </div>
                   ) : (
                     <>
                       <div className="flex items-center gap-2">
-                        <span
-                          className="w-4 h-3 border"
-                          style={{ backgroundColor: '#FFFFFF' }}
-                        />
+                        <span className="w-4 h-3 border" style={{ backgroundColor: "#FFFFFF" }} />
                         <span className="flex-1 text-right tabular-nums">
-                          Inférieur à{' '}
-                          {formatThemeValue(appliedBounds[0], appliedTheme)}
+                          Inférieur à {formatThemeValue(appliedBounds[0], appliedTheme)}
                           {ptg ? ptg : unit}
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span
-                          className="w-4 h-3"
-                          style={{ backgroundColor: '#00AA00' }}
-                        />
+                        <span className="w-4 h-3" style={{ backgroundColor: "#00AA00" }} />
                         <span className="flex-1 text-right tabular-nums">
-                          [{formatThemeValue(appliedBounds[0], appliedTheme)} –{' '}
-                          {formatThemeValue(appliedBounds[1], appliedTheme)}]
-                          {ptg ? ptg : unit}
+                          [{formatThemeValue(appliedBounds[0], appliedTheme)} –{" "}
+                          {formatThemeValue(appliedBounds[1], appliedTheme)}]{ptg ? ptg : unit}
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span
-                          className="w-4 h-3"
-                          style={{ backgroundColor: '#FF0000' }}
-                        />
+                        <span className="w-4 h-3" style={{ backgroundColor: "#FF0000" }} />
                         <span className="flex-1 text-right tabular-nums">
-                          Supérieur à{' '}
-                          {formatThemeValue(appliedBounds[1], appliedTheme)}
+                          Supérieur à {formatThemeValue(appliedBounds[1], appliedTheme)}
                           {ptg ? ptg : unit}
                         </span>
                       </div>
@@ -1193,24 +1090,15 @@ const DataViz = () => {
                   )}
                   <div className="border-t pt-2 mt-2 space-y-1">
                     <div className="flex items-center gap-2">
-                      <span
-                        className="w-4 h-3"
-                        style={{ backgroundColor: '#4e73df' }}
-                      />
+                      <span className="w-4 h-3" style={{ backgroundColor: "#4e73df" }} />
                       <span>Limite DREN</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span
-                        className="w-4 h-3"
-                        style={{ backgroundColor: '#22afbe' }}
-                      />
+                      <span className="w-4 h-3" style={{ backgroundColor: "#22afbe" }} />
                       <span>Limite CISCO</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span
-                        className="w-4 h-3"
-                        style={{ backgroundColor: '#c0c0c0' }}
-                      />
+                      <span className="w-4 h-3" style={{ backgroundColor: "#c0c0c0" }} />
                       <span>Limite Commune</span>
                     </div>
                   </div>
@@ -1227,15 +1115,11 @@ const DataViz = () => {
         <button
           type="button"
           onClick={() => setSidebarOpen((v) => !v)}
-          title={sidebarOpen ? 'Réduire le panneau' : 'Développer le panneau'}
+          title={sidebarOpen ? "Réduire le panneau" : "Développer le panneau"}
           className="absolute top-1/2 -translate-y-1/2 -ml-3 z-[1500] bg-background border shadow-md rounded-full w-7 h-7 flex items-center justify-center hover:bg-muted transition-[left] duration-300 ease-in-out"
-          style={{ left: sidebarOpen ? 'clamp(0px, 85vw, 300px)' : '0px' }}
+          style={{ left: sidebarOpen ? "clamp(0px, 85vw, 300px)" : "0px" }}
         >
-          {sidebarOpen ? (
-            <PanelLeftClose className="w-4 h-4" />
-          ) : (
-            <PanelLeftOpen className="w-4 h-4" />
-          )}
+          {sidebarOpen ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
         </button>
 
         {/* Map */}
@@ -1244,9 +1128,7 @@ const DataViz = () => {
             <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-[1000] flex items-center justify-center">
               <div className="text-center">
                 <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground">
-                  Chargement des données...
-                </p>
+                <p className="text-sm text-muted-foreground">Chargement des données...</p>
               </div>
             </div>
           )}
@@ -1318,8 +1200,7 @@ const DataViz = () => {
 
             {/* DREN layer */}
             {drenGeoJson &&
-              (activeLayer === 'dren' ||
-                (!isHeatmapActive && appliedTheme === '0')) && (
+              (activeLayer === "dren" || (!isHeatmapActive && appliedTheme === "0")) && (
                 <GeoJSON
                   key={drenKey}
                   data={drenGeoJson}
@@ -1329,7 +1210,7 @@ const DataViz = () => {
               )}
 
             {/* CISCO layer */}
-            {ciscoGeoJson && activeLayer === 'cisco' && (
+            {ciscoGeoJson && activeLayer === "cisco" && (
               <GeoJSON
                 key={ciscoKey}
                 data={ciscoGeoJson}
@@ -1339,7 +1220,7 @@ const DataViz = () => {
             )}
 
             {/* Commune layer */}
-            {communeGeoJson && activeLayer === 'commune' && (
+            {communeGeoJson && activeLayer === "commune" && (
               <GeoJSON
                 key={communeKey}
                 data={communeGeoJson}
@@ -1371,7 +1252,7 @@ const DataViz = () => {
                     <div className="text-sm">
                       <strong>{m.name}</strong>
                       <div className="mt-1 text-right tabular-nums">
-                        {selectedThemeLabel}:{' '}
+                        {selectedThemeLabel}:{" "}
                         <strong>
                           {formatThemeValue(m.ratio, appliedTheme)}
                           {ptg ? ptg : unit}
@@ -1395,8 +1276,7 @@ const DataViz = () => {
               Exporter la carte thématique
             </DialogTitle>
             <DialogDescription>
-              Choisissez le format d'export pour les données actuellement
-              affichées.
+              Choisissez le format d'export pour les données actuellement affichées.
             </DialogDescription>
           </DialogHeader>
 
@@ -1413,19 +1293,15 @@ const DataViz = () => {
                 </div>
                 <div>
                   <div className="text-sm font-medium text-primary">
-                    {THEMES.find((t) => t.value === appliedTheme)?.label || '—'}
+                    {THEMES.find((t) => t.value === appliedTheme)?.label || "—"}
                   </div>
-                  <div className="text-xs text-muted-foreground">
-                    Thème appliqué
-                  </div>
+                  <div className="text-xs text-muted-foreground">Thème appliqué</div>
                 </div>
               </div>
             </div>
 
             <div>
-              <p className="text-sm font-medium text-muted-foreground mb-3">
-                FORMATS DE DONNÉES
-              </p>
+              <p className="text-sm font-medium text-muted-foreground mb-3">FORMATS DE DONNÉES</p>
               <div className="grid grid-cols-3 gap-3">
                 <Button
                   onClick={downloadCSV}
@@ -1458,9 +1334,7 @@ const DataViz = () => {
             </div>
 
             <div>
-              <p className="text-sm font-medium text-muted-foreground mb-3">
-                IMAGE DE LA CARTE
-              </p>
+              <p className="text-sm font-medium text-muted-foreground mb-3">IMAGE DE LA CARTE</p>
               <Button
                 onClick={handleCaptureMap}
                 variant="default"
@@ -1474,10 +1348,7 @@ const DataViz = () => {
           </div>
 
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowDownloadModal(false)}
-            >
+            <Button variant="outline" onClick={() => setShowDownloadModal(false)}>
               Fermer
             </Button>
           </DialogFooter>

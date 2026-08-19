@@ -1,6 +1,6 @@
-import { useEffect, useMemo } from 'react';
-import { useMap } from 'react-leaflet';
-import L from 'leaflet';
+import { useEffect, useMemo } from "react";
+import { useMap } from "react-leaflet";
+import L from "leaflet";
 
 export interface CanvasPoint {
   id: string | number;
@@ -58,7 +58,7 @@ export const CanvasMarkersLayer = ({ points, visible = true }: Props) => {
         const marker = p.iconHtml
           ? L.marker([p.lat, p.lng], {
               icon: L.divIcon({
-                className: 'ors-etablissement-marker',
+                className: "ors-etablissement-marker",
                 html: p.iconHtml,
                 iconSize: [28, 28],
                 iconAnchor: [14, 14],
@@ -73,17 +73,29 @@ export const CanvasMarkersLayer = ({ points, visible = true }: Props) => {
               weight: p.weight ?? 1,
               renderer,
             });
-        if (p.popupHtml) {
+        // Fix #4 (audit du 19/08/2026) : un point avec un onClick (les
+        // établissements, qui ouvrent la Dialog complète côté React) ne doit
+        // PAS en plus recevoir un popup Leaflet natif — le clic gauche
+        // ouvrait auparavant deux surfaces d'info redondantes en même temps
+        // (popup HTML + Dialog). Les points sans onClick (les villages)
+        // gardent leur popup natif comme unique surface d'info.
+        if (p.popupHtml && !p.onClick) {
           marker.bindPopup(() => p.popupHtml!(), { maxWidth: 320 });
         }
-        if (p.onClick) marker.on('click', p.onClick);
-        if (p.onMouseOver) marker.on('mouseover', p.onMouseOver);
-        if (p.onMouseOut) marker.on('mouseout', p.onMouseOut);
+        if (p.onClick) marker.on("click", p.onClick);
+        if (p.onMouseOver) {
+          marker.on("mouseover", p.onMouseOver);
+          marker.on("mouseenter", p.onMouseOver);
+        }
+        if (p.onMouseOut) {
+          marker.on("mouseout", p.onMouseOut);
+          marker.on("mouseleave", p.onMouseOut);
+        }
         marker.addTo(group);
       }
       if (i < points.length) {
         // Schedule next chunk; idle callback if available
-        if (typeof (window as any).requestIdleCallback === 'function') {
+        if (typeof (window as any).requestIdleCallback === "function") {
           (window as any).requestIdleCallback(addChunk, { timeout: 50 });
         } else {
           setTimeout(addChunk, 0);

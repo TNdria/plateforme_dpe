@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { cn } from '@/lib/utils';
+import { useState, useMemo } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
   ChevronDown,
@@ -21,14 +21,10 @@ import {
   Home,
   Menu,
   X,
-} from 'lucide-react';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
-import { useAuth } from '@/contexts/AuthContext';
-import { AnimatedLogo } from '@/components/AnimatedLogo';
+} from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { useAuth } from "@/contexts/AuthContext";
+import { AnimatedLogo } from "@/components/AnimatedLogo";
 
 interface MenuChild {
   label: string;
@@ -50,88 +46,88 @@ interface MenuItem {
 const menuItems: { section?: string; items: MenuItem[] }[] = [
   {
     items: [
-      { label: 'Accueil', icon: Home, path: '/' },
-      { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
+      { label: "Accueil", icon: Home, path: "/" },
+      { label: "Dashboard", icon: LayoutDashboard, path: "/dashboard" },
     ],
   },
   {
-    section: 'DATA MUST SPEAK',
+    section: "DATA MUST SPEAK",
     items: [
       {
-        label: 'Tableau de Bord',
+        label: "Tableau de Bord",
         icon: BarChart3,
         children: [
-          { label: 'TDB DREN', path: '/tdb-dren' },
-          { label: 'TDB CISCO', path: '/tdb-cisco' },
-          { label: 'TDB ZAP', path: '/tdb-zap' },
-          { label: 'TDB École', path: '/tdb-ecole' },
+          { label: "TDB DREN", path: "/tdb-dren" },
+          { label: "TDB CISCO", path: "/tdb-cisco" },
+          { label: "TDB ZAP", path: "/tdb-zap" },
+          { label: "TDB École", path: "/tdb-ecole" },
         ],
       },
     ],
   },
   {
-    section: 'STATISTIQUES',
+    section: "STATISTIQUES",
     items: [
       {
-        label: 'Données',
+        label: "Données",
         icon: Database,
         children: [
-          { label: 'Préscolaire', path: '/donnees/prescolaire' },
-          { label: 'Primaire', path: '/donnees/primaire' },
-          { label: 'Collège', path: '/donnees/college' },
-          { label: 'Lycée', path: '/donnees/lycee' },
+          { label: "Préscolaire", path: "/donnees/prescolaire" },
+          { label: "Primaire", path: "/donnees/primaire" },
+          { label: "Collège", path: "/donnees/college" },
+          { label: "Lycée", path: "/donnees/lycee" },
         ],
       },
       {
-        label: 'Besoins',
+        label: "Besoins",
         icon: GraduationCap,
         requiresAuth: true,
         children: [
-          { label: 'Besoins Primaire', path: '/besoins/primaire' },
-          { label: 'Besoins Collège', path: '/besoins/college' },
-          { label: 'Besoins Lycée', path: '/besoins/lycee' },
+          { label: "Besoins Primaire", path: "/besoins/primaire" },
+          { label: "Besoins Collège", path: "/besoins/college" },
+          { label: "Besoins Lycée", path: "/besoins/lycee" },
         ],
       },
     ],
   },
   {
-    section: 'CARTOGRAPHIE',
+    section: "CARTOGRAPHIE",
     items: [
       {
-        label: 'Géolocalisation',
+        label: "Géolocalisation",
         icon: MapPin,
-        children: [{ label: 'Établissement', path: '/sig' }],
+        children: [{ label: "Établissement", path: "/sig" }],
       },
       {
-        label: 'ORS',
+        label: "ORS",
         icon: School,
         requiresAuth: true,
         children: [
-          { label: 'ORS Primaire', path: '/ors-primaire', requiresAuth: true },
-          { label: 'ORS Collège', path: '/ors-college', requiresAuth: true },
-          { label: 'ORS Lycée', path: '/ors-lycee', requiresAuth: true },
+          { label: "ORS Primaire", path: "/ors/primaire", requiresAuth: true },
+          { label: "ORS Collège", path: "/ors/college", requiresAuth: true },
+          { label: "ORS Lycée", path: "/ors/lycee", requiresAuth: true },
         ],
       },
-      { label: 'Carte Thématique', icon: Map, path: '/dataviz' },
+      { label: "Carte Thématique", icon: Map, path: "/dataviz" },
     ],
   },
   {
-    section: 'GESTION',
+    section: "GESTION",
     items: [
       {
-        label: 'Référentiel',
+        label: "Référentiel",
         icon: ClipboardList,
-        path: '/referentiel',
+        path: "/referentiel",
         adminOnly: true,
       },
       {
-        label: 'Diagnostic',
+        label: "Diagnostic",
         icon: FileText,
-        path: '/diagnostic',
+        path: "/diagnostic",
         requiresAuth: true,
       },
-      { label: 'Mon Profil', icon: User, path: '/profil', requiresAuth: true },
-      { label: 'EAGER', icon: Settings, path: '/eager', adminOnly: true },
+      { label: "Mon Profil", icon: User, path: "/profil", requiresAuth: true },
+      { label: "EAGER", icon: Settings, path: "/eager", adminOnly: true },
     ],
   },
 ];
@@ -144,10 +140,10 @@ const Sidebar = () => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [openMenus, setOpenMenus] = useState<string[]>([
-    'Tableau de Bord',
-    'Données',
-    'Géolocalisation',
-    'ORS',
+    "Tableau de Bord",
+    "Données",
+    "Géolocalisation",
+    "ORS",
   ]);
 
   // Filter menu items based on auth/admin state
@@ -177,23 +173,26 @@ const Sidebar = () => {
 
   const toggleMenu = (label: string) => {
     setOpenMenus((prev) =>
-      prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label]
+      prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label],
     );
   };
 
+  const normalizeMenuPath = (path: string) =>
+    path.replace(/^\/ors-(primaire|college|lycee)$/, "/ors/$1");
+
   const isActive = (path?: string) => {
     if (!path) return false;
-    return location.pathname === path;
+    return normalizeMenuPath(location.pathname) === normalizeMenuPath(path);
   };
 
   const isChildActive = (children?: { path: string }[]) => {
     if (!children) return false;
-    return children.some((child) => location.pathname === child.path);
+    return children.some((child) => isActive(child.path));
   };
 
   const handleLogout = () => {
     logout();
-    navigate('/login');
+    navigate("/login");
   };
 
   const handleNavClick = () => {
@@ -228,7 +227,7 @@ const Sidebar = () => {
       {/* Navigation */}
       <nav
         className="flex-1 overflow-y-auto py-4 px-2 scrollbar-hide"
-        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+        style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
       >
         {visibleGroups.map((group, groupIndex) => (
           <div key={groupIndex} className="mb-4">
@@ -247,22 +246,20 @@ const Sidebar = () => {
                     <CollapsibleTrigger asChild>
                       <button
                         className={cn(
-                          'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors',
+                          "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors",
                           isChildActive(item.children)
-                            ? 'bg-gradient-to-r from-primary to-primary/80 text-primary-foreground shadow-md shadow-primary/20'
-                            : 'text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground'
+                            ? "bg-gradient-to-r from-primary to-primary/80 text-primary-foreground shadow-md shadow-primary/20"
+                            : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground",
                         )}
                       >
                         <item.icon className="w-5 h-5 flex-shrink-0" />
                         {!isCollapsed && (
                           <>
-                            <span className="flex-1 text-left">
-                              {item.label}
-                            </span>
+                            <span className="flex-1 text-left">{item.label}</span>
                             <ChevronDown
                               className={cn(
-                                'w-4 h-4 transition-transform',
-                                openMenus.includes(item.label) && 'rotate-180'
+                                "w-4 h-4 transition-transform",
+                                openMenus.includes(item.label) && "rotate-180",
                               )}
                             />
                           </>
@@ -277,10 +274,10 @@ const Sidebar = () => {
                             to={child.path}
                             onClick={handleNavClick}
                             className={cn(
-                              'flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all',
+                              "flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all",
                               isActive(child.path)
-                                ? 'bg-sidebar-primary/15 text-sidebar-primary font-medium border-l-2 border-sidebar-primary pl-2.5'
-                                : 'text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground'
+                                ? "bg-sidebar-primary/15 text-sidebar-primary font-medium border-l-2 border-sidebar-primary pl-2.5"
+                                : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground",
                             )}
                           >
                             <span className="w-1.5 h-1.5 rounded-full bg-current" />
@@ -295,10 +292,10 @@ const Sidebar = () => {
                     to={item.path!}
                     onClick={handleNavClick}
                     className={cn(
-                      'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors',
+                      "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors",
                       isActive(item.path)
-                        ? 'bg-gradient-to-r from-primary to-primary/80 text-primary-foreground shadow-md shadow-primary/20'
-                        : 'text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground'
+                        ? "bg-gradient-to-r from-primary to-primary/80 text-primary-foreground shadow-md shadow-primary/20"
+                        : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground",
                     )}
                   >
                     <item.icon className="w-5 h-5 flex-shrink-0" />
@@ -316,8 +313,8 @@ const Sidebar = () => {
         <button
           onClick={handleLogout}
           className={cn(
-            'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-sidebar-foreground/80 hover:bg-destructive/15 hover:text-destructive transition-colors',
-            isCollapsed && 'justify-center'
+            "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-sidebar-foreground/80 hover:bg-destructive/15 hover:text-destructive transition-colors",
+            isCollapsed && "justify-center",
           )}
         >
           <LogOut className="w-5 h-5 flex-shrink-0" />
@@ -329,11 +326,7 @@ const Sidebar = () => {
           onClick={() => setIsCollapsed(!isCollapsed)}
           className="hidden lg:flex w-full items-center justify-center p-2 rounded-lg bg-sidebar-accent hover:bg-sidebar-accent/70 transition-colors"
         >
-          {isCollapsed ? (
-            <ChevronRight className="w-5 h-5" />
-          ) : (
-            <ChevronLeft className="w-5 h-5" />
-          )}
+          {isCollapsed ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
         </button>
       </div>
     </>
@@ -360,10 +353,10 @@ const Sidebar = () => {
       {/* Mobile sidebar */}
       <aside
         className={cn(
-          'lg:hidden fixed inset-y-0 left-0 z-50 w-64 bg-sidebar text-sidebar-foreground flex flex-col transition-transform duration-300',
-          isMobileOpen ? 'translate-x-0' : '-translate-x-full'
+          "lg:hidden fixed inset-y-0 left-0 z-50 w-64 bg-sidebar text-sidebar-foreground flex flex-col transition-transform duration-300",
+          isMobileOpen ? "translate-x-0" : "-translate-x-full",
         )}
-        style={{ background: 'var(--sidebar-gradient)' }}
+        style={{ background: "var(--sidebar-gradient)" }}
       >
         {sidebarContent}
       </aside>
@@ -371,10 +364,10 @@ const Sidebar = () => {
       {/* Desktop sidebar */}
       <aside
         className={cn(
-          'hidden lg:flex h-screen bg-sidebar text-sidebar-foreground transition-all duration-300 flex-col flex-shrink-0 border-r border-sidebar-border shadow-xl',
-          isCollapsed ? 'w-16' : 'w-56'
+          "hidden lg:flex h-screen bg-sidebar text-sidebar-foreground transition-all duration-300 flex-col flex-shrink-0 border-r border-sidebar-border shadow-xl",
+          isCollapsed ? "w-16" : "w-56",
         )}
-        style={{ background: 'var(--sidebar-gradient)' }}
+        style={{ background: "var(--sidebar-gradient)" }}
       >
         {sidebarContent}
       </aside>
