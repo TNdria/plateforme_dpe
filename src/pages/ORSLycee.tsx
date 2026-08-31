@@ -207,11 +207,6 @@ const ORSLycee = () => {
             isFiltered={isFiltered}
             drenLocked={scope.drenLocked}
             ciscoLocked={scope.ciscoLocked}
-            layerVisibility={layerVisibility}
-            onLayerVisibilityChange={setLayerVisibility}
-            showVillagesLayer
-            tableBancFilter={tableBancFilter}
-            onTableBancFilterChange={setTableBancFilter}
           />
 
           <HelpPanel type="lycee" />
