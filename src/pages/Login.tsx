@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { User, Lock, Loader2, ArrowRight, Eye, EyeOff, ShieldCheck, Sparkles } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -17,6 +18,7 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [forgotOpen, setForgotOpen] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -147,7 +149,31 @@ const Login = () => {
                     </>
                   )}
                 </Button>
+                <div className="text-center">
+                  <button
+                    type="button"
+                    onClick={() => setForgotOpen(true)}
+                    className="text-sm text-primary hover:underline underline-offset-4"
+                  >
+                    Mot de passe oublié ?
+                  </button>
+                </div>
               </form>
+
+              <Dialog open={forgotOpen} onOpenChange={setForgotOpen}>
+                <DialogContent className="sm:max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>Mot de passe oublié</DialogTitle>
+                    <DialogDescription className="pt-2 text-base text-foreground">
+                      Veuillez contacter l'administrateur.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setForgotOpen(false)}>Fermer</Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+
               <div className="mt-5 flex items-center justify-center gap-2 text-xs text-muted-foreground">
                 <ShieldCheck className="h-3.5 w-3.5 text-secondary" />
                 <span>Connexion sécurisée et chiffrée</span>

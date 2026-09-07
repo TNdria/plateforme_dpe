@@ -215,11 +215,6 @@ const ORSPrimaire = () => {
             isFiltered={isFiltered}
             drenLocked={scope.drenLocked}
             ciscoLocked={scope.ciscoLocked}
-            layerVisibility={layerVisibility}
-            onLayerVisibilityChange={setLayerVisibility}
-            showVillagesLayer
-            tableBancFilter={tableBancFilter}
-            onTableBancFilterChange={setTableBancFilter}
           />
 
           <HelpPanel type="primaire" />
@@ -305,7 +300,6 @@ const ORSPrimaire = () => {
             geoLayers={geoLayers}
             villages={filteredVillages}
             onVillageAnalysis={setAnalysisResult}
-            layerVisibility={layerVisibility}
           />
         </div>
       </div>

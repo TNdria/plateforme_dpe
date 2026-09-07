@@ -207,11 +207,6 @@ const ORSCollege = () => {
             isFiltered={isFiltered}
             drenLocked={scope.drenLocked}
             ciscoLocked={scope.ciscoLocked}
-            layerVisibility={layerVisibility}
-            onLayerVisibilityChange={setLayerVisibility}
-            showVillagesLayer
-            tableBancFilter={tableBancFilter}
-            onTableBancFilterChange={setTableBancFilter}
           />
 
           <HelpPanel type="college" />

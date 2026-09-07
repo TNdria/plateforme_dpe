@@ -1,9 +1,9 @@
 /**
  * Ouvre une fenêtre d'impression contenant le HTML exact du TDB.
- * - Format A3 PAYSAGE (420 × 297 mm)
+ * - Format A3 PORTRAIT (297 × 420 mm), tenant sur UNE SEULE page
  * - Texte 100 % sélectionnable, SVG Recharts vectoriels (pas d'aplatissement)
  * - Aucun effet d'« aperçu papier » (pas d'ombre, pas de bordure de feuille)
- * - Le contenu est mis à l'échelle pour remplir toute la largeur utile A3
+ * - Le contenu est mis à l'échelle pour tenir intégralement dans la page A3
  *
  * Mode 'print'   : déclenche directement la boîte d'impression du navigateur
  *                  (= « Enregistrer en PDF »). C'est la SEULE façon d'obtenir
@@ -12,11 +12,12 @@
  */
 export type HtmlPdfMode = 'print' | 'preview';
 
-// A3 paysage à 96 dpi, marges déduites
+// A3 portrait à 96 dpi, marges déduites
 const A3_MARGIN_MM = 4;
 const MM_TO_PX = 96 / 25.4;
-const A3_LANDSCAPE_WIDTH_PX = Math.round((420 - A3_MARGIN_MM * 2) * MM_TO_PX); // ≈ 1554
-const A3_LANDSCAPE_HEIGHT_PX = Math.round((297 - A3_MARGIN_MM * 2) * MM_TO_PX); // ≈ 1093
+const A3_PAGE_WIDTH_PX = Math.round((297 - A3_MARGIN_MM * 2) * MM_TO_PX); // ≈ 1092
+const A3_PAGE_HEIGHT_PX = Math.round((420 - A3_MARGIN_MM * 2) * MM_TO_PX); // ≈ 1557
+
 
 export const openHtmlPdf = (
   contentElement: HTMLElement,
@@ -56,9 +57,10 @@ export const openHtmlPdf = (
   const srcRect = contentElement.getBoundingClientRect();
   const contentWidth = Math.round(srcRect.width) || 1191;
 
-  // Mise à l'échelle uniforme pour remplir toute la largeur utile A3 paysage,
-  // sans distorsion et SANS perdre la sélection du texte (transform CSS).
-  const scale = A3_LANDSCAPE_WIDTH_PX / contentWidth;
+  // Mise à l'échelle uniforme pour tenir dans la largeur utile A3 portrait
+  // (la hauteur est ensuite ajustée en JS pour tenir sur UNE seule page).
+  const scale = A3_PAGE_WIDTH_PX / contentWidth;
+
 
   win.document.open();
   win.document.write(`<!DOCTYPE html>
@@ -68,7 +70,7 @@ export const openHtmlPdf = (
   <title>${title}</title>
   ${headStyles}
   <style>
-    @page { size: A3 landscape; margin: ${A3_MARGIN_MM}mm; }
+    @page { size: A3 portrait; margin: ${A3_MARGIN_MM}mm; }
     html, body {
       margin: 0; padding: 0; background: #fff;
       width: 100%;
@@ -85,16 +87,16 @@ export const openHtmlPdf = (
       filter: none !important;
     }
 
-    /* Wrapper : largeur exacte A3 paysage en px */
+    /* Wrapper : largeur exacte A3 portrait en px */
     .__pdf-stage {
-      width: ${A3_LANDSCAPE_WIDTH_PX}px;
+      width: ${A3_PAGE_WIDTH_PX}px;
       margin: 0 auto;
       padding-top: 44px; /* place pour la barre d'outils à l'écran */
       background: #fff;
     }
     @media print { .__pdf-stage { padding-top: 0; } }
 
-    /* Contenu original mis à l'échelle pour remplir la largeur A3 */
+    /* Contenu original mis à l'échelle pour tenir sur une page A3 */
     .__pdf-body {
       width: ${contentWidth}px;
       transform: scale(${scale});
@@ -103,9 +105,11 @@ export const openHtmlPdf = (
     }
     /* Réserve la place réellement occupée après scaling */
     .__pdf-scaler {
-      width: ${A3_LANDSCAPE_WIDTH_PX}px;
-      /* la hauteur est ajustée en JS après mise en page */
+      width: ${A3_PAGE_WIDTH_PX}px;
+      height: ${A3_PAGE_HEIGHT_PX}px;
+      overflow: hidden;
     }
+
     .__pdf-body > * { width: 100% !important; max-width: 100% !important; }
 
     /* Évite les coupes au milieu d'un bloc */
@@ -135,7 +139,7 @@ export const openHtmlPdf = (
 </head>
 <body>
   <div class="__pdf-toolbar">
-    <span>${title} — A3 paysage · Texte sélectionnable</span>
+    <span>${title} — A3 portrait · 1 page · Texte sélectionnable</span>
     <span>
       <button onclick="window.print()">Enregistrer en PDF</button>
       <button onclick="window.close()">Fermer</button>
@@ -150,8 +154,8 @@ export const openHtmlPdf = (
   </div>
   <script>
     (function () {
-      var PAGE_H = ${A3_LANDSCAPE_HEIGHT_PX};
-      var STAGE_W = ${A3_LANDSCAPE_WIDTH_PX};
+      var PAGE_H = ${A3_PAGE_HEIGHT_PX};
+      var STAGE_W = ${A3_PAGE_WIDTH_PX};
       var BASE_W = ${contentWidth};
 
       function fit() {
@@ -159,20 +163,20 @@ export const openHtmlPdf = (
         var scaler = document.querySelector('.__pdf-scaler');
         if (!body || !scaler) return;
 
-        // Échelle de base : remplir la largeur A3
+        // Échelle de base : remplir la largeur A3 portrait
         var scale = STAGE_W / BASE_W;
         body.style.transform = 'scale(' + scale + ')';
         var h = body.getBoundingClientRect().height;
 
-        // Si le contenu tient presque sur une page, on réduit légèrement
-        // pour qu'il remplisse exactement UNE page A3 paysage.
-        if (h > PAGE_H && h <= PAGE_H * 1.25) {
+        // Réduction supplémentaire pour que TOUT le contenu tienne
+        // sur UNE seule page A3 portrait (pas de deuxième page).
+        if (h > PAGE_H) {
           scale = scale * (PAGE_H / h);
           body.style.transform = 'scale(' + scale + ')';
-          h = body.getBoundingClientRect().height;
         }
-        scaler.style.height = h + 'px';
+        scaler.style.height = PAGE_H + 'px';
       }
+
 
       function ready() {
         fit();

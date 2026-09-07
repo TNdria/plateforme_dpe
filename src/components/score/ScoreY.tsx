@@ -50,16 +50,19 @@ interface Props {
   size?: number;
   showLabel?: boolean;
   showValue?: boolean;
+  /** Affiche l'émoticône. Désactivé dans les TDB (rendu institutionnel). */
+  showIcon?: boolean;
 }
 
-export const ScoreY = ({ value, size = 32, showLabel = false, showValue = true }: Props) => {
+export const ScoreY = ({ value, size = 32, showLabel = false, showValue = true, showIcon = true }: Props) => {
   const src = scoreEmoji(value);
   const label = scoreLabel(value);
   return (
     <div className="inline-flex items-center gap-2">
-      <img src={src} alt={label} width={size} height={size} className="object-contain" />
+      {showIcon && <img src={src} alt={label} width={size} height={size} className="object-contain" />}
       {showValue && <span className="font-bold text-sm tabular-nums">{value.toFixed(1)}</span>}
       {showLabel && <span className="text-xs text-muted-foreground">{label}</span>}
     </div>
   );
 };
+

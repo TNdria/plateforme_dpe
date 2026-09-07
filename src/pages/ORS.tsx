@@ -1549,7 +1549,7 @@ const ORS = () => {
                     ) : null}
                     {selectedEtablissement.effectifs !== null &&
                     selectedEtablissement.effectifs !== undefined &&
-                    selectedEtablissement.effectifs !== "" ? (
+                    String(selectedEtablissement.effectifs) !== "" ? (
                       <InfoRow
                         icon={<Users className="w-3.5 h-3.5 text-muted-foreground" />}
                         label="Effectif total"
@@ -1558,7 +1558,7 @@ const ORS = () => {
                     ) : null}
                     {selectedEtablissement.eff_t5 !== null &&
                     selectedEtablissement.eff_t5 !== undefined &&
-                    selectedEtablissement.eff_t5 !== "" ? (
+                    String(selectedEtablissement.eff_t5) !== "" ? (
                       <InfoRow
                         icon={<Users className="w-3.5 h-3.5 text-muted-foreground" />}
                         label="Effectif T5"
@@ -1567,7 +1567,7 @@ const ORS = () => {
                     ) : null}
                     {selectedEtablissement.eff_2024 !== null &&
                     selectedEtablissement.eff_2024 !== undefined &&
-                    selectedEtablissement.eff_2024 !== "" ? (
+                    String(selectedEtablissement.eff_2024) !== "" ? (
                       <InfoRow
                         icon={<Users className="w-3.5 h-3.5 text-muted-foreground" />}
                         label="Effectif 2024"
@@ -1576,7 +1576,7 @@ const ORS = () => {
                     ) : null}
                     {selectedEtablissement.sdc_be !== null &&
                     selectedEtablissement.sdc_be !== undefined &&
-                    selectedEtablissement.sdc_be !== "" ? (
+                    String(selectedEtablissement.sdc_be) !== "" ? (
                       <InfoRow
                         icon={<CheckCircle className="w-3.5 h-3.5 text-emerald-600" />}
                         label="Salles bonnes"
@@ -1585,7 +1585,7 @@ const ORS = () => {
                     ) : null}
                     {selectedEtablissement.sdc_me !== null &&
                     selectedEtablissement.sdc_me !== undefined &&
-                    selectedEtablissement.sdc_me !== "" ? (
+                    String(selectedEtablissement.sdc_me) !== "" ? (
                       <InfoRow
                         icon={<AlertTriangle className="w-3.5 h-3.5 text-rose-600" />}
                         label="Salles dégradées"
@@ -1594,7 +1594,7 @@ const ORS = () => {
                     ) : null}
                     {selectedEtablissement.sdc_requis !== null &&
                     selectedEtablissement.sdc_requis !== undefined &&
-                    selectedEtablissement.sdc_requis !== "" ? (
+                    String(selectedEtablissement.sdc_requis) !== "" ? (
                       <InfoRow
                         icon={<XCircle className="w-3.5 h-3.5 text-muted-foreground" />}
                         label="Salles requises"
@@ -1603,7 +1603,7 @@ const ORS = () => {
                     ) : null}
                     {selectedEtablissement.places !== null &&
                     selectedEtablissement.places !== undefined &&
-                    selectedEtablissement.places !== "" ? (
+                    String(selectedEtablissement.places) !== "" ? (
                       <InfoRow
                         icon={<Users className="w-3.5 h-3.5 text-muted-foreground" />}
                         label="Places"
