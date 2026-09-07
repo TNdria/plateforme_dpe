@@ -531,14 +531,194 @@ const DataViz = () => {
     }
   }, [appliedTheme]);
 
-  // Jeu de données actuellement affiché sur la carte (le même que celui
-  // utilisé pour la coloration thématique), pour l'export CSV/Excel/JSON.
+  // Champs sources nécessaires au calcul de l'indicateur (par thème)
+  const getSourceFieldsForTheme = (themeCode: string): string[] => {
+    switch (themeCode) {
+      case "rem":
+        return ["eff_2025", "en_classe"];
+      case "re-sdc":
+        return ["eff_2025", "sdc_be", "sdc_me"];
+      case "ratio-pa":
+        return ["eff_2025", "places"];
+      case "elec":
+        return ["elec", "nbr_etab"];
+      case "eau":
+        return ["eau", "nbr_etab"];
+      case "exist-lat-g":
+        return ["latrine_g", "nbr_etab"];
+      case "exist-lat-f":
+        return ["latrine_f", "nbr_etab"];
+      case "exist-lat":
+        return ["latrine", "nbr_etab"];
+      case "ens-f":
+        return ["fonct", "pers_total"];
+      case "ens-fsub":
+        return ["fs", "pers_total"];
+      case "ens-fnsub":
+        return ["fns", "pers_total"];
+      case "ens-q":
+        return ["qualifiee", "pers_total"];
+      case "extra-ens":
+        return ["en_classe", "sdc_be", "sdc_me"];
+      case "nbr-etab":
+        return ["nbr_etab"];
+      case "eff-total":
+        return ["eff_2025"];
+      case "re-etab":
+        return ["eff_2025", "nbr_etab"];
+      case "sdc-be-pct":
+        return ["sdc_be", "sdc_me"];
+      case "pers-etab":
+        return ["pers_total", "nbr_etab"];
+      default:
+        return [];
+    }
+  };
+
+  // Colonne code selon la couche affichée
+  const getZoneCodeKey = (): string => {
+    if (showEtab) return "CODE_ETAB";
+    if (activeLayer === "commune") return "CODE_COMMUNE";
+    if (activeLayer === "cisco") return "CODE_CISCO";
+    return "CODE_DREN";
+  };
+
+  const getZoneNameKey = (): string | null => {
+    if (showEtab) return "NOM_ETAB";
+    if (activeLayer === "commune") return "NOM_COMMUNE";
+    if (activeLayer === "cisco") return "NOM_CISCO";
+    return "NOM_DREN";
+  };
+
+  // Export optimisé : métadonnées + colonnes réduites (code zone, données
+  // sources du calcul, thème, valeur, état coloré).
   const activeExportDataset = useMemo(() => {
-    if (showEtab) return { label: "etablissements", rows: dataEtab };
-    if (communeGeoJson) return { label: "communes", rows: dataCommune };
-    if (activeLayer === "cisco") return { label: "cisco", rows: dataCisco };
-    return { label: "dren", rows: dataDren };
-  }, [showEtab, communeGeoJson, activeLayer, dataEtab, dataCommune, dataCisco, dataDren]);
+    type ExportRow = Record<string, string | number | null>;
+
+    const themeLabel = THEMES.find((t) => t.value === appliedTheme)?.label || "";
+    const niveauLabel = NIVEAUX.find((n) => n.value === niveau)?.label || niveau;
+    const unitSuffix = isPercentageTheme(appliedTheme) ? "%" : getThemeUnit(appliedTheme);
+    const [minBound, maxBound] = appliedBounds;
+    const sourceFields = getSourceFieldsForTheme(appliedTheme);
+    const codeKey = getZoneCodeKey();
+    const nameKey = getZoneNameKey();
+
+    const classify = (ratio: number): string => {
+      if (isNaN(ratio) || ratio < minBound) return "inférieur";
+      if (ratio > maxBound) return "supérieur";
+      return "entre";
+    };
+
+    const colorLabel = (score: string): string => {
+      if (score === "inférieur") return "blanc";
+      if (score === "supérieur") return "rouge";
+      return "vert";
+    };
+
+    // Lignes de métadonnées (1re : thème + niveau ; 2e : code couleur)
+    const meta = {
+      ligne1_theme_niveau: `Thème: ${themeLabel} | Niveau: ${niveauLabel}`,
+      ligne2_couleurs: "Code couleur: inférieur=blanc | entre=vert | supérieur=rouge",
+      theme: themeLabel,
+      theme_code: appliedTheme,
+      niveau: niveauLabel,
+      borne_min: minBound,
+      borne_max: maxBound,
+    };
+
+    const buildRows = (raw: any[]): ExportRow[] => {
+      if (!raw?.length || appliedTheme === "0" || appliedTheme === "hm") {
+        return [];
+      }
+      return raw.map((row) => {
+        const ratio = calculateRatio(row, appliedTheme);
+        const score = classify(ratio);
+        const out: ExportRow = {};
+
+        // Code de zone (DREN / CISCO / COMMUNE / ETAB)
+        const codeVal =
+          row[codeKey] ??
+          row.CODE_DREN ??
+          row.CODE_CISCO ??
+          row.CODE_COMMUNE ??
+          row.CODE_ETAB ??
+          row.code ??
+          "";
+        out[codeKey] = codeVal;
+
+        // Nom si disponible
+        if (nameKey) {
+          const nameVal =
+            row[nameKey] ??
+            row.NOM_DREN ??
+            row.NOM_CISCO ??
+            row.NOM_COMMUNE ??
+            row.NOM_ETAB ??
+            row.NAME ??
+            "";
+          if (nameVal !== "" && nameVal != null) {
+            out[nameKey] = nameVal;
+          }
+        }
+
+        // Données sources du calcul
+        sourceFields.forEach((f) => {
+          out[f] = row[f] ?? null;
+        });
+
+        // Indicateur + classification
+        out.theme = themeLabel;
+        out.valeur_indicateur = Number.isFinite(ratio) ? Number(ratio.toFixed(4)) : null;
+        out.valeur_formatee = Number.isFinite(ratio)
+          ? `${formatThemeValue(ratio, appliedTheme)}${unitSuffix}`
+          : "—";
+        out.etat_colore = score; // inférieur | entre | supérieur
+        out.couleur = colorLabel(score); // blanc | vert | rouge
+
+        return out;
+      });
+    };
+
+    if (isHeatmapActive) {
+      const rows = heatmapPoints.map(([lat, lng, intensity]) => ({
+        latitude: lat,
+        longitude: lng,
+        intensite: intensity,
+        theme: themeLabel || "Densité des établissements",
+      }));
+      return {
+        label: "heatmap",
+        rows,
+        meta: {
+          ...meta,
+          ligne1_theme_niveau: `Thème: ${themeLabel || "Densité des établissements"} | Niveau: ${niveauLabel}`,
+        },
+      };
+    }
+
+    if (showEtab) {
+      return { label: "etablissements", rows: buildRows(dataEtab), meta };
+    }
+    if (activeLayer === "commune") {
+      return { label: "communes", rows: buildRows(dataCommune), meta };
+    }
+    if (activeLayer === "cisco") {
+      return { label: "cisco", rows: buildRows(dataCisco), meta };
+    }
+    return { label: "dren", rows: buildRows(dataDren), meta };
+  }, [
+    showEtab,
+    activeLayer,
+    isHeatmapActive,
+    heatmapPoints,
+    dataEtab,
+    dataCommune,
+    dataCisco,
+    dataDren,
+    appliedTheme,
+    appliedBounds,
+    niveau,
+  ]);
 
   const themeSlugFor = (label: string) =>
     label
@@ -555,16 +735,21 @@ const DataViz = () => {
   };
 
   const downloadCSV = () => {
-    const rows = activeExportDataset.rows;
+    const { rows, meta } = activeExportDataset;
     if (!rows.length) {
       toast.error("Aucune donnée à exporter");
       return;
     }
     const headers = Object.keys(rows[0]);
+    // 1re ligne : thème + niveau | 2e ligne : code couleur | puis en-têtes + données
     const csv = [
+      `"${meta.ligne1_theme_niveau}"`,
+      `"${meta.ligne2_couleurs}"`,
       headers.join(";"),
       ...rows.map((r) =>
-        headers.map((h) => `"${String(r[h] ?? "").replace(/"/g, '""')}"`).join(";"),
+        headers
+          .map((h) => `"${String((r as Record<string, unknown>)[h] ?? "").replace(/"/g, '""')}"`)
+          .join(";"),
       ),
     ].join("\n");
     const blob = new Blob(["\ufeff" + csv], {
@@ -580,25 +765,52 @@ const DataViz = () => {
   };
 
   const downloadExcel = () => {
-    const rows = activeExportDataset.rows;
+    const { rows, meta } = activeExportDataset;
     if (!rows.length) {
       toast.error("Aucune donnée à exporter");
       return;
     }
+    const headers = Object.keys(rows[0]);
+    // Feuille avec 2 lignes de métadonnées puis en-têtes + données
+    const aoa: (string | number | null)[][] = [
+      [meta.ligne1_theme_niveau],
+      [meta.ligne2_couleurs],
+      headers,
+      ...rows.map((r) =>
+        headers.map((h) => {
+          const v = (r as Record<string, unknown>)[h];
+          if (v === null || v === undefined) return null;
+          if (typeof v === "number") return v;
+          return String(v);
+        }),
+      ),
+    ];
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(rows);
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
     XLSX.utils.book_append_sheet(wb, ws, "Données");
     XLSX.writeFile(wb, buildExportFilename("xlsx"));
     toast.success("Export Excel téléchargé");
   };
 
   const downloadJSON = () => {
-    const rows = activeExportDataset.rows;
+    const { rows, meta } = activeExportDataset;
     if (!rows.length) {
       toast.error("Aucune donnée à exporter");
       return;
     }
-    const blob = new Blob([JSON.stringify(rows, null, 2)], {
+    const payload = {
+      theme: meta.theme,
+      niveau: meta.niveau,
+      code_couleur: {
+        inférieur: "blanc",
+        entre: "vert",
+        supérieur: "rouge",
+      },
+      borne_min: meta.borne_min,
+      borne_max: meta.borne_max,
+      donnees: rows,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: "application/json",
     });
     const url = URL.createObjectURL(blob);

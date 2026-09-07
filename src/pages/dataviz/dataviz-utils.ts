@@ -15,7 +15,7 @@ type ThemeEntry = { value: string; label: string; niveaux: Niveau[] };
 
 export const ALL_THEMES: ThemeEntry[] = [
   { value: '0', label: '--Choisir un thème--', niveaux: ['primaire', 'college', 'lycee'] },
-  { value: 'hm', label: 'Densité des écoles', niveaux: ['primaire', 'college', 'lycee'] },
+  /*{ value: 'hm', label: 'Densité des écoles', niveaux: ['primaire', 'college', 'lycee'] },*/
   { value: 'rem', label: 'Ratio élève-maître', niveaux: ['primaire', 'college', 'lycee'] },
   { value: 're-sdc', label: 'Ratio élèves par salle de classe', niveaux: ['primaire', 'college', 'lycee'] },
   { value: 'ratio-pa', label: 'Ratio élèves par place assise', niveaux: ['primaire', 'college', 'lycee'] },
@@ -47,7 +47,7 @@ export function getThemesForNiveau(niveau: Niveau): ThemeEntry[] {
 /** Get default slider range and start values per theme */
 export function getSliderDefaults(theme: string): { range: [number, number]; start: [number, number] } {
   switch (theme) {
-    case 'hm': return { range: [1, 1], start: [1, 1] };
+    /*case 'hm': return { range: [1, 1], start: [1, 1] };*/
     case 'rem': return { range: [0, 100], start: [25, 50] };
     case 're-sdc': return { range: [0, 100], start: [25, 60] };
     case 'ratio-pa': return { range: [0, 10], start: [0, 1] };
@@ -74,6 +74,7 @@ export function calculateRatio(data: any, theme: string): number {
   const pi = (v: any) => parseInt(v) || 0;
 
   switch (theme) {
+    /*case 'hm': return { range: [1, 1], start: [1, 1] };*/
     case 'rem':
       return safeDiv(pf(data.eff_2025), pf(data.en_classe));
     case 're-sdc': {
