@@ -16,6 +16,9 @@ export interface LayerVisibility {
   publiques: boolean;
   prives: boolean;
   villages: boolean;
+  /** Cercles d'aire de recrutement par établissement — désactivé par défaut
+   * pour éviter d'encombrer la carte. */
+  aires: boolean;
 }
 
 export type TableBancFilter = "tous" | "suffisant" | "insuffisant";
@@ -41,21 +44,6 @@ interface MapFiltersProps {
   /** Verrouille le sélecteur CISCO (utilisateur scope CISCO) */
   ciscoLocked?: boolean;
 }
-
-// Fix #3 (audit du 19/08/2026) : `layerVisibility`, `onLayerVisibilityChange`,
-// `etabInfoVisible`, `onEtabInfoVisibleChange`, `showVillagesLayer`,
-// `tableBancFilter` et `onTableBancFilterChange` figuraient dans les props de
-// ce composant mais n'étaient JAMAIS transmis par ORS.tsx et ne rendaient
-// donc jamais rien (le bloc "Filtre Table-bancs" ci-dessous était mort —
-// gardé par `tableBancFilter !== undefined`, toujours `undefined`). Les
-// vrais contrôles (couches publiques/privées/villages/infos, table-bancs)
-// vivent réellement dans le panneau latéral de ORS.tsx, pilotés par l'état
-// React `layerVisibility` / `etabInfoVisible` / `tableBancFilter` de ce
-// fichier. Pour ne garder qu'un seul système de contrôle (au lieu de deux
-// API parallèles, l'une vivante, l'autre fantôme), ces props mortes ont été
-// retirées d'ici plutôt que branchées : dupliquer les mêmes contrôles dans
-// MapFilters ET dans le panneau latéral aurait recréé l'ambiguïté qu'on
-// cherche justement à éliminer.
 
 export const MapFilters = ({
   drens,
@@ -207,13 +195,13 @@ export const MapFilters = ({
             value={[radius]}
             onValueChange={([v]) => onRadiusChange(v)}
             min={2000}
-            max={15000}
+            max={20000}
             step={500}
             className="w-full"
           />
           <div className="flex justify-between text-[10px] text-muted-foreground">
             <span>2 km</span>
-            <span>15 km</span>
+            <span>20 km</span>
           </div>
         </div>
 

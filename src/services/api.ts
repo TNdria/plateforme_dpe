@@ -21,15 +21,15 @@ const getSupabaseUrl = () => {
 // Helper function for direct database API calls via edge function
 async function fetchDB<T>(action: string, params: Record<string, string | number> = {}): Promise<T> {
   const supabaseUrl = getSupabaseUrl();
-  
+
   // Build query string with action and params
   const queryParams = new URLSearchParams({ action });
   Object.entries(params).forEach(([key, value]) => {
     queryParams.append(key, String(value));
   });
-  
+
   const dbQueryUrl = `${supabaseUrl}/functions/v1/db-query?${queryParams.toString()}`;
-  
+
   try {
     const response = await fetch(dbQueryUrl, {
       method: 'GET',
@@ -49,7 +49,7 @@ async function fetchDB<T>(action: string, params: Record<string, string | number
     if (contentType && contentType.includes('application/json')) {
       return response.json();
     }
-    
+
     const text = await response.text();
     try {
       return JSON.parse(text);
@@ -69,10 +69,10 @@ export async function fetchDBBatch<T = Record<string, any[]>>(
 ): Promise<T> {
   const supabaseUrl = getSupabaseUrl();
   const dbQueryUrl = `${supabaseUrl}/functions/v1/db-query?action=batch`;
-  
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  
+
   try {
     const response = await fetch(dbQueryUrl, {
       method: 'POST',
@@ -99,7 +99,7 @@ export async function fetchDBBatch<T = Record<string, any[]>>(
 async function fetchDBPost<T>(action: string, body: Record<string, any>): Promise<T> {
   const supabaseUrl = getSupabaseUrl();
   const dbQueryUrl = `${supabaseUrl}/functions/v1/db-query?action=${action}`;
-  
+
   const response = await fetch(dbQueryUrl, {
     method: 'POST',
     headers: {
@@ -123,6 +123,18 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> 
   try {
     const response = await fetch(proxyUrl, {
       method: options?.method || 'GET',
+      // Fix (audit 02/09/2026) : cette fonction est utilisée par authApi.login
+      // (entre autres) pour appeler le backend Django, qui est sur un domaine
+      // différent du frontend. Sans `credentials: 'include'`, le navigateur
+      // n'attache aucun cookie à la requête ET refuse de stocker le
+      // `Set-Cookie` de session renvoyé par Django au login (cross-origin) —
+      // l'utilisateur restait donc anonyme pour Django malgré une réponse de
+      // login réussie, ce qui ne se voyait que sur les endpoints protégés
+      // (401 même en étant superuser côté React). Les helpers `djangoGet`/
+      // `djangoPost` locaux de SIG.tsx et Admin.tsx avaient déjà ce
+      // `credentials: 'include'` ; il manquait ici, sur le chemin partagé par
+      // authApi/sigApi/usersApi/besoinsApi/eagerApi.
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
         ...options?.headers,
@@ -140,7 +152,7 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> 
     if (contentType && contentType.includes('application/json')) {
       return response.json();
     }
-    
+
     const text = await response.text();
     try {
       return JSON.parse(text);
@@ -246,11 +258,8 @@ export interface StatsData {
 
 // Referentiel API - Based on src/referentiel/urls.py
 export const referentielApi = {
-  // GET /referentiel/dren/ - Returns list of DRENs
   getDrens: () => fetchDB<Dren[]>('getDrens'),
-  // GET /referentiel/cisco/<code_dren>/ - Returns CISCOs for a DREN
   getCiscos: (codeDren: number) => fetchDB<Cisco[]>('getCiscos', { code_dren: codeDren }),
-  // GET /referentiel/zap/<code_dren>/ - Returns ZAPs for a DREN (if exists)
   getZapsByDren: (codeDren: number) => fetchAPI<Zap[]>(`/referentiel/zap/${codeDren}/`),
   getZapsByCisco: (codeCisco: number) => fetchAPI<Zap[]>(`/referentiel/zap/cisco/${codeCisco}/`),
 };
@@ -348,7 +357,6 @@ export interface DiagnosticDataset {
 export const dashboardApi = {
   getDrens: () => fetchDB<Dren[]>('getDrens'),
   getCiscos: (codeDren: number) => fetchDB<Cisco[]>('getCiscos', { code_dren: codeDren }),
-  // Stats endpoints - code_dren=0 for national, code_cisco=0 for all ciscos in dren
   getStatsEtablissements: (codeDren: number, codeCisco: number, secteur: number) =>
     fetchDB<StatsData[]>('getStatsEtablissements', { code_dren: codeDren, code_cisco: codeCisco, secteur }),
   getStatsElevesN0N1: (codeDren: number, codeCisco: number, secteur: number) =>
@@ -373,9 +381,9 @@ export const tdbApi = {
     return data[0] || { cisco: [], zap: [] };
   },
   getTdb111: (codeDren: number) => fetchDB<any[]>('getTdb111', { code_dren: codeDren }),
-  getCiscos: (codeDren: number) => 
+  getCiscos: (codeDren: number) =>
     fetchDB<Cisco[]>('getCiscos', { code_dren: codeDren }),
-  getZaps: (codeCisco: number) => 
+  getZaps: (codeCisco: number) =>
     fetchDB<Zap[]>('getTdbZapsByCisco', { code_cisco: codeCisco }),
   getTdbZapData: (codeZap: number, codeCisco: number, codeDren: number, annee: number = 2025) =>
     fetchDB<any>('getTdbZapData', { code_zap: codeZap, code_cisco: codeCisco, code_dren: codeDren, annee }),
@@ -387,7 +395,6 @@ export const tdbApi = {
    fetchDB<Array<{ CODE_ETAB: number; NOM_ETAB: string; SECTEUR: number }>>('getEcolesByZap', { code_zap: codeZap, annee, niveau }),
   getTdbEcoleData: (codeEtab: number, codeZap: number, codeCisco: number, codeDren: number, annee: number = 2025, niveau: 'primaire' | 'college' | 'lycee' = 'primaire') =>
     fetchDB<any>('getTdbEcoleData', { code_etab: codeEtab, code_zap: codeZap, code_cisco: codeCisco, code_dren: codeDren, annee, niveau }),
-  // ---- Snapshot getters: read latest imported CSV row from Lovable Cloud tdb_* tables ----
   getTdbMadaSnapshot: () =>
     fetchDB<any>('getTdbMadaSnapshot', {}),
   getTdbDrenSnapshot: (codeDren: number) =>
@@ -410,54 +417,14 @@ export const tdbApi = {
   },
 };
 
-// SIG API - Using direct database connection
-/*export const sigApi = {
-  getDrens: () => fetchDB<Dren[]>('getDrens'),
-  getCiscos: (codeDren: number) => fetchDB<Cisco[]>('getCiscos', { code_dren: codeDren }),
-  // Configuration
-  getConfig: (key: string) => 
-    fetchDB<any>('getConfig', { key }),
-  setConfig: (key: string, value: any) => 
-    fetchDBPost('setConfig', { key, value }),
-  // -------------
-  getLayerEtabN0: (codeDren: number, codeCisco: number) =>
-    fetchDB<Etablissement[]>('getLayerEtabN0', { code_dren: codeDren, code_cisco: codeCisco }),
-  getLayerEtabN1: (codeDren: number, codeCisco: number) =>
-    fetchDB<Etablissement[]>('getLayerEtabN1', { code_dren: codeDren, code_cisco: codeCisco }),
-  getLayerEtabN2: (codeDren: number, codeCisco: number) =>
-    fetchDB<Etablissement[]>('getLayerEtabN2', { code_dren: codeDren, code_cisco: codeCisco }),
-  getLayerEtabN3: (codeDren: number, codeCisco: number) =>
-    fetchDB<Etablissement[]>('getLayerEtabN3', { code_dren: codeDren, code_cisco: codeCisco }),
-  getVillages: (codeDren: number, codeCisco: number) =>
-    fetchDB<any[]>('getSigVillages', { code_dren: codeDren, code_cisco: codeCisco }),
-  getLayerDren: (codeDren: number) =>
-    fetchDB<Array<{ shape: GeoJSONFeatureCollection }>>('getSigLayerDren', { code_dren: codeDren }),
-  getLayerCisco: (codeDren: number, codeCisco: number) =>
-    fetchDB<Array<{ shape: GeoJSONFeatureCollection }>>('getSigLayerCisco', { code_dren: codeDren, code_cisco: codeCisco }),
-  getLayerCommune: (codeDren: number, codeCisco: number) =>
-    fetchDB<Array<{ shape: GeoJSONFeatureCollection }>>('getSigLayerCommune', { code_dren: codeDren, code_cisco: codeCisco }),
-  getLayerFokontany: (codeDren: number, codeCisco: number) =>
-    fetchDB<Array<{ shape: GeoJSONFeatureCollection }>>('getSigLayerFokontany', { code_dren: codeDren, code_cisco: codeCisco }),
-  getEtabNonGeolocalise: (codeDren: number, codeCisco: number) =>
-    fetchDB<any[]>('getSigEtabNonGeolocalise', { code_dren: codeDren, code_cisco: codeCisco }),
-  geolocaliserEtab: (codeEtab: number, longitude: number, latitude: number) =>
-    fetchDBPost('sigGeolocaliserEtab', { code_etab: codeEtab, longitude, latitude }),
-  updatePositionEtab: (codeEtab: number, longitude: number, latitude: number) =>
-    fetchDBPost('sigUpdatePositionEtab', { code_etab: codeEtab, longitude, latitude }),
-  geolocaliserVillage: (data: { name: string; dren: number; cisco: number; population: number; airtel: boolean; orange: boolean; telma: boolean; elec: boolean; eau: boolean; latitude: number; longitude: number }) =>
-    fetchDBPost('sigGeolocaliserVillage', data),
-  updatePositionVillage: (id: number, longitude: number, latitude: number) =>
-    fetchDBPost('sigUpdatePositionVillage', { id, longitude, latitude }),
-};*/
 // ====================== SIG API - Django Direct ======================
 export const sigApi = {
-  getDrens: () => 
+  getDrens: () =>
     fetchAPI<Dren[]>('/sig/dren/'),
 
-  getCiscos: (codeDren: number) => 
+  getCiscos: (codeDren: number) =>
     fetchAPI<Cisco[]>(`/sig/cisco/${codeDren}/`),
 
-  // ====================== COUCHES ÉTABLISSEMENTS ======================
   getLayerEtabN0: (codeDren: number, codeCisco: number) =>
     fetchAPI<Etablissement[]>(`/sig/etab/n0/${codeDren}/${codeCisco}/`),
 
@@ -470,14 +437,12 @@ export const sigApi = {
   getLayerEtabN3: (codeDren: number, codeCisco: number) =>
     fetchAPI<Etablissement[]>(`/sig/etab/n3/${codeDren}/${codeCisco}/`),
 
-  // ====================== VILLAGES & NON GÉOLOCALISÉS ======================
   getVillages: (codeDren: number, codeCisco: number) =>
     fetchAPI<any[]>(`/sig/village/${codeDren}/${codeCisco}/`),
 
   getEtabNonGeolocalise: (codeDren: number, codeCisco: number) =>
     fetchAPI<any[]>(`/sig/etab/non-geolocalise/${codeDren}/${codeCisco}/`),
 
-  // ====================== SHAPES (GeoJSON) ======================
   getLayerDren: (codeDren: number) =>
     fetchAPI<Array<{ shape: GeoJSONFeatureCollection }>>(`/sig/shape/dren/${codeDren}/`),
 
@@ -490,7 +455,6 @@ export const sigApi = {
   getLayerFokontany: (codeDren: number, codeCisco: number) =>
     fetchAPI<Array<{ shape: GeoJSONFeatureCollection }>>(`/sig/shape/fokontany/${codeDren}/${codeCisco}/`),
 
-  // ====================== ACTIONS (Géolocalisation) ======================
   geolocaliserEtab: (codeEtab: number, longitude: number, latitude: number) =>
     fetchAPI<any>('/sig/geolocaliser/etablissement/', {
       method: 'POST',
@@ -498,11 +462,14 @@ export const sigApi = {
     }),
 
   updatePositionEtab: (codeEtab: number, longitude: number, latitude: number) =>
-    fetchAPI<any>('/sig/update/etablissement/', {
-      method: 'POST',
-      body: JSON.stringify({ code_etab: codeEtab, longitude, latitude }),
+  fetchAPI<any>('/sig/deplacements/update-position-etablissement/', {
+    method: 'POST',
+    body: JSON.stringify({
+      code_etab: codeEtab,
+      nouveau_lat: latitude,
+      nouveau_lng: longitude,
     }),
-
+  }),
   geolocaliserVillage: (data: {
     name: string;
     dren: number;
@@ -527,11 +494,10 @@ export const sigApi = {
       body: JSON.stringify({ id, longitude, latitude }),
     }),
 
-  // Configuration SIG (si encore utilisée)
-  getConfig: (key: string) => 
-    fetchAPI<any>(`/api/config/${key}/`),        // À adapter si tu as un endpoint spécifique
+  getConfig: (key: string) =>
+    fetchAPI<any>(`/api/config/${key}/`),
 
-  setConfig: (key: string, value: any) => 
+  setConfig: (key: string, value: any) =>
     fetchAPI<any>('/api/config/', {
       method: 'POST',
       body: JSON.stringify({ key, value }),
@@ -563,26 +529,6 @@ export const datavizApi = {
   getDataCommune: (code: number, niveau: number) => fetchDB<any[]>('getDatavizDataCommune', { code, niveau }),
   getDataEtab: (code: number, niveau: number) => fetchDB<any[]>('getDatavizDataEtab', { code, niveau }),
 };
-/*
-// Donnees API - Uses direct database connection
-export const donneesApi = {
-  getDrens: () => fetchDB<Dren[]>('getDrens'),
-  getCiscos: (codeDren: number) => fetchDB<Cisco[]>('getCiscos', { code_dren: codeDren }),
-  getZaps: (codeDren: number, codeCisco: number, codeCommune: number = 0) =>
-    fetchDB<Zap[]>('getZaps', { code_dren: codeDren, code_cisco: codeCisco, code_commune: codeCommune }),
-  getCommunes: (codeDren: number, codeCisco: number, codeZap: number = 0) =>
-    fetchDB<any[]>('getCommunes', { code_dren: codeDren, code_cisco: codeCisco, code_zap: codeZap }),
-  
-  // Données par niveau
-  getEtabN0: (codeDren: number, codeCisco: number, codeCommune: number, codeZap: number, secteur: number) =>
-    fetchDB<any[]>('getDataPrescolaire', { code_dren: codeDren, code_cisco: codeCisco, code_commune: codeCommune, code_zap: codeZap, secteur }),
-  getEtabN1: (codeDren: number, codeCisco: number, codeCommune: number, codeZap: number, secteur: number) =>
-    fetchDB<any[]>('getDataPrimaire', { code_dren: codeDren, code_cisco: codeCisco, code_commune: codeCommune, code_zap: codeZap, secteur }),
-  getEtabN2: (codeDren: number, codeCisco: number, codeCommune: number, codeZap: number, secteur: number) =>
-    fetchDB<any[]>('getDataCollege', { code_dren: codeDren, code_cisco: codeCisco, code_commune: codeCommune, code_zap: codeZap, secteur }),
-  getEtabN3: (codeDren: number, codeCisco: number, codeCommune: number, codeZap: number, secteur: number) =>
-    fetchDB<any[]>('getDataLycee', { code_dren: codeDren, code_cisco: codeCisco, code_commune: codeCommune, code_zap: codeZap, secteur }),
-};*/
 
 // ==================== DONNEES API - DJANGO DIRECT ====================
 export const donneesApi = {
@@ -614,8 +560,6 @@ export const donneesApi = {
       code_cisco: codeCisco,
       code_zap: codeZap,
     }),
-
-  // ==================== DONNÉES PAR NIVEAU ====================
 
   getEtabN0: (
     codeDren: number,
@@ -725,27 +669,12 @@ export const donneesApi = {
     ),
 };
 
-// Besoins API - jointure besoins_<niveau> ↔ fpe_a1
-/*export const besoinsApi = {
-  getDrens: () => fetchDB<Dren[]>('getDrens'),
-  getCiscos: (codeDren: number) => fetchDB<Cisco[]>('getCiscos', { code_dren: codeDren }),
-  getZaps: (codeDren: number, codeCisco: number) =>
-    fetchDB<Zap[]>('getZaps', { code_dren: codeDren, code_cisco: codeCisco, code_commune: 0 }),
-  getBesoinsPrimaire: (codeDren = 0, codeCisco = 0, codeZap = 0, annee = 2025) =>
-    fetchDB<any[]>('getBesoinsPrimaire', { code_dren: codeDren, code_cisco: codeCisco, code_zap: codeZap, annee }),
-  getBesoinsCollege: (codeDren = 0, codeCisco = 0, codeZap = 0, annee = 2025) =>
-    fetchDB<any[]>('getBesoinsCollege', { code_dren: codeDren, code_cisco: codeCisco, code_zap: codeZap, annee }),
-  getBesoinsLycee: (codeDren = 0, codeCisco = 0, codeZap = 0, annee = 2025) =>
-    fetchDB<any[]>('getBesoinsLycee', { code_dren: codeDren, code_cisco: codeCisco, code_zap: codeZap, annee }),
-};*/
-
 export const besoinsApi = {
   getDrens: () => fetchAPI<Dren[]>('/besoins/dren/'),
   getCiscos: (codeDren: number) => fetchAPI<Cisco[]>(`/besoins/cisco/${codeDren}/`),
-  getZaps: (codeDren: number, codeCisco: number) => 
+  getZaps: (codeDren: number, codeCisco: number) =>
     fetchAPI<Zap[]>(`/besoins/zap/${codeDren}/${codeCisco}/`),
 
-  // ====================== BESOINS PAR NIVEAU ======================
   getBesoinsN1: (codeDren = 0, codeCisco = 0, codeZap = 0, annee = 2025) =>
     fetchAPI<any[]>(`/besoins/n1/${codeDren}/${codeCisco}/${codeZap}/${annee}/`),
 

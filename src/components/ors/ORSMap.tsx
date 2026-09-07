@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useMemo, useState, useCallback } from "react";
+import { useEffect, useRef, useMemo, useState, useCallback } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -65,6 +65,9 @@ interface ORSMapProps {
   center?: [number, number];
   zoom?: number;
   categoryFilter?: string;
+  /** Filtre éligibles / non-éligibles quand un critère est actif (règles du
+   * 03/09/2026) — sans effet si categoryFilter === "aucune". */
+  eligibiliteFilter?: EligibiliteFilter;
   geoLayers?: {
     dren?: GeoJSONFeature;
     cisco?: GeoJSONFeature;
@@ -301,16 +304,6 @@ function hasSufficientTableBancs(etab: Etablissement): boolean {
   return (etab.places || 0) >= (etab.effectifs || 0);
 }
 
-const isPublicSecteur = (etab: Etablissement): boolean => {
-  const s = etab.SECTEUR as unknown;
-  return s === 0 || s === "0" || s === 2 || s === "2";
-};
-
-const isPrivateSecteur = (etab: Etablissement): boolean => {
-  const s = etab.SECTEUR as unknown;
-  return s === 1 || s === "1";
-};
-
 /** Filtre table-bancs appliqué aux établissements (college / lycée). */
 function matchesTableBancFilter(etab: Etablissement, filter: TableBancFilter | undefined): boolean {
   if (!filter || filter === "tous") return true;
@@ -323,8 +316,21 @@ function matchesTableBancFilter(etab: Etablissement, filter: TableBancFilter | u
 // continuent de fonctionner sans changement. Ce fichier ne redéclare plus
 // les couleurs lui-même : ça évite un import circulaire avec MapLegend.tsx,
 // qui a lui aussi besoin de ces constantes (cf. audit du 19/08/2026).
-export { ORS_COLORS, NIVEAU_MAIN_COLOR } from "./orsColors";
-import { ORS_COLORS, NIVEAU_MAIN_COLOR } from "./orsColors";
+export {
+  ORS_COLORS,
+  NIVEAU_MAIN_COLOR,
+  isPublicSecteur,
+  isPrivateSecteur,
+  secteurLabel,
+} from "./orsColors";
+import {
+  ORS_COLORS,
+  NIVEAU_MAIN_COLOR,
+  AIRE_RECRUTEMENT_RADIUS,
+  isPublicSecteur,
+  isPrivateSecteur,
+  secteurLabel,
+} from "./orsColors";
 
 const createEtablissementIcon = (iconType: EtablissementIconType, color: string) => {
   const html = `<i class="${ETABLISSEMENT_ICON_CLASSES[iconType]}" style="color:${color};font-size:20px;line-height:28px;text-shadow:0 1px 2px rgba(15,23,42,.35)" aria-hidden="true"></i>`;
@@ -340,29 +346,55 @@ const createEtablissementIcon = (iconType: EtablissementIconType, color: string)
 const createEtablissementIconHtml = (iconType: EtablissementIconType, color: string) =>
   createEtablissementIcon(iconType, color).options.html as string;
 
-// Get category color for an establishment
-function getCategoryColor(etab: Etablissement, categoryFilter: string): string {
+// Icône village (règles du 05/09/2026) : "fas fa-home", pas un simple point,
+// cohérent avec la légende. Taille réduite par rapport aux établissements
+// pour rester lisible malgré la densité potentiellement élevée de villages.
+const createVillageIconHtml = (color: string) =>
+  `<i class="fas fa-home" style="color:${color};font-size:16px;line-height:22px;text-shadow:0 1px 2px rgba(15,23,42,.35)" aria-hidden="true"></i>`;
+
+// Éligibilité (booléenne) d'un établissement pour le critère actif — sert à
+// la fois à la couleur (getCategoryColor) et au nouveau filtre
+// éligibles/non-éligibles (règles du 03/09/2026).
+function isEtabEligible(etab: Etablissement, categoryFilter: string): boolean {
   switch (categoryFilter) {
     case "extension":
-      return getExtensions(etab) > 0 ? ORS_COLORS.extension : ORS_COLORS.conforme;
+      return getExtensions(etab) > 0;
     case "reconstruction":
-      return etab.eligible_reconstruction ? ORS_COLORS.reconstruction : ORS_COLORS.conforme;
+      return !!etab.eligible_reconstruction;
     case "rehabilitation":
-      return etab.eligible_rehabilitation ? ORS_COLORS.rehabilitation : ORS_COLORS.conforme;
+      return !!etab.eligible_rehabilitation;
     case "tablebanc":
-      return !hasSufficientTableBancs(etab) ? ORS_COLORS.tablebanc : ORS_COLORS.conforme;
-    case "nouvelle_creation":
-      return ORS_COLORS.nouvelle_creation;
+      return !hasSufficientTableBancs(etab);
     default:
-      return ORS_COLORS.default;
+      return true;
   }
 }
 
-function secteurLabel(etab: Etablissement): string {
-  if (isPublicSecteur(etab)) return "PUBLIC";
-  if (isPrivateSecteur(etab)) return "PRIVÉ";
-  return "Non renseigné";
+// Couleur d'un établissement selon le critère actif — schéma binaire
+// éligible (#00a638) / non éligible (#fa2328), règles validées le
+// 03/09/2026. "nouvelle_creation" ne concerne plus les établissements (ils
+// sont masqués dans ce mode) : pas de cas dédié ici.
+function getCategoryColor(etab: Etablissement, categoryFilter: string): string {
+  if (categoryFilter === "aucune") return ORS_COLORS.default;
+  return isEtabEligible(etab, categoryFilter) ? ORS_COLORS.eligible : ORS_COLORS.nonEligible;
 }
+
+export type EligibiliteFilter = "tous" | "eligible" | "non_eligible";
+
+function matchesEligibiliteFilter(
+  etab: Etablissement,
+  categoryFilter: string,
+  eligibiliteFilter: EligibiliteFilter | undefined,
+): boolean {
+  if (!eligibiliteFilter || eligibiliteFilter === "tous") return true;
+  const eligible = isEtabEligible(etab, categoryFilter);
+  return eligibiliteFilter === "eligible" ? eligible : !eligible;
+}
+
+// Un critère "établissement" (par opposition à nouvelle_creation, qui cible
+// les villages) est actif.
+const isEtabCriterionActive = (categoryFilter: string) =>
+  categoryFilter !== "aucune" && categoryFilter !== "nouvelle_creation";
 
 // Build detailed popup HTML for ORS establishments
 function buildOrsPopup(
@@ -415,6 +447,7 @@ export const ORSMap = ({
   center = [-18.9189596, 47.5135653],
   zoom = 6,
   categoryFilter = "aucune",
+  eligibiliteFilter = "tous",
   geoLayers = {},
   villages = [],
   onVillageAnalysis,
@@ -425,9 +458,19 @@ export const ORSMap = ({
 }: ORSMapProps) => {
   const [leafletMap, setLeafletMap] = useState<L.Map | null>(null);
   const [hoveredEtablissement, setHoveredEtablissement] = useState<Etablissement | null>(null);
+  // Aires de recrutement (règles du 03/09/2026) : quand renseigné, seule
+  // l'aire de cet établissement est dessinée (clic droit → "Voir aire de
+  // recrutement"). Réinitialisé quand la couche est désactivée.
+  const [isolatedAireEtabId, setIsolatedAireEtabId] = useState<string | number | null>(null);
 
   const isSectorLayerActive =
     Boolean(layerVisibility?.publiques ?? true) || Boolean(layerVisibility?.prives ?? true);
+
+  // Interférence événementielle (audit) : tant que la couche "Aires de
+  // recrutement" est visible (toggle général ou isolation via clic droit),
+  // l'événement info-bulle sur les marqueurs doit rester désactivé — les
+  // deux ne doivent jamais se déclencher en même temps sur la même zone.
+  const airesActive = Boolean(layerVisibility?.aires) || isolatedAireEtabId != null;
 
   const matchesLayerVisibility = useCallback(
     (etab: Etablissement) => {
@@ -443,6 +486,12 @@ export const ORSMap = ({
 
   const showEtablissementInfo = useCallback(
     (etablissement: Etablissement) => {
+      if (airesActive) {
+        // Sortie immédiate : aucune entrée d'event info-bulle tant que les
+        // aires sont affichées.
+        setHoveredEtablissement(null);
+        return;
+      }
       if (!etabInfoVisible) {
         setHoveredEtablissement(null);
         return;
@@ -453,7 +502,7 @@ export const ORSMap = ({
       }
       setHoveredEtablissement(etablissement);
     },
-    [etabInfoVisible, isSectorLayerActive, matchesLayerVisibility],
+    [airesActive, etabInfoVisible, isSectorLayerActive, matchesLayerVisibility],
   );
 
   const clearHoveredEtablissement = useCallback(() => {
@@ -465,6 +514,16 @@ export const ORSMap = ({
       setHoveredEtablissement(null);
     }
   }, [etabInfoVisible]);
+
+  // Sortie forcée de l'event info-bulle dès que les aires de recrutement
+  // s'affichent (toggle ou isolation) — pas seulement bloquée à la prochaine
+  // entrée, une info-bulle déjà ouverte au moment du toggle doit disparaître
+  // immédiatement.
+  useEffect(() => {
+    if (airesActive) {
+      setHoveredEtablissement(null);
+    }
+  }, [airesActive]);
 
   const bindEtablissementHover = useCallback(
     (etab: Etablissement) => ({
@@ -511,9 +570,12 @@ export const ORSMap = ({
     const evaluated = type === "college" ? primairesWithCoords : collegesWithCoords;
 
     if (gridSource.length === 0) return exclusionMap;
+    // Rayon FIXE d'aire de recrutement (2/5/20 km) — primaire / collège / lycée.
+    // Aligné sur la couverture villages ; indépendant du slider.
+    const aire = AIRE_RECRUTEMENT_RADIUS[type];
     const grid = new SpatialGrid(
       gridSource as Array<{ latitude: number; longitude: number }>,
-      radius,
+      aire,
     );
     for (const item of evaluated) {
       // Seuls les établissements publics sont évalués pour l'exclusion hors zone
@@ -521,27 +583,42 @@ export const ORSMap = ({
         exclusionMap.set(item.CODE_ETAB, false);
         continue;
       }
-      const isExcluded = !grid.hasNeighborWithin(item.latitude!, item.longitude!, radius);
+      const isExcluded = !grid.hasNeighborWithin(item.latitude!, item.longitude!, aire);
       exclusionMap.set(item.CODE_ETAB, isExcluded);
     }
     return exclusionMap;
-  }, [type, primairesWithCoords, collegesWithCoords, radius]);
+  }, [type, primairesWithCoords, collegesWithCoords]);
 
-  // Villages avec distance à l'école la plus proche (grille spatiale, ~50× plus rapide)
+  // Fix (règles du 03/09/2026) : la couverture village par aire de
+  // recrutement s'applique désormais aux 3 niveaux (avant : primaire
+  // seulement), avec un rayon FIXE par niveau au lieu du rayon ajustable par
+  // slider (qui reste utilisé ailleurs : clic droit générique "Voir l'aire",
+  // analyse détaillée d'un village).
+  const aireRadius = AIRE_RECRUTEMENT_RADIUS[type];
+  // Après filtre DREN/CISCO : les villages passés ici sont déjà ceux de la
+  // zone (via useMapData). Leur affichage dépend UNIQUEMENT de
+  // layerVisibility.villages (ORS.tsx → filteredVillages). Couleurs :
+  //   - couvert   : dist ≤ aire de recrutement fixe (2/5/20 km selon niveau)
+  //   - hors zone : dist > aire  → ORS_COLORS.villageHorsZone
+  // Si aucune école publique de référence dans la zone, tous les villages
+  // sont traités hors zone (distance = Infinity), pas masqués.
   const villagesWithDistance = useMemo(() => {
-    if (type !== "primaire" || villages.length === 0 || primairesWithCoords.length === 0) return [];
-    const ecolesPub = primairesWithCoords.filter((e) => isPublicSecteur(e)) as Array<{
+    if (villages.length === 0) return [];
+    const source = type === "college" ? collegesWithCoords : primairesWithCoords;
+    const ecolesPub = source.filter((e) => isPublicSecteur(e)) as Array<{
       latitude: number;
       longitude: number;
     }>;
-    const grid = new SpatialGrid(ecolesPub, radius * 2);
-    return villages
-      .filter((v) => v.latitude && v.longitude)
-      .map((v) => ({
-        ...v,
-        distToNearestSchool: grid.nearestDistance(v.latitude, v.longitude, radius * 4),
-      }));
-  }, [type, villages, primairesWithCoords, radius]);
+    const withCoords = villages.filter((v) => v.latitude && v.longitude);
+    if (ecolesPub.length === 0) {
+      return withCoords.map((v) => ({ ...v, distToNearestSchool: Number.POSITIVE_INFINITY }));
+    }
+    const grid = new SpatialGrid(ecolesPub, aireRadius * 2);
+    return withCoords.map((v) => ({
+      ...v,
+      distToNearestSchool: grid.nearestDistance(v.latitude, v.longitude, aireRadius * 4),
+    }));
+  }, [type, villages, primairesWithCoords, collegesWithCoords, aireRadius]);
 
   const getMainColor = () => {
     switch (type) {
@@ -615,22 +692,29 @@ export const ORSMap = ({
   // College / lycée : couche secondaire = établissements publics uniquement
   // (les privés sont dans privatePoints pour éviter la double affichage).
   const secondaryPoints = useMemo<CanvasPoint[]>(() => {
+    // Nouvelle Création (primaire uniquement) : établissements masqués.
+    if (categoryFilter === "nouvelle_creation") return [];
+
     const source =
       type === "primaire"
         ? secondaryEstablishments
         : secondaryEstablishments.filter((e) => isPublicSecteur(e));
 
-    return source.map((etab) => {
+    const isEtabCriterion = isEtabCriterionActive(categoryFilter);
+    const filteredSource = isEtabCriterion
+      ? source.filter((etab) => matchesEligibiliteFilter(etab, categoryFilter, eligibiliteFilter))
+      : source;
+
+    return filteredSource.map((etab) => {
       const isPublic = isPublicSecteur(etab);
       const isExcluded =
-        type !== "primaire" ? getSecondaryExcluded.get(etab.CODE_ETAB) || false : false;
+        type !== "primaire" && !isEtabCriterion
+          ? getSecondaryExcluded.get(etab.CODE_ETAB) || false
+          : false;
       let fillColor: string;
-      if (type === "primaire" && categoryFilter !== "aucune") {
-        fillColor = getCategoryColor(etab, categoryFilter);
-      } else if (type === "primaire") {
-        fillColor = isPublic ? ORS_COLORS.default : ORS_COLORS.prive;
-      } else if (categoryFilter !== "aucune") {
-        // College / lycée : colorer aussi les secondaires selon la catégorie active
+      if (isEtabCriterion) {
+        // Extension / Reconstruction / Réhabilitation / Table-bancs :
+        // couleur uniquement par éligibilité, public et privé confondus.
         fillColor = getCategoryColor(etab, categoryFilter);
       } else {
         fillColor = isPublic ? ORS_COLORS.default : ORS_COLORS.prive;
@@ -642,14 +726,14 @@ export const ORSMap = ({
         id: etab.CODE_ETAB,
         lat: etab.latitude!,
         lng: etab.longitude!,
-        color: isExcluded ? ORS_COLORS.horsZoneEligible : fillColor,
+        color: isExcluded ? ORS_COLORS.nonEligible : fillColor,
         fillColor,
         fillOpacity: isExcluded ? 0.95 : 0.75,
         weight: isExcluded ? 2 : 1,
         radius: pixelRadius,
         iconHtml: createEtablissementIconHtml(
           iconType,
-          isExcluded ? ORS_COLORS.horsZoneEligible : fillColor,
+          isExcluded ? ORS_COLORS.nonEligible : fillColor,
         ),
         popupHtml: () =>
           useCustomPopup
@@ -664,6 +748,7 @@ export const ORSMap = ({
     secondaryEstablishments,
     type,
     categoryFilter,
+    eligibiliteFilter,
     getSecondaryExcluded,
     showEtablissementInfo,
     clearHoveredEtablissement,
@@ -672,12 +757,16 @@ export const ORSMap = ({
 
   const privatePoints = useMemo<CanvasPoint[]>(() => {
     if (type === "primaire") return [];
-    const publicVisible = layerVisibility?.prives ?? true;
+    // Nouvelle Création (primaire uniquement) : sans objet ici puisque
+    // privatePoints est déjà vide en primaire, mais gardé par cohérence.
+    if (categoryFilter === "nouvelle_creation") return [];
+    // Fix : utiliser bien la couche "privés".
+    const privateVisible = layerVisibility?.prives ?? true;
 
     // Établissements "secondaires" privés (EPP privées pour la vue collège,
     // collèges privés pour la vue lycée) — logique déjà existante.
     const privateSecondary = secondaryEstablishments.filter(
-      (e) => isPrivateSecteur(e) && publicVisible,
+      (e) => isPrivateSecteur(e) && privateVisible,
     );
 
     // CEG/Lycées privés (le "principal" du niveau) — auparavant absorbés à
@@ -685,7 +774,7 @@ export const ORSMap = ({
     // invisibles pour le lycée. Ils rejoignent ici le même traitement visuel
     // que les autres établissements privés (marqueur simple, sans cercle).
     const mainSource = type === "college" ? collegesWithCoords : primairesWithCoords;
-    const privateMain = mainSource.filter((e) => isPrivateSecteur(e) && publicVisible);
+    const privateMain = mainSource.filter((e) => isPrivateSecteur(e) && privateVisible);
 
     const withIconType = [
       ...privateSecondary.map((etab) => ({
@@ -696,74 +785,130 @@ export const ORSMap = ({
         etab,
         iconType: type as EtablissementIconType,
       })),
-    ];
+    ].filter(({ etab }) =>
+      isEtabCriterionActive(categoryFilter)
+        ? matchesEligibiliteFilter(etab, categoryFilter, eligibiliteFilter)
+        : true,
+    );
 
-    return withIconType.map(({ etab, iconType }) => ({
-      id: `priv-${etab.CODE_ETAB}`,
-      lat: etab.latitude!,
-      lng: etab.longitude!,
-      color: ORS_COLORS.prive,
-      fillColor: ORS_COLORS.prive,
-      fillOpacity: 0.75,
-      weight: 1,
-      radius: 5,
-      iconHtml: createEtablissementIconHtml(iconType, ORS_COLORS.prive),
-      popupHtml: () => buildOrsPopup(etab, "aucune", type),
-      onClick: () => handleMarkerClick(etab),
-      onMouseOver: () => showEtablissementInfo(etab),
-      onMouseOut: () => clearHoveredEtablissement(),
-    }));
+    return withIconType.map(({ etab, iconType }) => {
+      const color = isEtabCriterionActive(categoryFilter)
+        ? getCategoryColor(etab, categoryFilter)
+        : ORS_COLORS.prive;
+      return {
+        id: `priv-${etab.CODE_ETAB}`,
+        lat: etab.latitude!,
+        lng: etab.longitude!,
+        color,
+        fillColor: color,
+        fillOpacity: 0.75,
+        weight: 1,
+        radius: 5,
+        iconHtml: createEtablissementIconHtml(iconType, color),
+        popupHtml: () => buildOrsPopup(etab, categoryFilter, type),
+        onClick: () => handleMarkerClick(etab),
+        onMouseOver: () => showEtablissementInfo(etab),
+        onMouseOut: () => clearHoveredEtablissement(),
+      };
+    });
   }, [
     secondaryEstablishments,
     collegesWithCoords,
     primairesWithCoords,
     type,
+    categoryFilter,
+    eligibiliteFilter,
     layerVisibility,
     showEtablissementInfo,
     clearHoveredEtablissement,
     handleMarkerClick,
   ]);
 
-  const villagePointsPrimaire = useMemo<CanvasPoint[]>(() => {
-    if (type !== "primaire") return [];
-    return villagesWithDistance.map((v, idx) => {
-      const isOutsideRadius = v.distToNearestSchool > radius;
+  // Source des cercles "aires de recrutement" : mêmes établissements de
+  // référence que la couverture village (primairesWithCoords publics pour
+  // primaire/lycée — les lycées transitent par le slot "primaires", cf.
+  // contrat ORS —, collegesWithCoords publics pour collège).
+  const aireSourceEtablissements = useMemo(() => {
+    const source = type === "college" ? collegesWithCoords : primairesWithCoords;
+    return source.filter((e) => isPublicSecteur(e));
+  }, [type, collegesWithCoords, primairesWithCoords]);
+
+  // NB : l'isolation (isolatedAireEtabId) n'est PAS liée au toggle général
+  // layerVisibility.aires — le clic droit "Voir aire de recrutement" doit
+  // fonctionner même si la couche générale est désactivée.
+
+  const villagePoints = useMemo<CanvasPoint[]>(() => {
+    // Extension / Reconstruction / Réhabilitation / Table-bancs : villages
+    // masqués (règles du 03/09/2026).
+    if (isEtabCriterionActive(categoryFilter)) return [];
+
+    const isNouvelleCreation = categoryFilter === "nouvelle_creation";
+
+    const withEligibility = villagesWithDistance.map((v) => {
+      const isOutsideAire = v.distToNearestSchool > aireRadius;
+      const popSuffisante = (v.population || 0) >= 300;
+      const eligible = isOutsideAire && popSuffisante;
+      return { v, isOutsideAire, eligible };
+    });
+
+    const filtered =
+      isNouvelleCreation && eligibiliteFilter !== "tous"
+        ? withEligibility.filter(({ eligible }) =>
+            eligibiliteFilter === "eligible" ? eligible : !eligible,
+          )
+        : withEligibility;
+
+    return filtered.map(({ v, isOutsideAire, eligible }, idx) => {
+      if (isNouvelleCreation) {
+        const popSuffisante = (v.population || 0) >= 300;
+        const color = eligible ? ORS_COLORS.eligible : ORS_COLORS.nonEligible;
+        const reason = !isOutsideAire
+          ? "Une école existe déjà à proximité"
+          : !popSuffisante
+            ? `Population insuffisante (seuil 300, aire ${(aireRadius / 1000).toFixed(1)} km)`
+            : `Critères remplis (aire ${(aireRadius / 1000).toFixed(1)} km)`;
+        return {
+          id: `vlg-${idx}`,
+          lat: v.latitude,
+          lng: v.longitude,
+          color,
+          fillColor: color,
+          fillOpacity: 0.85,
+          weight: 1,
+          radius: 5,
+          iconHtml: createVillageIconHtml(color),
+          popupHtml: () => `<div style="padding:6px;min-width:170px">
+              <b style="font-size:12px">${v.name ?? ""}</b>
+              <p style="font-size:11px;margin:2px 0">Population: ${v.population || 0}</p>
+              <p style="font-size:11px;margin:2px 0">${reason}</p>
+              <div style="margin-top:4px;padding:3px;background:${eligible ? "#dcfce7" : "#fee2e2"};color:${eligible ? "#166534" : "#b91c1c"};font-weight:bold;font-size:11px;text-align:center;border-radius:4px">
+                ${eligible ? "ÉLIGIBLE — NOUVELLE CRÉATION" : "NON ÉLIGIBLE"}
+              </div>
+            </div>`,
+        };
+      }
+
+      // État par défaut ("aucune") : couverture par aire de recrutement.
+      const defaultColor = isOutsideAire ? ORS_COLORS.villageHorsZone : ORS_COLORS.villageCouvert;
       return {
         id: `vlg-${idx}`,
         lat: v.latitude,
         lng: v.longitude,
-        color: isOutsideRadius ? ORS_COLORS.villageHorsZone : ORS_COLORS.villageCouvert,
-        fillColor: isOutsideRadius ? ORS_COLORS.villageHorsZone : "#FFFFFF",
-        fillOpacity: isOutsideRadius ? 0.85 : 0.4,
+        color: defaultColor,
+        fillColor: defaultColor,
+        fillOpacity: isOutsideAire ? 0.85 : 0.6,
         weight: 1,
-        radius: isOutsideRadius ? 5 : 3,
+        radius: isOutsideAire ? 5 : 3,
+        iconHtml: createVillageIconHtml(defaultColor),
         popupHtml: () => `<div style="padding:6px;min-width:150px">
             <b style="font-size:12px">${v.name ?? ""}</b>
             <p style="font-size:11px;margin:2px 0">Population: ${v.population || 0}</p>
-            <p style="font-size:11px;margin:2px 0">Dist. école: ${(v.distToNearestSchool / 1000).toFixed(1)} km</p>
-            ${isOutsideRadius ? '<div style="margin-top:4px;padding:3px;background:#fee2e2;color:#b91c1c;font-weight:bold;font-size:11px;text-align:center;border-radius:4px">HORS ZONE</div>' : ""}
+            <p style="font-size:11px;margin:2px 0">Dist. établissement le plus proche: ${(v.distToNearestSchool / 1000).toFixed(1)} km</p>
+            ${isOutsideAire ? '<div style="margin-top:4px;padding:3px;background:#fee2e2;color:#b91c1c;font-weight:bold;font-size:11px;text-align:center;border-radius:4px">HORS ZONE</div>' : ""}
           </div>`,
       };
     });
-  }, [type, villagesWithDistance, radius]);
-
-  const villagePointsOther = useMemo<CanvasPoint[]>(() => {
-    if (type === "primaire") return [];
-    return villages
-      .filter((v) => v.latitude && v.longitude)
-      .map((v, idx) => ({
-        id: `vlg-${idx}`,
-        lat: v.latitude,
-        lng: v.longitude,
-        color: ORS_COLORS.villageAutre,
-        fillColor: ORS_COLORS.villageAutre,
-        fillOpacity: 0.5,
-        weight: 1,
-        radius: 3,
-        popupHtml: () =>
-          `<div style="padding:4px"><b style="font-size:12px">${v.name ?? ""}</b><p style="font-size:11px;margin:2px 0">Pop: ${v.population || 0}</p></div>`,
-      }));
-  }, [type, villages]);
+  }, [categoryFilter, eligibiliteFilter, villagesWithDistance, aireRadius]);
 
   return (
     <div className="relative w-full h-full min-h-[600px] rounded-lg overflow-hidden border border-border">
@@ -788,6 +933,7 @@ export const ORSMap = ({
           radius={radius}
           niveau={type}
           onVillageAnalysis={onVillageAnalysis}
+          onShowAireRecrutement={(etab) => setIsolatedAireEtabId(etab.CODE_ETAB)}
         />
         {/* NB : secondaryEstablissements et villages sont deja filtres en amont
             par layerVisibility (matchesLayerVisibility / filteredVillages dans
@@ -890,16 +1036,7 @@ export const ORSMap = ({
               (qui n'a pas de doublon de filtrage — un seul interrupteur =
               pas d'ambiguïté). */}
 
-          {/* Cercles de rayon (en mètres) — CEG/Lycée avec leur zone de
-              couverture. Rattaché au MÊME <LayersControl> que les fonds de
-              carte ci-dessus (bug corrigé le 26/08/2026 : une seconde
-              instance de <LayersControl position="topright"> avait été
-              laissée ici par erreur lors du Fix #3, ce qui dessinait DEUX
-              icônes "calques" superposées dans le coin supérieur droit de la
-              carte au lieu d'une seule — visible sur la capture d'écran
-              signalée. React-Leaflet instancie un bouton par élément
-              <LayersControl>, donc une seule instance doit exister par
-              carte). */}
+          {/* */}
           {type !== "primaire" && mainEstablishments.length > 0 && (
             <LayersControl.Overlay
               checked
@@ -912,29 +1049,15 @@ export const ORSMap = ({
                       ? getCategoryColor(etab, categoryFilter)
                       : getMainColor();
                   return (
-                    <Fragment key={`main-${etab.CODE_ETAB}`}>
-                      <Circle
-                        center={[etab.latitude!, etab.longitude!]}
-                        radius={radius}
-                        pathOptions={{
-                          color,
-                          fillColor: color,
-                          fillOpacity: 0.15,
-                          weight: 2,
-                        }}
-                      />
-                      {/* Fix #4 : plus de <Popup> ici — le clic ouvre déjà la
-                          Dialog complète (handleMarkerClick → ORS.tsx), avoir
-                          les deux en même temps était redondant. */}
-                      <Marker
-                        position={[etab.latitude!, etab.longitude!]}
-                        icon={createEtablissementIcon(type, color)}
-                        eventHandlers={{
-                          click: () => handleMarkerClick(etab),
-                          ...bindEtablissementHover(etab),
-                        }}
-                      />
-                    </Fragment>
+                    <Marker
+                      key={`main-${etab.CODE_ETAB}`}
+                      position={[etab.latitude!, etab.longitude!]}
+                      icon={createEtablissementIcon(type, color)}
+                      eventHandlers={{
+                        click: () => handleMarkerClick(etab),
+                        ...bindEtablissementHover(etab),
+                      }}
+                    />
                   );
                 })}
               </>
@@ -942,40 +1065,47 @@ export const ORSMap = ({
           )}
         </LayersControl>
 
-        {/* ─── COUCHE LOURDE: établissements (souvent 1000+) ───
-            Layer Leaflet natif (1 seul groupe), markers ajoutés en chunks via
-            requestIdleCallback pour ne JAMAIS bloquer le thread. Popup lazy au
-            clic — uniquement pour les points SANS onClick (villages), cf.
-            CanvasMarkersLayer.tsx (Fix #4). Visibilité pilotée uniquement par
-            `layerVisibility` (panneau latéral ORS.tsx) : plus de doublon
-            Leaflet natif (Fix #3). */}
+        {/* Aires de recrutement (règles du 03/09/2026) : cercles à rayon
+            FIXE par niveau (2/5/20 km), désactivés par défaut. Si
+            `isolatedAireEtabId` est renseigné (clic droit → "Voir aire de
+            recrutement"), seule l'aire de cet établissement est dessinée. */}
+        {(layerVisibility?.aires || isolatedAireEtabId != null) && (
+          <>
+            {aireSourceEtablissements
+              .filter((e) => isolatedAireEtabId == null || e.CODE_ETAB === isolatedAireEtabId)
+              .map((e) => (
+                <Circle
+                  key={`aire-${e.CODE_ETAB}`}
+                  center={[e.latitude!, e.longitude!]}
+                  radius={aireRadius}
+                  pathOptions={{
+                    color: "#6b7280",
+                    fillColor: "#6b7280",
+                    fillOpacity: 0.06,
+                    weight: 1,
+                    dashArray: "4 3",
+                    // Jamais interactif : ce cercle ne doit capter aucun
+                    // event (hover/click) qui interférerait avec les
+                    // marqueurs qu'il recouvre.
+                    interactive: false,
+                  }}
+                />
+              ))}
+          </>
+        )}
+
+        {/* Secondary points (canvas) */}
         {secondaryPoints.length > 0 && <CanvasMarkersLayer points={secondaryPoints} />}
 
         {/* Écoles privées (canvas) — college / lycée uniquement */}
         {privatePoints.length > 0 && <CanvasMarkersLayer points={privatePoints} />}
 
-        {/* Villages (canvas) — primaire */}
-        {type === "primaire" && villagePointsPrimaire.length > 0 && (
-          <CanvasMarkersLayer points={villagePointsPrimaire} />
-        )}
-
-        {/* Villages (canvas) — collège/lycée */}
-        {villagePointsOther.length > 0 && <CanvasMarkersLayer points={villagePointsOther} />}
+        {/* Villages (canvas) — 3 niveaux, couverture par aire fixe ou
+            éligibilité Nouvelle Création selon le critère actif. */}
+        {villagePoints.length > 0 && <CanvasMarkersLayer points={villagePoints} />}
       </MapContainer>
 
-      {/* NB (audit du 26/08/2026) : cette carte flottante est un sibling React
-          situé APRÈS </MapContainer>, donc en dehors du DOM/des panes Leaflet.
-          Le correctif de z-index de MapGlobalStyles (popupPane à 1200) ne
-          compare que des éléments À L'INTÉRIEUR de la carte (popups vs
-          contrôles) : il ne peut pas faire "perdre" ce sibling, qui a son
-          propre z-index et passera donc TOUJOURS au-dessus de la carte
-          entière, popups compris. Cas limite étroit en pratique (il faut
-          faire un clic droit tout près du centre-bas de la carte pendant
-          qu'un établissement est survolé) — non traité ici pour rester
-          proportionné à la demande ; le résoudre proprement demanderait de
-          transformer cette carte en contrôle Leaflet impératif (comme
-          MapTopLeftControls) pour qu'elle rentre dans la même comparaison de
-          z-index que le reste. */}
+      {/* Info popup for hovered establishment */}
       {etabInfoVisible && hoveredEtablissement && (
         <div className="absolute bottom-3 left-1/2 z-[1000] w-[min(90%,360px)] -translate-x-1/2 rounded-lg border border-border bg-background/95 px-2.5 py-2 shadow-md backdrop-blur text-[11px]">
           <div className="flex items-start gap-2">

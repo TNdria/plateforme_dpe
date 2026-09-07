@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { notify } from './NotificationsContext';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { notify } from "./NotificationsContext";
 
 interface User {
   username: string;
@@ -16,9 +16,17 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (username: string, password: string) => Promise<{ success: boolean; error?: string; redirect?: string }>;
+  login: (
+    username: string,
+    password: string,
+  ) => Promise<{ success: boolean; error?: string; redirect?: string }>;
   logout: () => void;
-  updateProfile: (data: { first_name?: string; last_name?: string; current_password: string; new_password?: string }) => Promise<{ success: boolean; error?: string }>;
+  updateProfile: (data: {
+    first_name?: string;
+    last_name?: string;
+    current_password: string;
+    new_password?: string;
+  }) => Promise<{ success: boolean; error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -26,7 +34,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
 };
@@ -35,40 +43,95 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
+// Fix (audit 02/09/2026) : le login ci-dessous ne parlait qu'à une edge
+// function Supabase (db-query?action=login) — jamais au backend Django. Le
+// badge "Connecté en tant que X" venait donc uniquement de Supabase, sans
+// qu'aucune session Django ne soit jamais créée, ce qui causait un 401
+// "Authentification requise" sur tout endpoint Django protégé
+// (@require_superuser, @require_json_auth), quel que soit l'état des cookies
+// (SameSite/Secure) ou du mode maintenance. `loginDjangoSession` établit la
+// vraie session Django en parallèle, en best-effort : si Django est
+// injoignable, on ne bloque pas la connexion Supabase existante, mais les
+// fonctionnalités qui dépendent d'une session Django resteront en échec tant
+// que ce second appel n'a pas réussi.
+const DJANGO_BASE_URL = "https://dpe-men.mg";
+
+async function loginDjangoSession(username: string, password: string): Promise<boolean> {
+  try {
+    const body = new URLSearchParams();
+    body.append("username", username);
+    body.append("password", password);
+    const res = await fetch(`${DJANGO_BASE_URL}/login/`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+      // login_view répond par une redirection HTTP (302) vers /dashboard/ en
+      // cas de succès ; le Set-Cookie de session arrive sur cette première
+      // réponse, avant que fetch() ne suive la redirection — inutile de lire
+      // le corps de la réponse suivie, seul le fait que l'appel ait abouti
+      // sans erreur réseau nous intéresse ici.
+      // login_view répond par une redirection HTTP (302) vers /dashboard/ en
+      // cas de succès ; le Set-Cookie de session arrive sur cette première
+      // réponse. redirect:'manual' empêche fetch() de suivre cette
+      // redirection vers une page HTML cross-origin (qui échouerait sinon au
+      // niveau CORS) — la réponse obtenue est "opaque" et illisible, mais
+      // c'est normal : seul le cookie déjà posé nous intéresse ici.
+      redirect: "manual",
+    });
+    // En mode 'manual', une redirection donne un type 'opaqueredirect' avec
+    // status 0 — res.ok est donc toujours false ici, mais ce n'est pas un
+    // échec : c'est le signe que Django a bien répondu par une redirection
+    // (donc probablement un login réussi). On ne peut pas lire le corps pour
+    // distinguer un vrai échec (identifiants invalides, qui recharge
+    // login.html avec un statut 200 lisible en cross-origin grâce à
+    // corsheaders) d'un succès (302 → réponse opaque en mode 'manual').
+    return res.type === "opaqueredirect";
+  } catch (err) {
+    console.warn("Session Django non établie (login parallèle) :", err);
+    return false;
+  }
+}
+
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     // Check if user is stored in localStorage
-    const storedUser = localStorage.getItem('dpe_user');
+    const storedUser = localStorage.getItem("dpe_user");
     if (storedUser) {
       try {
         setUser(JSON.parse(storedUser));
       } catch {
-        localStorage.removeItem('dpe_user');
+        localStorage.removeItem("dpe_user");
       }
     }
     setIsLoading(false);
   }, []);
 
-  const login = async (username: string, password: string): Promise<{ success: boolean; error?: string; redirect?: string }> => {
+  const login = async (
+    username: string,
+    password: string,
+  ): Promise<{ success: boolean; error?: string; redirect?: string }> => {
     try {
       if (!username || !password) {
         return { success: false, error: "Nom d'utilisateur et mot de passe requis" };
       }
 
       const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-      const supabaseUrl = projectId ? `https://${projectId}.supabase.co` : import.meta.env.VITE_SUPABASE_URL;
+      const supabaseUrl = projectId
+        ? `https://${projectId}.supabase.co`
+        : import.meta.env.VITE_SUPABASE_URL;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 20000);
       let response: Response;
       try {
         response = await fetch(`${supabaseUrl}/functions/v1/db-query?action=login`, {
-          method: 'POST',
+          method: "POST",
           headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
           },
           body: JSON.stringify({ username, password }),
           signal: controller.signal,
@@ -78,17 +141,37 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       let result: any = {};
-      try { result = await response.json(); } catch { /* ignore parse */ }
+      try {
+        result = await response.json();
+      } catch {
+        /* ignore parse */
+      }
 
-      if (response.status === 503 || result?.code === 'DB_UNREACHABLE') {
+      if (response.status === 503 || result?.code === "DB_UNREACHABLE") {
         return {
           success: false,
-          error: result?.error || "Votre serveur de base de données est injoignable. Vérifiez qu'il est démarré et accessible depuis Internet.",
+          error:
+            result?.error ||
+            "Votre serveur de base de données est injoignable. Vérifiez qu'il est démarré et accessible depuis Internet.",
         };
       }
 
       if (!response.ok || !result.success) {
         return { success: false, error: result?.error || "Identifiants invalides" };
+      }
+
+      // Établit la vraie session Django (cookie) en parallèle — nécessaire
+      // pour tout endpoint Django protégé (SIG config, etc.). Best-effort :
+      // on ne bloque pas la connexion si Django ne répond pas, mais on
+      // prévient si ça échoue pour ne pas laisser croire que tout fonctionne.
+      const djangoOk = await loginDjangoSession(username, password);
+      if (!djangoOk) {
+        notify({
+          title: "Connexion partielle",
+          message:
+            "Connecté à la plateforme, mais la session serveur n'a pas pu être établie — certaines actions administratives pourraient échouer.",
+          type: "warning",
+        });
       }
 
       const userData: User = {
@@ -102,7 +185,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         is_superuser: result.user.is_superuser,
       };
 
-      localStorage.setItem('dpe_user', JSON.stringify(userData));
+      localStorage.setItem("dpe_user", JSON.stringify(userData));
       setUser(userData);
 
       notify({
@@ -113,8 +196,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       return { success: true, redirect: result.redirect };
     } catch (error: any) {
-      console.error('Login error:', error);
-      const isAbort = error?.name === 'AbortError';
+      console.error("Login error:", error);
+      const isAbort = error?.name === "AbortError";
       return {
         success: false,
         error: isAbort
@@ -124,19 +207,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-
   const logout = () => {
     const name = user?.first_name || user?.username;
-    localStorage.removeItem('dpe_user');
+    localStorage.removeItem("dpe_user");
     setUser(null);
-    notify({ title: "Déconnexion", message: name ? `À bientôt, ${name}.` : undefined, type: "info" });
+    notify({
+      title: "Déconnexion",
+      message: name ? `À bientôt, ${name}.` : undefined,
+      type: "info",
+    });
   };
 
-  const updateProfile = async (data: { 
-    first_name?: string; 
-    last_name?: string; 
-    current_password: string; 
-    new_password?: string 
+  const updateProfile = async (data: {
+    first_name?: string;
+    last_name?: string;
+    current_password: string;
+    new_password?: string;
   }): Promise<{ success: boolean; error?: string }> => {
     try {
       if (!user) {
@@ -148,12 +234,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-      const supabaseUrl = projectId ? `https://${projectId}.supabase.co` : import.meta.env.VITE_SUPABASE_URL;
+      const supabaseUrl = projectId
+        ? `https://${projectId}.supabase.co`
+        : import.meta.env.VITE_SUPABASE_URL;
       const response = await fetch(`${supabaseUrl}/functions/v1/db-query?action=updatePassword`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
         body: JSON.stringify({
           username: user.username,
@@ -165,7 +253,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       });
 
       const result = await response.json();
-      
+
       if (!result.success) {
         return { success: false, error: result.error };
       }
@@ -176,13 +264,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         first_name: data.first_name || user.first_name,
         last_name: data.last_name || user.last_name,
       };
-      localStorage.setItem('dpe_user', JSON.stringify(updatedUser));
+      localStorage.setItem("dpe_user", JSON.stringify(updatedUser));
       setUser(updatedUser);
 
-      notify({ title: "Profil mis à jour", message: "Vos informations ont été enregistrées.", type: "success" });
+      notify({
+        title: "Profil mis à jour",
+        message: "Vos informations ont été enregistrées.",
+        type: "success",
+      });
       return { success: true };
     } catch (error) {
-      console.error('Update profile error:', error);
+      console.error("Update profile error:", error);
       return { success: false, error: "Erreur lors de la mise à jour du profil" };
     }
   };
@@ -196,9 +288,5 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     updateProfile,
   };
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

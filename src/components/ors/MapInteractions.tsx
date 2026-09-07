@@ -3,6 +3,7 @@ import { useMap } from "react-leaflet";
 import L from "leaflet";
 import * as turf from "@turf/turf";
 import { Etablissement, Village } from "@/hooks/useMapData";
+import { ORS_COLORS } from "./orsColors";
 
 /**
  * Couche d'interactions impératives sur la carte ORS, portage du Django original :
@@ -40,6 +41,10 @@ interface Props {
    * elle ne s'applique qu'au primaire, cf. audit du 19/08/2026. */
   niveau: "primaire" | "college" | "lycee";
   onVillageAnalysis?: (r: VillageAnalysisResult) => void;
+  /** Isole l'aire de recrutement (rayon fixe) de cet établissement — règles
+   * du 03/09/2026. Le parent (ORSMap) gère l'activation de la couche et
+   * l'état d'isolation. */
+  onShowAireRecrutement?: (etab: Etablissement) => void;
 }
 
 const TURF_OPTS = { units: "kilometers" as const };
@@ -50,11 +55,20 @@ export const MapInteractions = ({
   radius,
   niveau,
   onVillageAnalysis,
+  onShowAireRecrutement,
 }: Props) => {
   const map = useMap();
   const tempLayerRef = useRef<L.LayerGroup | null>(null);
   const onAnalysisRef = useRef(onVillageAnalysis);
   onAnalysisRef.current = onVillageAnalysis;
+  const onAireRef = useRef(onShowAireRecrutement);
+  onAireRef.current = onShowAireRecrutement;
+  // Audit interférence événementielle (05/09/2026) : le timer d'auto-
+  // effacement (12s) d'un "Voir l'aire" précédent devait être annulé avant
+  // d'en programmer un nouveau — sinon deux "Voir l'aire" rapprochés
+  // laissaient deux setTimeout indépendants courir sur le même tempLayer, et
+  // le premier pouvait effacer prématurément l'aperçu du second.
+  const autoClearTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Build a hidden marker layer just to attach contextmenu to invisible hit-targets.
   // Reason: CanvasMarkersLayer paints points but cannot host per-marker contextmenu cheaply.
@@ -90,6 +104,7 @@ export const MapInteractions = ({
     };
 
     const showAire = (lat: number, lng: number, label: string, color: string) => {
+      if (autoClearTimeoutRef.current) clearTimeout(autoClearTimeoutRef.current);
       tempLayer.clearLayers();
       L.circle([lat, lng], { radius, color, fillOpacity: 0.15, weight: 2 }).addTo(tempLayer);
       const p1 = turf.point([lng, lat]);
@@ -116,7 +131,7 @@ export const MapInteractions = ({
               [lat, lng],
               [e.latitude!, e.longitude!],
             ],
-            { color: "#ef4444", weight: 1, opacity: 0.6, dashArray: "4 3" },
+            { color: ORS_COLORS.default, weight: 1, opacity: 0.6, dashArray: "4 3" },
           ).addTo(tempLayer);
         }
       }
@@ -126,9 +141,11 @@ export const MapInteractions = ({
           `<div style="font-weight:600">Aire de couverture</div><div style="font-size:11px">${label} — rayon ${(radius / 1000).toFixed(1)} km</div>`,
         )
         .openOn(map);
-      // Auto-clear after 12s
-      setTimeout(() => {
+      // Auto-clear after 12s — mémorisé pour pouvoir être annulé si un
+      // nouveau "Voir l'aire"/"Effacer les overlays" survient avant.
+      autoClearTimeoutRef.current = setTimeout(() => {
         tempLayer.clearLayers();
+        autoClearTimeoutRef.current = null;
       }, 12000);
     };
 
@@ -163,6 +180,7 @@ export const MapInteractions = ({
       }
 
       // Visual overlay
+      if (autoClearTimeoutRef.current) clearTimeout(autoClearTimeoutRef.current);
       tempLayer.clearLayers();
       L.circle([v.latitude, v.longitude], {
         radius,
@@ -217,27 +235,39 @@ export const MapInteractions = ({
           label: `📍 Voir l'aire de "${(etab.NOM_ETAB || "").slice(0, 28)}"`,
           action: () => showAire(etab.latitude!, etab.longitude!, etab.NOM_ETAB || "", "#16a34a"),
         });
+        if (onAireRef.current) {
+          items.unshift({
+            label: `🗺️ Voir aire de recrutement`,
+            action: () => onAireRef.current?.(etab),
+          });
+        }
       } else if (hit?.kind === "village") {
         const v = hit.item;
         items.unshift({
           label: `🏘️ Voir aire — ${(v.name || "").slice(0, 28)}`,
           action: () => showAire(v.latitude, v.longitude, v.name, "#facc15"),
         });
-        // Fix #5 (audit du 19/08/2026) : l'analyse "Nouvelle Création" repose
-        // sur un seuil de 300 habitants et une formulation ("aucune école
-        // dans le rayon") pensée uniquement pour l'implantation d'une école
-        // PRIMAIRE. Elle n'a pas de sens métier sur les pages Collège/Lycée
-        // (la création d'un CEG ou d'un lycée dépend du nombre d'EPP/CEG
-        // existants, cf. ORSAnalysisPanel — pas d'un seuil de population
-        // villageoise). On la restreint donc au niveau primaire.
-        if (niveau === "primaire") {
-          items.unshift({
-            label: `🧪 Analyser éligibilité Nouvelle Création (école primaire)`,
-            action: () => analyseVillage(v),
-          });
-        }
+        // Analyse Nouvelle Création : disponible primaire / collège / lycée.
+        // Seuil population 300 + absence d'établissement du niveau dans le
+        // rayon (slider / outils carte). Libellé adapté au niveau.
+        const ncLabel =
+          niveau === "college"
+            ? "Analyser éligibilité Nouvelle Création (CEG)"
+            : niveau === "lycee"
+              ? "Analyser éligibilité Nouvelle Création (lycée)"
+              : "Analyser éligibilité Nouvelle Création (école primaire)";
+        items.unshift({
+          label: `🧪 ${ncLabel}`,
+          action: () => analyseVillage(v),
+        });
       }
-      items.push({ label: "🧹 Effacer les overlays", action: () => tempLayer.clearLayers() });
+      items.push({
+        label: "🧹 Effacer les overlays",
+        action: () => {
+          if (autoClearTimeoutRef.current) clearTimeout(autoClearTimeoutRef.current);
+          tempLayer.clearLayers();
+        },
+      });
 
       const html = `<div style="min-width:220px;padding:4px 0">
         ${items.map((it, i) => `<a data-idx="${i}" href="#" class="ors-ctx-item" style="display:block;padding:6px 12px;color:#1f2937;text-decoration:none;font-size:13px">${it.label}</a>`).join("")}
@@ -271,6 +301,10 @@ export const MapInteractions = ({
     map.on("contextmenu", onContext);
     return () => {
       map.off("contextmenu", onContext);
+      if (autoClearTimeoutRef.current) {
+        clearTimeout(autoClearTimeoutRef.current);
+        autoClearTimeoutRef.current = null;
+      }
       tempLayer.remove();
     };
   }, [map, etablissements, villages, radius, niveau]);

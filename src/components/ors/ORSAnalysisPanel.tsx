@@ -10,9 +10,11 @@ import {
   Hammer,
   Wrench,
   PackagePlus,
+  Sparkles,
 } from "lucide-react";
 import { Etablissement, Village } from "@/hooks/useMapData";
 import { SpatialGrid } from "@/lib/spatialGrid";
+import { isPublicSecteur } from "./orsColors";
 
 interface ORSAnalysisPanelProps {
   type: "primaire" | "college" | "lycee";
@@ -59,15 +61,20 @@ export const ORSAnalysisPanel = ({
     // Pour primaire : villages hors rayon (grille spatiale: O(N) au lieu de O(N×M))
     let villagesHorsZone = 0;
     let villagesTotal = 0;
+    let villagesNouvelleCreation = 0;
     if (type === "primaire" && villages.length > 0) {
       const ecolesPub = primaires.filter(
-        (p) => (Number(p.SECTEUR) === 0 || Number(p.SECTEUR) === 2) && p.latitude && p.longitude,
+        (p) => isPublicSecteur(p) && p.latitude && p.longitude,
       ) as Array<{ latitude: number; longitude: number }>;
       const grid = new SpatialGrid(ecolesPub, radius);
       for (const v of villages) {
         if (v.latitude == null || v.longitude == null) continue;
         villagesTotal++;
-        if (!grid.hasNeighborWithin(v.latitude, v.longitude, radius)) villagesHorsZone++;
+        const horsZone = !grid.hasNeighborWithin(v.latitude, v.longitude, radius);
+        if (horsZone) {
+          villagesHorsZone++;
+          if ((v.population || 0) >= 300) villagesNouvelleCreation++;
+        }
       }
     }
 
@@ -81,12 +88,7 @@ export const ORSAnalysisPanel = ({
       }>;
       const grid = new SpatialGrid(targetsCoords, radius);
       for (const r of refs) {
-        if (
-          (Number(r.SECTEUR) !== 0 && Number(r.SECTEUR) !== 2) ||
-          r.latitude == null ||
-          r.longitude == null
-        )
-          continue;
+        if (!isPublicSecteur(r) || r.latitude == null || r.longitude == null) continue;
         refsTotal++;
         if (!grid.hasNeighborWithin(r.latitude, r.longitude, radius)) refsHorsZone++;
       }
@@ -100,6 +102,7 @@ export const ORSAnalysisPanel = ({
       tableBancs,
       villagesHorsZone,
       villagesTotal,
+      villagesNouvelleCreation,
       refsHorsZone,
       refsTotal,
     };
@@ -199,6 +202,16 @@ export const ORSAnalysisPanel = ({
             <p className="text-[10px] text-muted-foreground">
               Rayon de couverture : {(radius / 1000).toFixed(1)} km
             </p>
+            {analysis.villagesHorsZone > 0 && (
+              <div className="flex items-center justify-between text-xs pt-1">
+                <span className="flex items-center gap-1.5 text-foreground">
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-600" /> Éligibles Nouvelle Création
+                </span>
+                <Badge variant="outline" className="bg-emerald-500/10 text-emerald-700">
+                  {analysis.villagesNouvelleCreation}/{analysis.villagesHorsZone}
+                </Badge>
+              </div>
+            )}
           </div>
         )}
 

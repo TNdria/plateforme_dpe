@@ -85,11 +85,9 @@ export const CanvasMarkersLayer = ({ points, visible = true }: Props) => {
         if (p.onClick) marker.on("click", p.onClick);
         if (p.onMouseOver) {
           marker.on("mouseover", p.onMouseOver);
-          marker.on("mouseenter", p.onMouseOver);
         }
         if (p.onMouseOut) {
           marker.on("mouseout", p.onMouseOut);
-          marker.on("mouseleave", p.onMouseOut);
         }
         marker.addTo(group);
       }

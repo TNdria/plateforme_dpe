@@ -7,7 +7,16 @@ import {
   type TableBancFilter,
 } from "@/components/ors/MapFilters";
 import { ORSMap } from "@/components/ors/ORSMap";
-import { ORS_COLORS, NIVEAU_MAIN_COLOR } from "@/components/ors/orsColors";
+import {
+  ORS_COLORS,
+  NIVEAU_MAIN_COLOR,
+  AIRE_RECRUTEMENT_RADIUS,
+  normalizeSectorValue,
+  isPublicSecteur as isPublicSector,
+  isPrivateSecteur as isPrivateSector,
+  secteurLabel as getSectorLabel,
+} from "@/components/ors/orsColors";
+import { SpatialGrid } from "@/lib/spatialGrid";
 import { ORSAnalysisPanel } from "@/components/ors/ORSAnalysisPanel";
 import {
   Dialog,
@@ -95,7 +104,7 @@ const NIVEAU_META: Record<OrsNiveau, NiveauMeta> = {
     refDataKey: null,
     unitLabel: "EPP",
     refUnitLabel: null,
-    defaultRadius: 4000,
+    defaultRadius: 2000, // = AIRE primaire 2 km
     filenamePrefix: "ORS_PRIMAIRE",
   },
   college: {
@@ -110,7 +119,7 @@ const NIVEAU_META: Record<OrsNiveau, NiveauMeta> = {
     refDataKey: "primaires",
     unitLabel: "CEG",
     refUnitLabel: "EPP",
-    defaultRadius: 5000,
+    defaultRadius: 5000, // = AIRE collège 5 km
     filenamePrefix: "ORS_COLLEGE",
   },
   lycee: {
@@ -125,47 +134,12 @@ const NIVEAU_META: Record<OrsNiveau, NiveauMeta> = {
     refDataKey: "colleges",
     unitLabel: "Lycées",
     refUnitLabel: "CEG",
-    defaultRadius: 8000,
+    defaultRadius: 20000, // = AIRE lycée 20 km
     filenamePrefix: "ORS_LYCEE",
   },
 };
 
 const NIVEAUX_ORDER: OrsNiveau[] = ["primaire", "college", "lycee"];
-
-const normalizeSectorValue = (value: unknown): 0 | 1 | 2 | null => {
-  if (value === null || value === undefined || value === "") return null;
-
-  if (typeof value === "number") {
-    if (value === 0 || value === 2) return value;
-    if (value === 1) return 1;
-    return null;
-  }
-
-  if (typeof value === "string") {
-    const normalized = value.trim().toUpperCase();
-    if (["0", "PUBLIC", "PUBLIQUE"].includes(normalized)) return 0;
-    if (["2", "PUBLIC_2", "PUBLIQUE_2"].includes(normalized)) return 2;
-    if (["1", "PRIVE", "PRIVÉ", "PRIVEE", "PRIVATE"].includes(normalized)) return 1;
-    return null;
-  }
-
-  return null;
-};
-
-const isPublicSector = (item: Pick<Etablissement, "SECTEUR"> | null | undefined): boolean => {
-  const normalized = normalizeSectorValue(item?.SECTEUR);
-  return normalized === 0 || normalized === 2;
-};
-
-const isPrivateSector = (item: Pick<Etablissement, "SECTEUR"> | null | undefined): boolean =>
-  normalizeSectorValue(item?.SECTEUR) === 1;
-
-const getSectorLabel = (value: unknown): string => {
-  const normalized = normalizeSectorValue(value);
-  if (normalized === 1) return "PRIVÉ";
-  if (normalized === 0 || normalized === 2) return "PUBLIC";
-  return "Non déterminé";
-};
 
 const getCoordinateLabel = (
   etab: Pick<Etablissement, "latitude" | "longitude"> | null | undefined,
@@ -206,12 +180,12 @@ const formatExportValue = (etab: Etablissement, key: string): string | number | 
           ? firstAvailable("eff_2024", "effectifs", "eff_t5")
           : data[key];
 
-  if (key === "SECTEUR")
-    return v === 0 || v === "0" || v === 2 || v === "2"
-      ? "PUBLIC"
-      : v === 1 || v === "1"
-        ? "PRIVÉ"
-        : "Non renseigné";
+  if (key === "SECTEUR") {
+    const n = normalizeSectorValue(v);
+    if (n === 1) return "PRIVÉ";
+    if (n === 0 || n === 2) return "PUBLIC";
+    return "Non renseigné";
+  }
   if (key === "eligible_reconstruction" || key === "eligible_rehabilitation")
     return v === true || v === 1 || v === "1" || v === "true" ? "OUI" : "NON";
   // Ne jamais produire de cellule vide : le libellé indique clairement que la
@@ -249,78 +223,125 @@ interface LegendItem {
   iconClass?: string;
 }
 
-const CATEGORY_FILTER_INFO: Record<string, { label: string; color: string }> = {
-  extension: { label: "Extension requise", color: ORS_COLORS.extension },
-  reconstruction: { label: "Reconstruction requise", color: ORS_COLORS.reconstruction },
-  rehabilitation: { label: "Réhabilitation requise", color: ORS_COLORS.rehabilitation },
-  tablebanc: { label: "Table-bancs insuffisants", color: ORS_COLORS.tablebanc },
+const CATEGORY_FILTER_LABELS: Record<string, string> = {
+  nouvelle_creation: "Nouvelle Création",
+  extension: "Extension",
+  reconstruction: "Reconstruction",
+  rehabilitation: "Réhabilitation",
+  tablebanc: "Table-bancs",
 };
 
 function getLegendItems(niveau: OrsNiveau, categoryFilter: string): LegendItem[] {
-  const filterInfo = CATEGORY_FILTER_INFO[categoryFilter];
   const items: LegendItem[] = [];
+  const critereActif = categoryFilter !== "aucune";
+  const critereLabel = CATEGORY_FILTER_LABELS[categoryFilter] ?? categoryFilter;
+
+  // Nouvelle Création — valable primaire / collège / lycée (villages)
+  if (categoryFilter === "nouvelle_creation") {
+    items.push(
+      {
+        color: ORS_COLORS.eligible,
+        label: "Village éligible — Nouvelle Création",
+        iconClass: "fas fa-home",
+      },
+      { color: ORS_COLORS.nonEligible, label: "Village non éligible", iconClass: "fas fa-home" },
+    );
+    items.push(
+      { color: ORS_COLORS.limiteDren, label: "Limite DREN", iconClass: "fa fa-square" },
+      { color: ORS_COLORS.limiteCisco, label: "Limite CISCO", iconClass: "fa fa-square" },
+    );
+    return items;
+  }
 
   if (niveau === "primaire") {
-    if (filterInfo) {
+    if (critereActif) {
+      // Extension / Reconstruction / Réhabilitation / Table-bancs :
+      // établissements visibles (public + privé confondus, colorés
+      // uniquement par éligibilité), villages masqués.
       items.push(
-        { color: filterInfo.color, label: filterInfo.label, iconClass: "fas fa-book-open" },
         {
-          color: ORS_COLORS.conforme,
-          label: "Conforme (critère satisfait)",
+          color: ORS_COLORS.eligible,
+          label: `Éligible — ${critereLabel}`,
+          iconClass: "fas fa-book-open",
+        },
+        {
+          color: ORS_COLORS.nonEligible,
+          label: `Non éligible — ${critereLabel}`,
           iconClass: "fas fa-book-open",
         },
       );
     } else {
-      items.push({
-        color: ORS_COLORS.default,
-        label: "École Primaire Publique",
-        iconClass: "fas fa-book-open",
-      });
+      items.push(
+        {
+          color: ORS_COLORS.default,
+          label: "École Primaire Publique",
+          iconClass: "fas fa-book-open",
+        },
+        { color: ORS_COLORS.prive, label: "École Primaire Privée", iconClass: "fas fa-book-open" },
+        {
+          color: ORS_COLORS.villageHorsZone,
+          label: "Village hors zone (hors aire de recrutement)",
+          iconClass: "fas fa-home",
+        },
+        {
+          color: ORS_COLORS.villageCouvert,
+          label: "Village couvert (dans l'aire de recrutement)",
+          iconClass: "fas fa-home",
+        },
+      );
     }
-    items.push(
-      { color: ORS_COLORS.prive, label: "École Primaire Privée", iconClass: "fas fa-book-open" },
-      { color: ORS_COLORS.villageHorsZone, label: "Village hors zone", iconClass: "fas fa-home" },
-      { color: ORS_COLORS.villageCouvert, label: "Village couvert", iconClass: "fas fa-home" },
-    );
   } else {
     const isCollege = niveau === "college";
-    const mainLabel = isCollege ? "CEG public" : "Lycée public";
     const mainIcon = isCollege ? "fas fa-school" : "fas fa-building";
+    const secondaryIcon = isCollege ? "fas fa-book-open" : "fas fa-school";
+    const mainLabel = isCollege ? "CEG public" : "Lycée public";
     const secondaryLabel = isCollege ? "EPP dans zone CEG" : "Collège existant";
     const exclusionLabel = isCollege
       ? "EPP hors zone (éligible à un nouveau CEG)"
       : "Collège hors zone (éligible à un nouveau lycée)";
-    const privateLabel = isCollege ? "École privée" : "Établissement privé";
+    const privateMainLabel = isCollege ? "CEG privé" : "Lycée privé";
+    const privateSecondaryLabel = isCollege ? "EPP privée" : "Collège privé";
 
-    if (filterInfo) {
+    if (critereActif) {
+      // Extension / Reconstruction / Réhabilitation / Table-bancs :
+      // établissements visibles (principal + secondaire, public + privé
+      // confondus), villages masqués.
       items.push(
         {
-          color: filterInfo.color,
-          label: `${mainLabel} / ${secondaryLabel} — ${filterInfo.label}`,
+          color: ORS_COLORS.eligible,
+          label: `Éligible — ${critereLabel}`,
           iconClass: mainIcon,
         },
         {
-          color: ORS_COLORS.conforme,
-          label: "Conforme (critère satisfait)",
+          color: ORS_COLORS.nonEligible,
+          label: `Non éligible — ${critereLabel}`,
           iconClass: mainIcon,
         },
       );
     } else {
       items.push(
         { color: NIVEAU_MAIN_COLOR[niveau], label: mainLabel, iconClass: mainIcon },
-        { color: ORS_COLORS.default, label: secondaryLabel, iconClass: "fas fa-book-open" },
+        { color: ORS_COLORS.default, label: secondaryLabel, iconClass: secondaryIcon },
+        { color: ORS_COLORS.nonEligible, label: exclusionLabel, iconClass: secondaryIcon },
+        { color: ORS_COLORS.prive, label: privateMainLabel, iconClass: mainIcon },
+        { color: ORS_COLORS.prive, label: privateSecondaryLabel, iconClass: secondaryIcon },
+        {
+          color: ORS_COLORS.villageHorsZone,
+          label: "Village hors zone (hors aire de recrutement)",
+          iconClass: "fas fa-home",
+        },
+        {
+          color: ORS_COLORS.villageCouvert,
+          label: "Village couvert (dans l'aire de recrutement)",
+          iconClass: "fas fa-home",
+        },
       );
     }
-    items.push(
-      { color: ORS_COLORS.horsZoneEligible, label: exclusionLabel, iconClass: "fas fa-book-open" },
-      { color: ORS_COLORS.prive, label: privateLabel, iconClass: "fas fa-school" },
-      { color: ORS_COLORS.villageAutre, label: "Village", iconClass: "fas fa-home" },
-    );
   }
 
   items.push(
-    { color: ORS_COLORS.limiteDren, label: "Limite DREN" },
-    { color: ORS_COLORS.limiteCisco, label: "Limite CISCO" },
+    { color: ORS_COLORS.limiteDren, label: "Limite DREN", iconClass: "fa fa-square" },
+    { color: ORS_COLORS.limiteCisco, label: "Limite CISCO", iconClass: "fa fa-square" },
   );
   return items;
 }
@@ -369,12 +390,27 @@ const ORS = () => {
   const [mapZoom, setMapZoom] = useState(6);
   const [selectedEtablissement, setSelectedEtablissement] = useState<Etablissement | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<string>("aucune");
+  const [eligibiliteFilter, setEligibiliteFilter] = useState<"tous" | "eligible" | "non_eligible">(
+    "tous",
+  );
+  useEffect(() => {
+    setEligibiliteFilter("tous");
+  }, [categoryFilter]);
   const [analysisResult, setAnalysisResult] = useState<VillageAnalysisResult | null>(null);
   const [layerVisibility, setLayerVisibility] = useState<LayerVisibility>({
     publiques: true,
     prives: true,
     villages: true,
+    aires: false,
   });
+
+  // Nouvelle Création : priorité partenaires — forcer la couche Villages
+  // (les établissements sont masqués côté carte, seuls les villages comptent).
+  useEffect(() => {
+    if (categoryFilter === "nouvelle_creation") {
+      setLayerVisibility((v) => (v.villages ? v : { ...v, villages: true }));
+    }
+  }, [categoryFilter]);
   const [etabInfoVisible, setEtabInfoVisible] = useState(true);
   const [tableBancFilter, setTableBancFilter] = useState<TableBancFilter>("tous");
   const [showDownloadModal, setShowDownloadModal] = useState(false);
@@ -422,17 +458,12 @@ const ORS = () => {
 
     return {
       tous: data,
-
       reconstruction: data.filter((e) => Boolean(e.eligible_reconstruction)),
-
       rehabilitation: data.filter((e) => Boolean(e.eligible_rehabilitation)),
-
-      nouvelle_creation: data.filter(
-        (e) =>
-          Boolean((e as any).nouvelle_creation) ||
-          Boolean((e as any).nouvelleCreation) ||
-          Boolean((e as any).eligible_nouvelle_creation),
-      ),
+      // Nouvelle Création concerne les villages (pas les établissements).
+      // L'export CSV établissements ne s'applique pas : liste volontairement
+      // vide ici ; le volume éligible est porté par categoryRecap / la carte.
+      nouvelle_creation: [] as Etablissement[],
     };
   }, [mainData]);
 
@@ -462,6 +493,109 @@ const ORS = () => {
     ).length;
     return { total, publics, prives, refTotal, eligiblesReconstruction };
   }, [mainData, refData]);
+
+  /** Helpers d'éligibilité (alignés sur ORSMap / règles métier). */
+  const isEtabEligibleForCategory = useCallback((etab: Etablissement, cat: string): boolean => {
+    switch (cat) {
+      case "extension": {
+        const sdc_requis = etab.sdc_requis || 0;
+        const sdc_be = etab.sdc_be || 0;
+        const sdc_me = etab.sdc_me || 0;
+        return Math.max(sdc_requis - (sdc_be + sdc_me), 0) > 0;
+      }
+      case "reconstruction":
+        return Boolean(etab.eligible_reconstruction);
+      case "rehabilitation":
+        return Boolean(etab.eligible_rehabilitation);
+      case "tablebanc": {
+        const eff = etab.effectifs || 0;
+        const places = etab.places || 0;
+        return places < eff;
+      }
+      default:
+        return true;
+    }
+  }, []);
+
+  /**
+   * Récap critère carte + filtre éligibilité.
+   * - Nouvelle Création (primaire) : compte les VILLAGES (hors aire fixe 2 km
+   *   + population ≥ 300) — priorité partenaires.
+   * - Autres critères : compte les établissements de mainData.
+   * Affiché dans le bandeau seulement si catégorie ≠ "aucune" ET
+   * eligibiliteFilter ∈ {eligible, non_eligible}.
+   */
+  const categoryRecap = useMemo(() => {
+    if (categoryFilter === "aucune") return null;
+
+    const catLabel = CATEGORY_FILTER_LABELS[categoryFilter] ?? categoryFilter;
+
+    // --- Nouvelle Création : villages (tous niveaux, rayon d'aire du niveau) ---
+    if (categoryFilter === "nouvelle_creation") {
+      const aireRadius = AIRE_RECRUTEMENT_RADIUS[niveau];
+      // Établissements publics de référence selon le niveau
+      const refEtabs = niveau === "college" ? colleges : niveau === "lycee" ? lycees : primaires;
+      const ecolesPub = refEtabs.filter(
+        (p) => isPublicSector(p) && p.latitude != null && p.longitude != null,
+      ) as Array<{ latitude: number; longitude: number }>;
+
+      let eligible = 0;
+      let nonEligible = 0;
+      const villagesWithCoords = villages.filter((v) => v.latitude != null && v.longitude != null);
+
+      if (ecolesPub.length === 0) {
+        // Aucune école publique → tous hors zone ; éligible si pop ≥ 300
+        for (const v of villagesWithCoords) {
+          if ((v.population || 0) >= 300) eligible++;
+          else nonEligible++;
+        }
+      } else {
+        const grid = new SpatialGrid(ecolesPub, aireRadius);
+        for (const v of villagesWithCoords) {
+          const horsZone = !grid.hasNeighborWithin(v.latitude, v.longitude, aireRadius);
+          const popOk = (v.population || 0) >= 300;
+          if (horsZone && popOk) eligible++;
+          else nonEligible++;
+        }
+      }
+
+      return {
+        catLabel,
+        unit: "village",
+        unitPlural: "villages",
+        eligible,
+        nonEligible,
+        total: eligible + nonEligible,
+      };
+    }
+
+    // --- Critères établissement ---
+    let eligible = 0;
+    let nonEligible = 0;
+    for (const etab of mainData) {
+      if (isEtabEligibleForCategory(etab, categoryFilter)) eligible++;
+      else nonEligible++;
+    }
+
+    return {
+      catLabel,
+      unit: meta.unitLabel,
+      unitPlural: meta.unitLabel,
+      eligible,
+      nonEligible,
+      total: eligible + nonEligible,
+    };
+  }, [
+    categoryFilter,
+    niveau,
+    primaires,
+    colleges,
+    lycees,
+    villages,
+    mainData,
+    meta.unitLabel,
+    isEtabEligibleForCategory,
+  ]);
 
   // ====================== RESET AU CHANGEMENT DE NIVEAU ======================
   const prevNiveauRef = useRef(niveau);
@@ -661,8 +795,8 @@ const ORS = () => {
               )}
             </Badge>
 
-            {/* Compteurs */}
-            {stats.total > 0 && !loading && (
+            {/* Compteurs généraux (établissements chargés) */}
+            {stats.total > 0 && !loading && categoryFilter !== "nouvelle_creation" && (
               <>
                 <Badge variant="secondary" className="text-xs">
                   {stats.total} {meta.unitLabel}
@@ -672,13 +806,46 @@ const ORS = () => {
                     {stats.refTotal} {meta.refUnitLabel} alentour
                   </Badge>
                 )}
-                {stats.eligiblesReconstruction > 0 && (
-                  <Badge variant="destructive" className="text-xs">
-                    {stats.eligiblesReconstruction} reconstruction
-                  </Badge>
-                )}
               </>
             )}
+
+            {/* Récap catégorie + éligibilité : visible seulement si un critère
+                carte est actif ET le filtre d'éligibilité n'est pas "tous". */}
+            {categoryRecap && eligibiliteFilter !== "tous" && !loading && (
+              <Badge
+                variant="outline"
+                className={
+                  eligibiliteFilter === "eligible"
+                    ? "text-xs border-emerald-600 text-emerald-700 bg-emerald-50 dark:bg-emerald-950 dark:text-emerald-400"
+                    : "text-xs border-red-500 text-red-600 bg-red-50 dark:bg-red-950 dark:text-red-400"
+                }
+              >
+                {eligibiliteFilter === "eligible"
+                  ? `${categoryRecap.eligible} ${
+                      categoryRecap.eligible > 1 ? categoryRecap.unitPlural : categoryRecap.unit
+                    } éligible${categoryRecap.eligible > 1 ? "s" : ""} — ${categoryRecap.catLabel}`
+                  : `${categoryRecap.nonEligible} ${
+                      categoryRecap.nonEligible > 1 ? categoryRecap.unitPlural : categoryRecap.unit
+                    } non éligible${categoryRecap.nonEligible > 1 ? "s" : ""} — ${categoryRecap.catLabel}`}
+              </Badge>
+            )}
+
+            {/* Sous-total catégorie (tous) : indique le volume analysé pour NC */}
+            {categoryRecap &&
+              categoryFilter === "nouvelle_creation" &&
+              eligibiliteFilter === "tous" &&
+              !loading && (
+                <Badge variant="secondary" className="text-xs">
+                  {categoryRecap.total} village{categoryRecap.total > 1 ? "s" : ""} analysé
+                  {categoryRecap.total > 1 ? "s" : ""}
+                  {" · "}
+                  <span style={{ color: ORS_COLORS.eligible }}>{categoryRecap.eligible} élig.</span>
+                  {" / "}
+                  <span style={{ color: ORS_COLORS.nonEligible }}>
+                    {categoryRecap.nonEligible} non élig.
+                  </span>
+                </Badge>
+              )}
 
             {/* Chargement d'une action précise */}
             {actionLoading && (
@@ -766,6 +933,8 @@ const ORS = () => {
                 selectedDren={selectedDren}
                 selectedCisco={selectedCisco}
                 radius={radius}
+                niveau={niveau}
+                aireRecrutementMeters={AIRE_RECRUTEMENT_RADIUS[niveau]}
                 onDrenChange={handleDrenChange}
                 onCiscoChange={handleCiscoChange}
                 onRadiusChange={setRadius}
@@ -791,7 +960,7 @@ const ORS = () => {
                     colleges={niveau === "college" ? mainData : niveau === "lycee" ? refData : []}
                     lycees={niveau === "lycee" ? mainData : []}
                     villages={villages}
-                    radius={radius}
+                    radius={AIRE_RECRUTEMENT_RADIUS[niveau]}
                   />
                 </div>
               )}
@@ -829,6 +998,7 @@ const ORS = () => {
             center={mapCenter}
             zoom={mapZoom}
             categoryFilter={categoryFilter}
+            eligibiliteFilter={eligibiliteFilter}
             geoLayers={geoLayers}
             villages={filteredVillages}
             onVillageAnalysis={setAnalysisResult}
@@ -881,7 +1051,6 @@ const ORS = () => {
                         }
                       />
                       <span className="text-xs flex items-center gap-1.5">
-                        <span className="inline-block w-2 h-2 rounded-full bg-cyan-500" />
                         Établissements publiques
                       </span>
                     </label>
@@ -896,7 +1065,6 @@ const ORS = () => {
                         }
                       />
                       <span className="text-xs flex items-center gap-1.5">
-                        <span className="inline-block w-2 h-2 rounded-full bg-amber-500" />
                         Établissements privées
                       </span>
                     </label>
@@ -910,21 +1078,49 @@ const ORS = () => {
                           }))
                         }
                       />
-                      <span className="text-xs flex items-center gap-1.5">
-                        <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />
-                        Villages
-                      </span>
+                      <span className="text-xs flex items-center gap-1.5">Villages</span>
                     </label>
                     <label className="flex items-center gap-2 p-1.5 rounded hover:bg-muted/50 cursor-pointer transition-colors">
                       <Checkbox
                         checked={etabInfoVisible}
                         onCheckedChange={(checked) => setEtabInfoVisible(!!checked)}
                       />
-                      <span className="text-xs flex items-center gap-1.5">
-                        <span className="inline-block w-2 h-2 rounded-full bg-primary" />
-                        INFOS ÉTAB.
-                      </span>
+                      <span className="text-xs flex items-center gap-1.5">INFOS ÉTAB.</span>
                     </label>
+                    <div className="p-1.5 rounded transition-colors">
+                      <span className="text-xs flex items-center gap-1.5 mb-1">
+                        Aires de recrutement
+                      </span>
+                      <RadioGroup
+                        value={layerVisibility.aires ? "affichees" : "masquees"}
+                        onValueChange={(v) =>
+                          setLayerVisibility((prev) => ({
+                            ...prev,
+                            aires: v === "affichees",
+                          }))
+                        }
+                        className="flex items-center gap-3 pl-1"
+                      >
+                        <div className="flex items-center space-x-1.5">
+                          <RadioGroupItem value="masquees" id="aires-masquees" />
+                          <Label
+                            htmlFor="aires-masquees"
+                            className="text-xs cursor-pointer font-normal"
+                          >
+                            Masquées
+                          </Label>
+                        </div>
+                        <div className="flex items-center space-x-1.5">
+                          <RadioGroupItem value="affichees" id="aires-affichees" />
+                          <Label
+                            htmlFor="aires-affichees"
+                            className="text-xs cursor-pointer font-normal"
+                          >
+                            Affichées
+                          </Label>
+                        </div>
+                      </RadioGroup>
+                    </div>
                   </div>
 
                   {niveau !== "primaire" && (
@@ -983,13 +1179,19 @@ const ORS = () => {
                         </Label>
                       </div>
                       <div className="flex items-center space-x-2 p-1.5 rounded-lg hover:bg-muted/50 transition-colors">
+                        <RadioGroupItem value="nouvelle_creation" id="cat-nouvelle-creation" />
+                        <Label
+                          htmlFor="cat-nouvelle-creation"
+                          className="text-sm cursor-pointer flex-1"
+                        >
+                          Nouvelle Création
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2 p-1.5 rounded-lg hover:bg-muted/50 transition-colors">
                         <RadioGroupItem value="extension" id="cat-extension" />
                         <Label htmlFor="cat-extension" className="text-sm cursor-pointer flex-1">
                           Extension
                         </Label>
-                        <Badge variant="destructive" className="text-[10px]">
-                          Prioritaire
-                        </Badge>
                       </div>
                       <div className="flex items-center space-x-2 p-1.5 rounded-lg hover:bg-muted/50 transition-colors">
                         <RadioGroupItem value="reconstruction" id="cat-reconstruction" />
@@ -1017,6 +1219,60 @@ const ORS = () => {
                           </Label>
                         </div>
                       )}
+                    </RadioGroup>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Filtrer par éligibilité — visible uniquement quand un
+                  critère (Nouvelle Création / Extension / Reconstruction /
+                  Réhabilitation, table-bancs inclus) est actif. */}
+              {categoryFilter !== "aucune" && (
+                <Card className="shadow-sm border-border/80 w-full">
+                  <CardHeader className="py-2 px-3">
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <CheckCircle className="w-4 h-4 text-primary" />
+                      Filtrer par éligibilité
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="px-3 pb-3 pt-0">
+                    <RadioGroup
+                      value={eligibiliteFilter}
+                      onValueChange={(v) => setEligibiliteFilter(v as typeof eligibiliteFilter)}
+                      className="space-y-1"
+                    >
+                      <div className="flex items-center space-x-2 p-1.5 rounded-lg hover:bg-muted/50 transition-colors">
+                        <RadioGroupItem value="tous" id="elig-tous" />
+                        <Label htmlFor="elig-tous" className="text-sm cursor-pointer flex-1">
+                          Tous
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2 p-1.5 rounded-lg hover:bg-muted/50 transition-colors">
+                        <RadioGroupItem value="eligible" id="elig-eligible" />
+                        <Label
+                          htmlFor="elig-eligible"
+                          className="text-sm cursor-pointer flex-1 flex items-center gap-1.5"
+                        >
+                          <CheckCircle
+                            className="w-3.5 h-3.5"
+                            style={{ color: ORS_COLORS.eligible }}
+                          />
+                          Éligibles
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2 p-1.5 rounded-lg hover:bg-muted/50 transition-colors">
+                        <RadioGroupItem value="non_eligible" id="elig-non-eligible" />
+                        <Label
+                          htmlFor="elig-non-eligible"
+                          className="text-sm cursor-pointer flex-1 flex items-center gap-1.5"
+                        >
+                          <XCircle
+                            className="w-3.5 h-3.5"
+                            style={{ color: ORS_COLORS.nonEligible }}
+                          />
+                          Non éligibles
+                        </Label>
+                      </div>
                     </RadioGroup>
                   </CardContent>
                 </Card>
@@ -1354,6 +1610,7 @@ const ORS = () => {
                         value={String(selectedEtablissement.places)}
                       />
                     ) : null}
+
                     {selectedEtablissement.eligible_reconstruction !== null &&
                     selectedEtablissement.eligible_reconstruction !== undefined ? (
                       <InfoRow

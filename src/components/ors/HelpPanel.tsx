@@ -25,7 +25,7 @@ const TIPS: Record<
       {
         icon: <Filter className="w-3.5 h-3.5" />,
         label:
-          "1. Choisissez une DREN puis (optionnel) une CISCO, ajustez le rayon, puis cliquez « Appliquer ».",
+          "1. Choisissez une DREN puis (optionnel) une CISCO (aire de recrutement EPP fixe 2 km). Le slider sert aux outils clic droit, puis « Appliquer ».",
       },
       {
         icon: <Layers className="w-3.5 h-3.5" />,
@@ -57,7 +57,7 @@ const TIPS: Record<
       {
         icon: <Filter className="w-3.5 h-3.5" />,
         label:
-          "1. Sélectionnez DREN/CISCO, ajustez le rayon de couverture du CEG, puis « Appliquer ».",
+          "1. Sélectionnez DREN/CISCO (aire de recrutement CEG fixe 5 km). Le slider sert aux outils clic droit, puis « Appliquer ».",
       },
       {
         icon: <Layers className="w-3.5 h-3.5" />,
@@ -80,7 +80,8 @@ const TIPS: Record<
     items: [
       {
         icon: <Filter className="w-3.5 h-3.5" />,
-        label: "1. Filtrez par DREN/CISCO, le rayon couvre la zone d'attraction d'un lycée.",
+        label:
+          "1. Filtrez par DREN/CISCO (aire de recrutement lycée fixe 20 km). Le slider sert aux outils clic droit.",
       },
       {
         icon: <MousePointerClick className="w-3.5 h-3.5" />,

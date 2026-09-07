@@ -86,7 +86,17 @@ async function djangoPostJSON<T = any>(path: string, data: Record<string, any>):
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error(`Django POST JSON ${path} → ${res.status}`);
+  if (!res.ok) {
+    let detail = `Django POST JSON ${path} → ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body?.error) detail = String(body.error);
+      else if (body?.message) detail = String(body.message);
+    } catch {
+      /* ignore */
+    }
+    throw new Error(detail);
+  }
   return res.json();
 }
 
@@ -917,13 +927,14 @@ const SIG = () => {
 
     try {
       await djangoPostJSON("/sig/deplacements/update-position-etablissement/", {
-        code_etab,
+        code_etab: Number(code_etab),
         nouveau_lat: lat,
         nouveau_lng: lng,
+        // demande_par géré côté serveur (request.user.id = bigint)
       });
       toast.success("Position de l'établissement mise à jour");
-    } catch {
-      toast.error("Erreur lors de la mise à jour");
+    } catch (err: any) {
+      toast.error(err?.message || "Erreur lors de la mise à jour");
       if (positionAvantDeplacementRef.current) {
         event.target.setLatLng(positionAvantDeplacementRef.current);
       }
@@ -955,15 +966,17 @@ const SIG = () => {
 
     try {
       await djangoPostJSON("/sig/deplacements/update-position-village/", {
-        id_village: id,
+        id_village: Number(id),
         nouveau_lat: lat,
         nouveau_lng: lng,
+        // demande_par géré côté serveur (request.user.id = bigint)
       });
       toast.success("Position du village mise à jour");
-    } catch {
-      toast.error("Erreur lors de la mise à jour");
-      if (positionAvantDeplacementRef.current)
+    } catch (err: any) {
+      toast.error(err?.message || "Erreur lors de la mise à jour");
+      if (positionAvantDeplacementRef.current) {
         event.target.setLatLng(positionAvantDeplacementRef.current);
+      }
     }
   };
 
@@ -2093,7 +2106,7 @@ const SIG = () => {
                 <div className="flex items-center justify-between gap-2 w-full">
                   <div className="flex items-center gap-2">
                     <Table className="h-4 w-4 flex-shrink-0" />
-                    <span>Établissements non pointés</span>
+                    <span>Liste Etab non pointés</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <Badge
@@ -2220,16 +2233,9 @@ const SIG = () => {
                     {/* Ratio Établissements non pointés / pointés */}
                     <div className="flex justify-between items-center pt-2 border-t">
                       <span className="font-semibold">Établissements non pointés</span>
-                      <Badge variant="destructive" className="tabular-nums">
-                        {etabNonPointe.length}
-                      </Badge>
-                    </div>
-                    <div className="flex justify-between items-center text-[10px] text-muted-foreground pl-2">
-                      <span>Ratio non pointés / total</span>
                       <span className="tabular-nums">
-                        {stats.total > 0
-                          ? `${Math.round((etabNonPointe.length / stats.total) * 100)}%`
-                          : "0%"}
+                        {etabNonPointe.length} /{" "}
+                        {(stats.public?.total || 0) + (stats.private?.total || 0)}
                       </span>
                     </div>
                   </div>
