@@ -1,3 +1,4 @@
+import MadagascarPin from '@/components/score/MadagascarPin';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -586,24 +587,7 @@ const TDBEcole = () => {
                 </tbody>
               </table>
 
-              {/* Ressources financières */}
-              <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '3px' }} border={1} cellPadding={1} cellSpacing={0}>
-                <thead><tr style={s.gris}><th colSpan={4} style={s.th}>Ressources financières (Ariary)</th></tr></thead>
-                <tbody>
-                  <tr><td style={s.td}>{selectedNiveau === 'college' ? 'Caisse de soutien / Subvention' : 'Caisse écoles'}</td>
-                    <td style={{ ...s.td, textAlign: 'right' }}>{fmt(e.caisse?.total_fce || 0)}</td>
-                    <td style={{ ...s.td, textAlign: 'right' }}>{fmt(z.caisse?.total_fce || 0)}</td>
-                    <td style={{ ...s.td, textAlign: 'right' }}>{fmt(c.caisse?.total_fce || 0)}</td>
-                  </tr>
-                  {selectedNiveau === 'college' && (
-                    <tr><td style={s.td}>Autres</td>
-                      <td style={{ ...s.td, textAlign: 'right', ...manq(fmt(e.caisse?.autres)) }}>{fmt(e.caisse?.autres)}</td>
-                      <td style={{ ...s.td, textAlign: 'right', ...manq(fmt(z.caisse?.autres)) }}>{fmt(z.caisse?.autres)}</td>
-                      <td style={{ ...s.td, textAlign: 'right', ...manq(fmt(c.caisse?.autres)) }}>{fmt(c.caisse?.autres)}</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+              
             </td>
           </tr></tbody>
         </table>
@@ -650,7 +634,7 @@ const TDBEcole = () => {
                             {active && (
                               <>
                                 <span style={{ position: 'absolute', top: '4px', right: '6px', fontSize: '9px', fontWeight: 'bold', color: '#2e7d32' }}>{etabLbl}</span>
-                                <span style={{ position: 'absolute', right: '4px', bottom: '2px', fontSize: '22px', filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.3))' }} title="Position actuelle">🏍️</span>
+                                <span style={{ position: 'absolute', right: '4px', bottom: '2px', lineHeight: 0 }}><MadagascarPin size={22} title="Situation actuelle" /></span>
                               </>
                             )}
                           </td>
@@ -687,7 +671,7 @@ const TDBEcole = () => {
                         : `Vos ressources (${niveauX}) et vos résultats (${niveauY}) sont alignés. Pour progresser, ciblez en priorité ${binX < 2 ? 'le renforcement des ressources' : 'la qualité pédagogique'}.`;
                     return (
                       <div>
-                        <div><b>Position :</b> Ressources <i>{niveauX}</i> · Résultats <i>{niveauY}</i> (score X = {scoreX.toFixed(1)} / Y = {scoreY.toFixed(1)})</div>
+                        <div>Ressources <i>{niveauX}</i> · Résultats <i>{niveauY}</i> (score X = {scoreX.toFixed(1)} / Y = {scoreY.toFixed(1)})</div>
                         <div style={{ marginTop: 4 }}>{reco}</div>
                         <div style={{ marginTop: 4, color: '#555' }}>Taux d'abandon, redoublement et admission au {examKey.toUpperCase()} doivent être analysés conjointement avec les disparités filles / garçons ci-dessus.</div>
                       </div>

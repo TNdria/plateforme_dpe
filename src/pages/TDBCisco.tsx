@@ -273,7 +273,7 @@ const TDBCisco = () => {
                     return (
                       <div style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 10px', background: '#f5f7fa', border: '1px solid #ccd', borderRadius: 6 }}>
                         <span style={{ fontSize: 11, color: '#555' }}>Score Y :</span>
-                        <ScoreY value={y} size={28} showLabel />
+                        <ScoreY value={y} showLabel showIcon={false} />
                       </div>
                     );
                   })()}
@@ -702,24 +702,7 @@ const TDBCisco = () => {
                     <tr><td style={{ ...styles.td, paddingLeft: '10px' }}>-Français</td>{[ratio(c.ressources.nbr_eleve, c.manuels?.francais, 0), ratio(d.ressources.nbr_eleve, d.manuels?.francais, 0), ratio(m.ressources.nbr_eleve, m.manuels?.francais, 0)].map((v, i) => <td key={i} style={{ ...styles.td, textAlign: 'right', ...manq(v) }}>{v}</td>)}</tr>
                   </tbody>
                 </table>
-                {/* Ressources financières */}
-                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '3px' }} border={1} cellPadding={1} cellSpacing={0}>
-                  <thead>
-                    <tr style={styles.gris}>
-                      <th style={{ ...styles.th, width: '46%' }}>Ressources financières par élèves</th>
-                      <th style={{ ...styles.th, width: '18%' }}>&nbsp;</th>
-                      <th style={{ ...styles.th, width: '18%' }}>&nbsp;</th>
-                      <th style={{ ...styles.th, width: '18%' }}>&nbsp;</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr><td style={styles.td}>Caisse école</td><td style={{ ...styles.td, ...styles.manga }}>-</td><td style={{ ...styles.td, ...styles.manga }}>-</td><td style={{ ...styles.td, ...styles.manga }}>-</td></tr>
-                    <tr><td style={styles.td}>Subventions</td><td style={{ ...styles.td, ...styles.mavo, textAlign: 'right' }}>{fmt(c.caisse?.total_fce || 0)}Ar</td><td style={{ ...styles.td, ...styles.mavo, textAlign: 'right' }}>{fmt(d.caisse?.total_fce || 0)}Ar</td><td style={{ ...styles.td, textAlign: 'right' }}>{fmt(m.caisse?.total_fce || 0)}Ar</td></tr>
-                    <tr><td style={styles.td}>Cotisation FRAM</td><td style={{ ...styles.td, ...styles.mavo, textAlign: 'right' }}>-</td><td style={{ ...styles.td, ...styles.mavo, textAlign: 'right' }}>-</td><td style={{ ...styles.td, textAlign: 'right' }}>-</td></tr>
-                    <tr><td style={styles.td}>Autres</td><td style={{ ...styles.td, ...styles.mavo, textAlign: 'right' }}>-</td><td style={{ ...styles.td, ...styles.mavo, textAlign: 'right' }}>-</td><td style={{ ...styles.td, ...styles.mavo, textAlign: 'right' }}>-</td></tr>
-                    <tr><td style={styles.td}>Total</td><td style={{ ...styles.td, textAlign: 'right' }}>{fmt(c.caisse?.total_fce || 0)}Ar</td><td style={{ ...styles.td, textAlign: 'right' }}>{fmt(d.caisse?.total_fce || 0)}Ar</td><td style={{ ...styles.td, textAlign: 'right' }}>{fmt(m.caisse?.total_fce || 0)}Ar</td></tr>
-                  </tbody>
-                </table>
+                
               </td>
             </tr>
           </tbody>

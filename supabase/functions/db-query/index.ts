@@ -5,7 +5,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { Client } from "https://deno.land/x/postgres@v0.17.0/mod.ts";
 import { executeDiagnosticDataset } from "./diagnostic.ts";
 
-const VERSION = "v51-20260812-diagnostic-dataset-national";
+const VERSION = "v53-20260906-efficience-23-dren";
 
 // PBKDF2-SHA256 password verification for Django auth
 async function verifyDjangoPassword(password: string, encoded: string): Promise<boolean> {
@@ -2780,7 +2780,54 @@ async function executeTdbDrenData(client: Client, codeDren: number, annee: numbe
     try { const q = `SELECT c."CISCO", c."CODE_CISCO", SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T1_G"')}+${si('e1."T1_F"')}+${si('e1."T2_G"')}+${si('e1."T2_F"')}+${si('e1."T3_G"')}+${si('e1."T3_F"')}+${si('e1."T4_G"')}+${si('e1."T4_F"')}+${si('e1."T5_G"')}+${si('e1."T5_F"')} ELSE 0 END) AS nbr_eleve, SUM(CASE WHEN p1."CODE_STATUT" IN ('1','2','3','4') AND ${si('p1."EN_SALLE"')}=1 THEN 1 ELSE 0 END) AS pers_en_classe, SUM(COALESCE(ce."admisG",0)+COALESCE(ce."admisF",0)) AS admis, SUM(COALESCE(ce."Nbre",0)) AS inscrits_cepe FROM v_cisco c LEFT JOIN fpe_a1 a1 ON a1."CODE_CISCO"=c."CODE_CISCO" AND a1."ANNEE_SCOLAIRE"=${annee} AND a1."SECTEUR"=0 AND a1."EXISTE_PRIMAIRE"=1 LEFT JOIN fpe_e1 e1 ON e1."CODE_ETAB"=a1."CODE_ETAB" AND e1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND e1."SECTEUR"=a1."SECTEUR" LEFT JOIN fpe_p1 p1 ON p1."CODE_ETAB"=a1."CODE_ETAB" AND p1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND p1."NIVEAU_TENU_PRIMAIRE"='1' LEFT JOIN examen_cepe ce ON ce."code_etab"=a1."CODE_ETAB" AND ce."id_annee_scolaire"=a1."ANNEE_SCOLAIRE" WHERE c."CODE_DREN"=${codeDren} GROUP BY c."CISCO",c."CODE_CISCO" ORDER BY c."CISCO"`; return (await client.queryObject(q)).rows || []; } catch(e) { return []; }
   }
 
-  const [resDren, resMada, persDren, persMada, secDren, secMada, plDren, plMada, cepeDren, cepeMada, ceDren, ceMada, manDren, manMada, efficience] = await Promise.all([
+  // Efficience de TOUTES les DRENs (23 points) — requêtes légères agrégées en JS
+  async function getEfficienceDrens() {
+    const safe = async (q: string) => {
+      try { return (await client.queryObject(q)).rows as any[]; }
+      catch (e) { console.error('getEfficienceDrens part', e); return [] as any[]; }
+    };
+    const qRes = `SELECT a1."CODE_DREN" AS code,
+      COUNT(DISTINCT a1."CODE_ETAB") AS nbr_etab,
+      SUM(${si('e1."T1_G"')}+${si('e1."T1_F"')}+${si('e1."T2_G"')}+${si('e1."T2_F"')}+${si('e1."T3_G"')}+${si('e1."T3_F"')}+${si('e1."T4_G"')}+${si('e1."T4_F"')}+${si('e1."T5_G"')}+${si('e1."T5_F"')}) AS nbr_eleve,
+      SUM(${si('e1."T1_G_REDOUBLANT"')}+${si('e1."T2_G_REDOUBLANT"')}+${si('e1."T3_G_REDOUBLANT"')}+${si('e1."T4_G_REDOUBLANT"')}+${si('e1."T5_G_REDOUBLANT"')}) AS red_g,
+      SUM(${si('e1."T1_F_REDOUBLANT"')}+${si('e1."T2_F_REDOUBLANT"')}+${si('e1."T3_F_REDOUBLANT"')}+${si('e1."T4_F_REDOUBLANT"')}+${si('e1."T5_F_REDOUBLANT"')}) AS red_f,
+      SUM(${si('e1."T1_G"')}+${si('e1."T1_F"')}) AS eff_t1,
+      SUM(${si('e1."T5_G"')}+${si('e1."T5_F"')}) AS eff_t5,
+      COUNT(DISTINCT CASE WHEN a1."EST_ALIMENTE_EAU"='1' THEN a1."CODE_ETAB" END) AS etab_eau,
+      COUNT(DISTINCT CASE WHEN a1."EST_ELECTRIFIE"='1' THEN a1."CODE_ETAB" END) AS etab_elec
+      FROM fpe_a1 a1 LEFT JOIN fpe_e1 e1 ON e1."CODE_ETAB"=a1."CODE_ETAB" AND e1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND e1."SECTEUR"=a1."SECTEUR" AND e1."EXISTE_PRIMAIRE"=1
+      WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."SECTEUR"=0 AND a1."EXISTE_PRIMAIRE"=1
+      GROUP BY a1."CODE_DREN"`;
+    const qPers = `SELECT a1."CODE_DREN" AS code, COUNT(*) AS pers_en_classe
+      FROM fpe_a1 a1 JOIN fpe_p1 p1 ON p1."CODE_ETAB"=a1."CODE_ETAB" AND p1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE"
+      WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."SECTEUR"=0 AND a1."EXISTE_PRIMAIRE"=1
+        AND p1."NIVEAU_TENU_PRIMAIRE"='1' AND p1."CODE_STATUT" IN ('1','2','3','4')
+      GROUP BY a1."CODE_DREN"`;
+    const qNoms = `SELECT "CODE_DREN", "DREN" FROM v_dren ORDER BY "DREN"`;
+    const [rRes, rPers, rNoms] = await Promise.all([safe(qRes), safe(qPers), safe(qNoms)]);
+    if (!rNoms.length) return [];
+    const idx = (rows: any[]) => Object.fromEntries(rows.map((r: any) => [String(r.code), r]));
+    const res = idx(rRes), pers = idx(rPers);
+    return rNoms.map((d: any) => {
+      const k = String(d.CODE_DREN);
+      const r = res[k] || {};
+      return {
+        DREN: d.DREN,
+        CODE_DREN: d.CODE_DREN,
+        nbr_etab: Number(r.nbr_etab || 0),
+        nbr_eleve: Number(r.nbr_eleve || 0),
+        red_g: Number(r.red_g || 0),
+        red_f: Number(r.red_f || 0),
+        eff_t1: Number(r.eff_t1 || 0),
+        eff_t5: Number(r.eff_t5 || 0),
+        etab_eau: Number(r.etab_eau || 0),
+        etab_elec: Number(r.etab_elec || 0),
+        pers_en_classe: Number(pers[k]?.pers_en_classe || 0),
+      };
+    }).filter((d: any) => d.nbr_eleve > 0);
+  }
+
+  const [resDren, resMada, persDren, persMada, secDren, secMada, plDren, plMada, cepeDren, cepeMada, ceDren, ceMada, manDren, manMada, efficience, efficienceDrens] = await Promise.all([
     getRessources(whereDren), getRessources(whereMada),
     getPersonnel(whereDren), getPersonnel(whereMada),
     getSections(whereDren), getSections(whereMada),
@@ -2788,7 +2835,7 @@ async function executeTdbDrenData(client: Client, codeDren: number, annee: numbe
     getCepe(whereDren), getCepe(whereMada),
     getCaisseEcole(whereDren), getCaisseEcole(whereMada),
     getManuels(whereDren), getManuels(whereMada),
-    getEfficience(),
+    getEfficience(), getEfficienceDrens(),
   ]);
 
   const [namesResult, adminCountsResult] = await Promise.all([
@@ -2807,6 +2854,7 @@ async function executeTdbDrenData(client: Client, codeDren: number, annee: numbe
     dren: { ressources: { ...resDren, ...adminCounts }, personnel: persDren, sections: secDren, places: plDren, cepe: cepeDren, caisse: ceDren, manuels: manDren },
     mada: { ressources: resMada, personnel: persMada, sections: secMada, places: plMada, cepe: cepeMada, caisse: ceMada, manuels: manMada },
     efficience,
+    efficienceDrens,
   };
 }
 

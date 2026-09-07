@@ -24,6 +24,21 @@ const pct = (num: any, den: any, dec = 1) => { const n = Number(num), d = Number
 const pctVal = (num: any, den: any) => { const n = Number(num), d = Number(den); if (!d || isNaN(n) || isNaN(d)) return 0; return Number((n / d * 100).toFixed(1)); };
 const ratio = (num: any, den: any, dec = 1) => { const n = Number(num), d = Number(den); if (!d || isNaN(n) || isNaN(d)) return '-'; return (n / d).toFixed(dec); };
 const ratioVal = (num: any, den: any) => { const n = Number(num), d = Number(den); if (!d || isNaN(n) || isNaN(d)) return 0; return Number((n / d).toFixed(2)); };
+/** % d'élèves vivant à plus de 2 km = complément du % « moins de 2 km » (donnée existante). */
+const has2km = (agg: any) => {
+  const raw = agg?.ressources?.eleve_2km;
+  return raw !== null && raw !== undefined && Number(raw) > 0;
+};
+const pctPlus2kmVal = (agg: any) => {
+  const n = Number(agg?.ressources?.eleve_2km), d = Number(agg?.ressources?.nbr_eleve);
+  if (!d || !has2km(agg) || isNaN(n) || isNaN(d)) return 0;
+  return Number((100 - (n / d) * 100).toFixed(1));
+};
+const pctPlus2km = (agg: any) => {
+  const n = Number(agg?.ressources?.eleve_2km), d = Number(agg?.ressources?.nbr_eleve);
+  if (!d || !has2km(agg) || isNaN(n) || isNaN(d)) return '-';
+  return (100 - (n / d) * 100).toFixed(1) + '%';
+};
 const manq = (val: string | number) => val === '-' || val === '' || val === null || val === undefined ? { background: '#7CB5EC' } : {};
 
 // Helper: render a data cell with auto manquant background
@@ -122,7 +137,8 @@ const TDBDren = () => {
       const inscrits = Number(src.inscrits || 0);
       const txAdmis = inscrits > 0 ? (Number(src.admis || 0) / inscrits) * 100 : 0;
       const tpa = Number(src.tpa || txAdmis || 0);
-      const parts = [100 - Math.min(red, 100), retention, tpa, txAdmis].filter((v) => isFinite(v));
+      const parts = [100 - Math.min(red, 100), retention, tpa, txAdmis]
+        .filter((v, i) => isFinite(v) && (i < 2 || v > 0));
       const y = parts.length ? parts.reduce((a, b) => a + b, 0) / parts.length : 0;
       return { x: Number(x.toFixed(1)), y: Number(y.toFixed(1)) };
     };
@@ -155,8 +171,20 @@ const TDBDren = () => {
       { name: 'MADAGASCAR', code: 'mada', isCurrent: false, ...scoresFrom(aggToSrc(m)) },
     ];
 
+    // Nuage national : les 23 DREN, la DREN courante mise en évidence
+    const drenEfficience = (tdbData.efficienceDrens || []).map((item: any) => ({
+      name: item.DREN || '',
+      code: item.CODE_DREN,
+      isCurrent: String(item.CODE_DREN) === String(selectedDren),
+      ...scoresFrom({ ...item, inscrits: item.inscrits_cepe }),
+    }));
+
+    const hasDrens = drenEfficience.length > 0 && !drenEfficience.every((p: any) => p.x === 0 && p.y === 0);
     const hasRaw = rawEfficience.length > 0 && !rawEfficience.every((p: any) => p.x === 0 && p.y === 0);
-    const efficienceData = hasRaw ? rawEfficience : fallbackEfficience;
+    const efficienceData = hasDrens ? drenEfficience : (hasRaw ? rawEfficience : fallbackEfficience);
+    const efficienceTitre = hasDrens
+      ? `Efficience des ${drenEfficience.length} DREN — votre DREN en rouge`
+      : 'Efficience des CISCOs de la DREN';
 
 
     // Profil de rétention pseudo-longitudinal (template Django ligne 222)
@@ -199,7 +227,7 @@ const TDBDren = () => {
                 return (
                   <div style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 10px', background: '#f5f7fa', border: '1px solid #ccd', borderRadius: 6 }}>
                     <span style={{ fontSize: 11, color: '#555' }}>Score Y :</span>
-                    <ScoreY value={y} size={28} showLabel />
+                    <ScoreY value={y} showLabel showIcon={false} />
                   </div>
                 );
               })()}
@@ -351,8 +379,9 @@ const TDBDren = () => {
                       {[
                         ['Taux de rétention (CP1 → CM2)', pct(d.ressources?.eff_t5, d.ressources?.eff_t1), pct(m.ressources?.eff_t5, m.ressources?.eff_t1)],
                         ['Taux d\'achèvement (CM2 non redoublants / CP1)', pct(Number(d.ressources?.eff_t5 || 0) - Number(d.ressources?.red_t5 || 0), d.ressources?.eff_t1), pct(Number(m.ressources?.eff_t5 || 0) - Number(m.ressources?.red_t5 || 0), m.ressources?.eff_t1)],
-                        ['Écoles offrant le cycle complet', pct(d.ressources?.ecole_continue, d.ressources?.nbr_etab), pct(m.ressources?.ecole_continue, m.ressources?.nbr_etab)],
+                        ['Écoles à cycle complet', pct(d.ressources?.ecole_continue, d.ressources?.nbr_etab), pct(m.ressources?.ecole_continue, m.ressources?.nbr_etab)],
                         ['Élèves vivant à moins de 2 km', pct(d.ressources?.eleve_2km, d.ressources?.nbr_eleve), pct(m.ressources?.eleve_2km, m.ressources?.nbr_eleve)],
+                        ['Élèves vivant à plus de 2 km', pctPlus2km(d), pctPlus2km(m)],
                         ['Taux de transition primaire → collège', '-', '-'],
                         ['TBS / TNS', '-', '-'],
                       ].map(([label, dv, mv]: any) => (
@@ -560,12 +589,7 @@ const TDBDren = () => {
                 <tr><td style={{ ...st.td, paddingLeft: '10px' }}>-Français</td>{[ratio(d.ressources.nbr_eleve, d.manuels?.francais, 0), ratio(m.ressources.nbr_eleve, m.manuels?.francais, 0)].map((v, i) => <td key={i} style={{ ...st.td, textAlign: 'right', ...manq(v) }}>{v}</td>)}</tr>
               </tbody>
             </table>
-            <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '3px' }} border={1} cellPadding={1} cellSpacing={0}>
-              <thead><tr style={st.gris}><th style={{ ...st.th, width: '50%' }}>Ressources financières</th><th style={{ ...st.th, width: '25%' }}>&nbsp;</th><th style={{ ...st.th, width: '25%' }}>&nbsp;</th></tr></thead>
-              <tbody>
-                <tr><td style={st.td}>Subventions</td><td style={{ ...st.td, textAlign: 'right' }}>{fmt(d.caisse?.total_fce||0)}Ar</td><td style={{ ...st.td, textAlign: 'right' }}>{fmt(m.caisse?.total_fce||0)}Ar</td></tr>
-              </tbody>
-            </table>
+
           </td>
         </tr></tbody></table>
 
@@ -578,13 +602,14 @@ const TDBDren = () => {
         <div style={st.titre}><b>Goulot d'Étranglement du système</b></div>
         {(() => {
           const goulot = [
-            { ind: 'Écoles offrant le cycle complet', DREN: pctVal(d.ressources?.ecole_continue, d.ressources?.nbr_etab), MADA: pctVal(m.ressources?.ecole_continue, m.ressources?.nbr_etab) },
+            { ind: 'Écoles à cycle complet', DREN: pctVal(d.ressources?.ecole_continue, d.ressources?.nbr_etab), MADA: pctVal(m.ressources?.ecole_continue, m.ressources?.nbr_etab) },
             { ind: 'Élèves vivant à moins de 2 km', DREN: pctVal(d.ressources?.eleve_2km, d.ressources?.nbr_eleve), MADA: pctVal(m.ressources?.eleve_2km, m.ressources?.nbr_eleve) },
+            { ind: 'Élèves vivant à plus de 2 km', DREN: pctPlus2kmVal(d), MADA: pctPlus2kmVal(m) },
             { ind: 'Écoles alimentées en eau', DREN: pctVal(d.ressources?.etab_eau, d.ressources?.nbr_etab), MADA: pctVal(m.ressources?.etab_eau, m.ressources?.nbr_etab) },
             { ind: 'Écoles électrifiées', DREN: pctVal(d.ressources?.etab_elec, d.ressources?.nbr_etab), MADA: pctVal(m.ressources?.etab_elec, m.ressources?.nbr_etab) },
             { ind: 'Taux de rétention', DREN: pctVal(d.ressources?.eff_t5, d.ressources?.eff_t1), MADA: pctVal(m.ressources?.eff_t5, m.ressources?.eff_t1) },
-            { ind: 'Non-redoublement', DREN: Number((100 - pctVal(Number(d.ressources?.red_g || 0) + Number(d.ressources?.red_f || 0), d.ressources?.nbr_eleve)).toFixed(1)), MADA: Number((100 - pctVal(Number(m.ressources?.red_g || 0) + Number(m.ressources?.red_f || 0), m.ressources?.nbr_eleve)).toFixed(1)) },
-            { ind: 'Enseignants avec diplôme pédagogique', DREN: Number((100 - pctVal(d.personnel?.sans_diplome_ped, d.personnel?.pers_en_classe)).toFixed(1)), MADA: Number((100 - pctVal(m.personnel?.sans_diplome_ped, m.personnel?.pers_en_classe)).toFixed(1)) },
+            { ind: 'Taux de promotion', DREN: Number((100 - pctVal(Number(d.ressources?.red_g || 0) + Number(d.ressources?.red_f || 0), d.ressources?.nbr_eleve)).toFixed(1)), MADA: Number((100 - pctVal(Number(m.ressources?.red_g || 0) + Number(m.ressources?.red_f || 0), m.ressources?.nbr_eleve)).toFixed(1)) },
+            { ind: '% des enseignants ayant un diplôme pédagogique', DREN: Number((100 - pctVal(d.personnel?.sans_diplome_ped, d.personnel?.pers_en_classe)).toFixed(1)), MADA: Number((100 - pctVal(m.personnel?.sans_diplome_ped, m.personnel?.pers_en_classe)).toFixed(1)) },
             { ind: 'Taux d\'admission au CEPE', DREN: pctVal(Number(d.cepe?.admis_g || 0) + Number(d.cepe?.admis_f || 0), Number(d.cepe?.nbr_g || 0) + Number(d.cepe?.nbr_f || 0)), MADA: pctVal(Number(m.cepe?.admis_g || 0) + Number(m.cepe?.admis_f || 0), Number(m.cepe?.nbr_g || 0) + Number(m.cepe?.nbr_f || 0)) },
           ];
           const critiques = goulot.filter((g) => g.DREN < g.MADA).sort((a, b) => (a.DREN - a.MADA) - (b.DREN - b.MADA)).slice(0, 3);
@@ -608,7 +633,7 @@ const TDBDren = () => {
               <table style={{ width: '100%', borderCollapse: 'collapse' }} cellPadding={0} cellSpacing={0}><tbody><tr>
                 <td style={{ width: '55%', verticalAlign: 'top', paddingRight: 4 }}>
                   <div style={{ border: '1px solid #000', padding: '8px' }}>
-                    <h4 style={{ textAlign: 'center', fontSize: '11px', fontWeight: 'bold', marginBottom: '6px' }}>Efficience des CISCOs de la DREN</h4>
+                    <h4 style={{ textAlign: 'center', fontSize: '11px', fontWeight: 'bold', marginBottom: '6px' }}>{efficienceTitre}</h4>
                     <ResponsiveContainer width="100%" height={300}>
                       <ScatterChart margin={{ top: 10, right: 30, left: 10, bottom: 20 }}>
                         <CartesianGrid strokeDasharray="3 3" />
@@ -630,15 +655,39 @@ const TDBDren = () => {
                     <EfficienceGrid entity={d} niveau="primaire" entityLabel="DREN" />
                   </div>
                   <div style={{ border: '1px solid #000' }}>
-                    <div style={{ ...st.gris, padding: '4px 6px', fontSize: 11 }}>Remarque(s) et Diagnostic(s)</div>
-                    <ul style={{ margin: 0, padding: '6px 6px 6px 20px', fontSize: 10, lineHeight: 1.5 }}>
-                      {critiques.length === 0 ? (
-                        <li>Tous les indicateurs suivis de la DREN se situent au niveau ou au-dessus de la moyenne nationale.</li>
-                      ) : critiques.map((c) => (
-                        <li key={c.ind}>{c.ind} : {c.DREN.toFixed(1)}% contre {c.MADA.toFixed(1)}% au niveau national — goulot à traiter en priorité.</li>
-                      ))}
-                      <li>Une attention particulière doit être portée à la réduction du redoublement et à l'amélioration du taux de réussite au CEPE.</li>
-                    </ul>
+                    <div style={{ ...st.gris, padding: '4px 6px', fontSize: 11 }}>Conclusion</div>
+                    <div style={{ padding: '6px 8px', fontSize: 10, lineHeight: 1.55 }}>
+                      {(() => {
+                        const forts = goulot.filter((g) => g.DREN >= g.MADA).sort((a, b) => (b.DREN - b.MADA) - (a.DREN - a.MADA));
+                        return (
+                          <>
+                            <div style={{ marginBottom: 4 }}>
+                              Sur les {goulot.length} indicateurs comparés à la moyenne nationale,
+                              {' '}<b>{forts.length}</b> sont au niveau ou au-dessus et
+                              {' '}<b>{critiques.length ? goulot.length - forts.length : 0}</b>{(critiques.length ? goulot.length - forts.length : 0) > 1 ? ' sont en retard.' : ' est en retard.'}
+                            </div>
+                            {critiques.length > 0 ? (
+                              <div style={{ marginBottom: 4 }}>
+                                Les points à traiter en priorité sont :
+                                <ul style={{ margin: '2px 0 0', padding: '0 0 0 18px' }}>
+                                  {critiques.map((c) => (
+                                    <li key={c.ind}>
+                                      {c.ind} — {c.DREN.toFixed(1)} % contre {c.MADA.toFixed(1)} % au niveau national
+                                      {' '}(écart de {(c.MADA - c.DREN).toFixed(1)} point{Math.abs(c.MADA - c.DREN) >= 2 ? 's' : ''}).
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : (
+                              <div style={{ marginBottom: 4 }}>Aucun indicateur ne se situe en dessous de la moyenne nationale.</div>
+                            )}
+                            {forts.length > 0 && (
+                              <div>Point d'appui : {forts[0].ind} ({forts[0].DREN.toFixed(1)} % contre {forts[0].MADA.toFixed(1)} % au national).</div>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
                   </div>
                 </td>
               </tr></tbody></table>

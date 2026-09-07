@@ -19,6 +19,8 @@ import {
   Tooltip,
   LabelList,
 } from 'recharts';
+import MadagascarPin from '@/components/score/MadagascarPin';
+
 
 // ---------- Calculs portés depuis Python ----------
 const getLevel = (v: number): 'minim' | 'moyen' | 'maxim' => {
@@ -92,7 +94,7 @@ function SmileyEfficienceGrid({ scoreX, scoreY }: { scoreX: number; scoreY: numb
   return (
     <div style={{ marginTop: 8, border: '1px solid #555', background: '#fff', padding: 6 }}>
       <div style={{ fontSize: 10, fontWeight: 'bold', textAlign: 'center', marginBottom: 4 }}>
-        Efficience — position de l'établissement
+        Efficience — situation de l'établissement
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 2 }}>
         {FACES.map((row, r) =>
@@ -121,18 +123,17 @@ function SmileyEfficienceGrid({ scoreX, scoreY }: { scoreX: number; scoreY: numb
                       position: 'absolute',
                       right: 2,
                       bottom: 0,
-                      fontSize: 18,
-                      filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.3))',
+                      lineHeight: 0,
                     }}
-                    title="Position actuelle"
                   >
-                    🏍️
+                    <MadagascarPin size={18} title="Situation actuelle" />
                   </span>
                 )}
               </div>
             );
           })
         )}
+
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: '#666', marginTop: 4 }}>
         <span>← Ressources faibles</span>
@@ -230,7 +231,7 @@ export function DiagnosticPanel({
   return (
     <div style={{ marginTop: 8 }}>
       {/* === EFFICIENCE (au-dessus, pleine largeur) === */}
-      <div style={{ ...titreStyle, background: '#1565c0' }}>EFFICIENCE — Position Ressources vs Résultats</div>
+      <div style={{ ...titreStyle, background: '#1565c0' }}>EFFICIENCE — Ressources vs Résultats</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 4 }}>
               <div
                 style={{
@@ -359,9 +360,10 @@ export function DiagnosticPanel({
                   <tr>
                     <td style={cellStyle}>
                       <div style={{ marginBottom: 4 }}>
-                        <b>Position :</b> Ressources <i>{diag.niveauX}</i> · Résultats <i>{diag.niveauY}</i>
+                        Ressources <i>{diag.niveauX}</i> · Résultats <i>{diag.niveauY}</i>
                         {' '}(X = {scoreX.toFixed(1)} ; Y = {scoreY.toFixed(1)})
                       </div>
+
                       <div style={{ marginBottom: 4 }}>
                         <b>Constat :</b> {diag.remarque}
                       </div>

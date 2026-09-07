@@ -23,42 +23,99 @@ import {
   Target,
   Layers,
   BarChart4,
-  MapPin
+  MapPin,
+  Baby,
+  Mail
 } from "lucide-react";
-import { referentielApi } from "@/services/api";
-import { NATIONAL_DATA } from "@/data/educationEnChiffres";
+import { referentielApi, dashboardApi } from "@/services/api";
 import ministryBuilding from "@/assets/ministry-building.jpg";
 import { AnimatedLogo } from "@/components/AnimatedLogo";
 
 const Home = () => {
   const navigate = useNavigate();
-  const [stats, setStats] = useState({
-    drens: 23,
-    ciscos: 114,
-    zaps: 1700,
-    ecolesN1: NATIONAL_DATA.etablissements.primaire,
-    ecolesCollege: NATIONAL_DATA.etablissements.college,
-    ecolesLycee: NATIONAL_DATA.etablissements.lycee,
-    elevesN1: NATIONAL_DATA.eleves.primaire,
-    elevesCollege: NATIONAL_DATA.eleves.college,
-    elevesLycee: NATIONAL_DATA.eleves.lycee,
-    enseignants: NATIONAL_DATA.enseignants.primaire + NATIONAL_DATA.enseignants.college + NATIONAL_DATA.enseignants.lycee,
-    loading: false
+  const [stats, setStats] = useState<{
+    drens: number | null; ciscos: number | null; zaps: number | null;
+    etabTotal: number | null; etabPublic: number | null; etabPrive: number | null;
+    eleves: number | null; presco: number | null; enseignants: number | null;
+    annee: number | null; loading: boolean;
+  }>({
+    drens: null, ciscos: null, zaps: null,
+    etabTotal: null, etabPublic: null, etabPrive: null,
+    eleves: null, presco: null, enseignants: null,
+    annee: null, loading: true,
   });
 
   const [isVisible, setIsVisible] = useState(false);
   const sectionRef = useRef(null);
 
   useEffect(() => {
-    // Fetch live DREN/CISCO/ZAP counts only (fast queries)
+    // Chiffres réels issus de la base : aucun chiffre n'est inventé.
+    const num = (v: any) => { const n = Number(v); return isNaN(n) ? 0 : n; };
+    /** Somme des niveaux n1..n3 pour l'année demandée */
+    const cell = (row: any, lv: string, annee: number) =>
+      num(row?.[`${lv.toUpperCase()}_${annee}`] ?? row?.[`${lv.toLowerCase()}_${annee}`]);
+    const sumLevels = (row: any, annee: number, levels: string[]) =>
+      levels.reduce((t, lv) => t + cell(row, lv, annee), 0);
+    /** Années présentes dans une ligne de statistiques, de la plus récente à la plus ancienne */
+    const yearsOf = (row: any) => {
+      const years = Object.keys(row || {})
+        .map((k) => /_(\d{4})$/.exec(k)?.[1])
+        .filter(Boolean)
+        .map(Number);
+      return [...new Set(years)].sort((a, b) => b - a);
+    };
+
     const fetchCounts = async () => {
       try {
-        const drensData = await referentielApi.getDrens().catch(() => []);
-        if (drensData.length > 0) {
-          setStats(prev => ({ ...prev, drens: drensData.length }));
-        }
+        const [drensData, ciscosData, zapRows, etabAll, etabPub, etabPriv, elevesN0N1, elevesN2N3, ens] = await Promise.all([
+          referentielApi.getDrens().catch(() => [] as any[]),
+          dashboardApi.getCiscos(0).catch(() => [] as any[]),
+          dashboardApi.getZapCount().catch(() => [] as any[]),
+          dashboardApi.getStatsEtablissements(0, 0, 2).catch(() => [] as any[]),
+          dashboardApi.getStatsEtablissements(0, 0, 0).catch(() => [] as any[]),
+          dashboardApi.getStatsEtablissements(0, 0, 1).catch(() => [] as any[]),
+          dashboardApi.getStatsElevesN0N1(0, 0, 2).catch(() => [] as any[]),
+          dashboardApi.getStatsElevesN2N3(0, 0, 2).catch(() => [] as any[]),
+          dashboardApi.getStatsEnseignants(0, 0, 2).catch(() => [] as any[]),
+        ]);
+
+        const etabRow = etabAll?.[0] as any;
+        const elevesRow01 = elevesN0N1?.[0] as any;
+        const elevesRow23 = elevesN2N3?.[0] as any;
+        const ensRow = ens?.[0] as any;
+        const scolaire = ['n1', 'n2', 'n3'];
+        // Année commune : la plus récente où établissements, élèves et enseignants ont des données.
+        const annee =
+          yearsOf(etabRow).find(
+            (y) =>
+              sumLevels(etabRow, y, scolaire) > 0 &&
+              cell(elevesRow01, 'n1', y) + cell(elevesRow23, 'n2', y) + cell(elevesRow23, 'n3', y) > 0 &&
+              sumLevels(ensRow, y, scolaire) > 0,
+          ) ?? null;
+        const zapTotal = zapRows?.[0]
+          ? num((zapRows[0] as any).total ?? (zapRows[0] as any).nbr_zap ?? (zapRows[0] as any).count)
+          : null;
+
+        setStats({
+          drens: drensData.length || null,
+          ciscos: ciscosData.length || null,
+          zaps: zapTotal || null,
+          etabTotal: annee ? sumLevels(etabRow, annee, scolaire) : null,
+          etabPublic: annee && etabPub?.[0] ? sumLevels(etabPub[0], annee, scolaire) : null,
+          etabPrive: annee && etabPriv?.[0] ? sumLevels(etabPriv[0], annee, scolaire) : null,
+          eleves: annee
+            ? cell(elevesRow01, 'n1', annee) + cell(elevesRow23, 'n2', annee) + cell(elevesRow23, 'n3', annee) || null
+            : null,
+          presco: annee ? cell(elevesRow01, 'n0', annee) || null : null,
+          enseignants: annee
+            ? cell(ensRow, 'n1', annee) + cell(ensRow, 'n2', annee) + cell(ensRow, 'n3', annee) || null
+            : null,
+          annee,
+          loading: false,
+        });
       } catch (e) {
         console.error("Error fetching counts:", e);
+        setStats((prev) => ({ ...prev, loading: false }));
       }
     };
     fetchCounts();
@@ -122,70 +179,26 @@ const Home = () => {
     },
   ];
 
-  const statsCards = [
-    { 
-      label: "Directions Régionales", 
-      value: stats.drens, 
-      icon: Globe, 
-      color: "from-blue-500 to-cyan-500",
-      description: "Couverture nationale"
-    },
-    { 
-      label: "CISCOs", 
-      value: stats.ciscos, 
-      icon: Building2, 
-      color: "from-indigo-500 to-purple-500",
-      description: "Circonscriptions scolaires"
-    },
-    { 
-      label: "ZAPs", 
-      value: stats.zaps, 
-      icon: MapPin, 
-      color: "from-teal-500 to-cyan-500",
-      description: "Zones d'administration pédagogique"
-    },
+  const anneeLabel = stats.annee ? `${stats.annee - 1}-${stats.annee}` : null;
+
+  // Icônes normalisées (même famille, même taille) et couleur d'accent unique.
+  const statsCards: Array<{ label: string; value: number | null; icon: any; description: string; sub?: string; annuel?: boolean }> = [
     {
-      label: "Établissements Primaires", 
-      value: stats.ecolesN1, 
-      icon: School, 
-      color: "from-emerald-500 to-teal-500",
-      description: "Écoles élémentaires (EPP)"
+      label: "Établissements",
+      value: stats.etabTotal,
+      icon: School,
+      description: "Écoles, collèges et lycées",
+      annuel: true,
+      sub: stats.etabPublic !== null || stats.etabPrive !== null
+        ? `Publics : ${stats.etabPublic !== null ? formatNumber(stats.etabPublic) : 'n.d.'} · Privés : ${stats.etabPrive !== null ? formatNumber(stats.etabPrive) : 'n.d.'}`
+        : undefined,
     },
-    { 
-      label: "Établissements Collèges (CEG)", 
-      value: stats.ecolesCollege, 
-      icon: Building2, 
-      color: "from-orange-500 to-amber-500",
-      description: "Collèges d'enseignement général"
-    },
-    { 
-      label: "Établissements Lycées", 
-      value: stats.ecolesLycee, 
-      icon: GraduationCap, 
-      color: "from-amber-500 to-red-500",
-      description: "Lycées d'enseignement général"
-    },
-    { 
-      label: "Élèves du Primaire", 
-      value: stats.elevesN1, 
-      icon: Users, 
-      color: "from-pink-500 to-rose-500",
-      description: "Effectifs scolarisés"
-    },
-    { 
-      label: "Élèves des Collèges", 
-      value: stats.elevesCollege, 
-      icon: BookOpen, 
-      color: "from-violet-500 to-purple-500",
-      description: "Effectifs CEG"
-    },
-    { 
-      label: "Élèves des Lycées", 
-      value: stats.elevesLycee, 
-      icon: BookOpen, 
-      color: "from-fuchsia-500 to-pink-500",
-      description: "Effectifs lycées"
-    },
+    { label: "Élèves", value: stats.eleves, icon: Users, description: "Effectifs primaire, collège et lycée", annuel: true },
+    { label: "Préscolaire", value: stats.presco, icon: Baby, description: "Effectifs du préscolaire", annuel: true },
+    { label: "Enseignants", value: stats.enseignants, icon: UserCheck, description: "Personnel enseignant", annuel: true },
+    { label: "DREN", value: stats.drens, icon: Globe, description: "Directions régionales" },
+    { label: "CISCO", value: stats.ciscos, icon: Building2, description: "Circonscriptions scolaires" },
+    { label: "ZAP", value: stats.zaps, icon: MapPin, description: "Zones d'administration pédagogique" },
   ];
 
   const highlights = [
@@ -255,10 +268,12 @@ const Home = () => {
                 <span className="text-xs text-gray-400">Ministère de l'Éducation Nationale</span>
               </div>
             </div>
-            <div className="hidden md:flex items-center gap-8">
-              <a href="#features" className="text-gray-300 hover:text-white transition-colors font-medium">Fonctionnalités</a>
-              <a href="#stats" className="text-gray-300 hover:text-white transition-colors font-medium">Statistiques</a>
-              <a href="#about" className="text-gray-300 hover:text-white transition-colors font-medium">À propos</a>
+            <div className="hidden md:flex items-center gap-6">
+              <a href="#stats" className="text-gray-300 hover:text-white transition-colors font-medium">Chiffres clés</a>
+              <a href="#tdb" className="text-gray-300 hover:text-white transition-colors font-medium">Tableaux de bord</a>
+              <a href="#ors" className="text-gray-300 hover:text-white transition-colors font-medium">ORS</a>
+              <a href="#analyse" className="text-gray-300 hover:text-white transition-colors font-medium">DataViz</a>
+              <a href="#contact" className="text-gray-300 hover:text-white transition-colors font-medium">Contact</a>
             </div>
             <Button 
               variant="ghost" 
@@ -324,7 +339,7 @@ const Home = () => {
                   Chiffres Clés
                 </span>
                 <span className="block text-lg md:text-xl text-gray-400 font-normal mt-4">
-                  Données nationales consolidées
+                  Données nationales consolidées{anneeLabel ? ` · Année scolaire ${anneeLabel}` : ''}
                 </span>
               </h2>
             </div>
@@ -340,23 +355,27 @@ const Home = () => {
                   <div className="absolute inset-0 bg-gradient-to-br from-transparent via-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                   
                   <div className="relative z-10">
-                    <div className={`inline-flex items-center justify-center w-14 h-14 bg-gradient-to-br ${stat.color} rounded-2xl mb-4 shadow-lg group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300`}>
-                      <stat.icon className="w-7 h-7 text-white" />
+                    <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl mb-4 bg-white/10 ring-1 ring-white/15 text-primary-foreground">
+                      <stat.icon className="w-6 h-6" strokeWidth={1.75} />
                     </div>
-                    
-                    <div className="text-2xl md:text-3xl font-bold text-white mb-2">
+
+                    <div className="text-2xl md:text-3xl font-bold text-white mb-2 tabular-nums">
                       {stats.loading ? (
                         <div className="h-8 w-full bg-white/10 rounded-lg animate-pulse" />
+                      ) : stat.value === null ? (
+                        <span className="text-base font-medium text-gray-400">Donnée non disponible</span>
                       ) : (
-                        <span className="bg-gradient-to-r from-white to-gray-200 bg-clip-text text-transparent">
-                          {formatNumber(stat.value)}
-                        </span>
+                        <span>{formatNumber(stat.value)}</span>
                       )}
                     </div>
-                    
+
                     <div className="space-y-1">
-                      <div className="text-sm font-medium text-white">{stat.label}</div>
+                      <div className="text-sm font-semibold text-white">{stat.label}</div>
                       <div className="text-xs text-gray-400">{stat.description}</div>
+                      {stat.sub && <div className="text-xs text-gray-400">{stat.sub}</div>}
+                      {stat.annuel && anneeLabel && (
+                        <div className="text-[11px] text-gray-500">Année scolaire {anneeLabel}</div>
+                      )}
                     </div>
                     
                     {/* Animated border */}
@@ -453,7 +472,7 @@ const Home = () => {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {[
                 { title: "ORS Primaire", desc: "EPP & écoles primaires", path: "/ors-primaire", icon: School, color: "from-emerald-500 to-teal-500" },
-                { title: "ORS Collège", desc: "CEG & collèges privés", path: "/ors-college", icon: BookOpen, color: "from-cyan-500 to-blue-500" },
+                { title: "ORS Collèges", desc: "Collèges publics & privés", path: "/ors-college", icon: BookOpen, color: "from-cyan-500 to-blue-500" },
                 { title: "ORS Lycée", desc: "Lycées publics & privés", path: "/ors-lycee", icon: GraduationCap, color: "from-indigo-500 to-purple-500" },
               ].map((m, i) => (
                 <div
@@ -529,7 +548,7 @@ const Home = () => {
               {[
                 { title: "Diagnostic IA", desc: "Analyse intelligente des indicateurs éducatifs", path: "/diagnostic", icon: Sparkles, color: "from-amber-500 to-orange-500" },
                 { title: "Besoins", desc: "Évaluation des besoins en infrastructure et ressources", path: "/besoins", icon: Target, color: "from-rose-500 to-pink-500" },
-                { title: "DataViz / SIG", desc: "Cartographie thématique et visualisation des données", path: "/dataviz", icon: BarChart4, color: "from-violet-500 to-fuchsia-500" },
+                { title: "DataViz", desc: "Cartographie thématique et visualisation des données", path: "/dataviz", icon: BarChart4, color: "from-violet-500 to-fuchsia-500" },
               ].map((a, i) => (
                 <div
                   key={a.title}
@@ -583,11 +602,14 @@ const Home = () => {
               </div>
 
               {/* Info Section */}
-              <div className="flex flex-col items-center lg:items-end gap-4">
-                <div className="flex items-center gap-3 px-4 py-2 bg-white/5 backdrop-blur-sm rounded-full">
-                  <TrendingUp className="h-4 w-4 text-primary" />
-                  <span className="text-sm text-gray-300">Données mises à jour quotidiennement</span>
-                </div>
+              <div id="contact" className="flex flex-col items-center lg:items-end gap-4 scroll-mt-24">
+                <a
+                  href="mailto:contact@dpe.education.gov.mg"
+                  className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors"
+                >
+                  <Mail className="h-4 w-4" strokeWidth={1.75} />
+                  contact@dpe.education.gov.mg
+                </a>
                 <div className="text-sm text-gray-500 text-center lg:text-right">
                   © {new Date().getFullYear()} Plateforme DPE. Tous droits réservés.<br />
                   <span className="text-xs">Version 3.0 • Conforme RGPD • ISO 27001</span>

@@ -33,7 +33,23 @@ const defaultStats: LocalStats = {
   enseignantsYear: null,
 };
 
-const DIPLOME_COLORS = ['#C5E17A', '#7ED4A6', '#5B8DEF', '#9B6DD7', '#F59E0B', '#EF4444', '#06B6D4', '#8B5CF6'];
+// Palette stable : un diplôme = toujours la même couleur, dans tout la plateforme.
+const DIPLOME_COLORS = ['#1D4ED8', '#0891B2', '#059669', '#CA8A04', '#EA580C', '#BE123C', '#7C3AED', '#475569'];
+// Ordre logique (du plus élevé au moins élevé), les libellés inconnus passent à la fin.
+const DIPLOME_ORDER = ['DOCTORAT', 'MASTER', 'MAITRISE', 'LICENCE', 'DTS', 'BACC', 'BEPC', 'CEPE', 'SANS DIPLOME', 'NON RENSEIGNE'];
+const diplomeRank = (name: string) => {
+  const n = (name || '').toUpperCase();
+  const i = DIPLOME_ORDER.findIndex((d) => n.includes(d));
+  return i === -1 ? DIPLOME_ORDER.length : i;
+};
+const diplomeColor = (name: string) => {
+  const n = (name || '').toUpperCase();
+  const i = DIPLOME_ORDER.findIndex((d) => n.includes(d));
+  if (i !== -1) return DIPLOME_COLORS[i % DIPLOME_COLORS.length];
+  let h = 0;
+  for (const ch of n) h = (h * 31 + ch.charCodeAt(0)) % 997;
+  return DIPLOME_COLORS[h % DIPLOME_COLORS.length];
+};
 
 const Dashboard = () => {
   const { user } = useAuth();
@@ -104,6 +120,15 @@ const Dashboard = () => {
   }, [displayYears]);
 
   const anneeDisplay = useMemo(() => `${latestYear - 1}-${latestYear}`, [latestYear]);
+
+  // Année commune affichée pour établissements / élèves / enseignants
+  const dataYears = useMemo(
+    () => [stats.etabYear, stats.elevesYear, stats.enseignantsYear].filter((y): y is number => !!y),
+    [stats.etabYear, stats.elevesYear, stats.enseignantsYear],
+  );
+  const dataYear = dataYears.length ? Math.min(...dataYears) : latestYear;
+  const mixedYears = new Set(dataYears).size > 1;
+  const dataYearLabel = `${dataYear - 1}-${dataYear}`;
 
   // Fetch DRENs and available years on mount
   useEffect(() => {
@@ -207,11 +232,14 @@ const Dashboard = () => {
         const diplomes = diplomesData?.[0] || {};
         const toDiplomeArray = (raw: any[]) => {
           if (!raw || !Array.isArray(raw)) return [];
-          return raw.map((d: any, i: number) => ({
-            name: d.diplome || 'NON RENSEIGNE',
-            value: Number(d.total) || 0,
-            color: DIPLOME_COLORS[i % DIPLOME_COLORS.length],
-          })).filter(d => d.value > 0);
+          return raw
+            .map((d: any) => ({
+              name: d.diplome || 'NON RENSEIGNE',
+              value: Number(d.total) || 0,
+              color: diplomeColor(d.diplome || 'NON RENSEIGNE'),
+            }))
+            .filter((d) => d.value > 0)
+            .sort((a, b) => diplomeRank(a.name) - diplomeRank(b.name) || a.name.localeCompare(b.name));
         };
         setDiplomePrimaire(toDiplomeArray(diplomes.primaire));
         setDiplomeCollege(toDiplomeArray(diplomes.college));
@@ -231,12 +259,21 @@ const Dashboard = () => {
         const valForYear = (row: any, key: string, y: number | null) =>
           y == null ? 0 : Number(row?.[`${key}_${y}`]) || 0;
 
-        const etabYear = pickYear(etab, ["N0", "N1", "N2", "N3"]);
-        const elevesYearN0N1 = pickYear(elevesN0N1, ["N0", "N1"]);
-        const elevesYearN2N3 = pickYear(elevesN2N3, ["N2", "N3"]);
-        // On garde une seule année "élèves" pour l'étiquette (la plus récente des deux)
-        const elevesYear = Math.max(elevesYearN0N1 ?? 0, elevesYearN2N3 ?? 0) || null;
-        const enseignantsYear = pickYear(enseignants, ["N0", "N1", "N2", "N3"]);
+        const hasData = (row: any, keys: string[], y: number) =>
+          keys.reduce((acc, k) => acc + (Number(row?.[`${k}_${y}`]) || 0), 0) > 0;
+        // Année commune : la plus récente où établissements, élèves ET enseignants ont des données
+        const commonYear = yearsDesc.find((y) =>
+          hasData(etab, ["N0", "N1", "N2", "N3"], y) &&
+          hasData(elevesN0N1, ["N0", "N1"], y) &&
+          hasData(elevesN2N3, ["N2", "N3"], y) &&
+          hasData(enseignants, ["N0", "N1", "N2", "N3"], y),
+        ) ?? null;
+
+        const etabYear = commonYear ?? pickYear(etab, ["N0", "N1", "N2", "N3"]);
+        const elevesYearN0N1 = commonYear ?? pickYear(elevesN0N1, ["N0", "N1"]);
+        const elevesYearN2N3 = commonYear ?? pickYear(elevesN2N3, ["N2", "N3"]);
+        const elevesYear = commonYear ?? (Math.max(elevesYearN0N1 ?? 0, elevesYearN2N3 ?? 0) || null);
+        const enseignantsYear = commonYear ?? pickYear(enseignants, ["N0", "N1", "N2", "N3"]);
 
         setStats({
           etablissements: {
@@ -411,9 +448,15 @@ const Dashboard = () => {
         <div className="relative flex items-center justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] opacity-80 mb-1">Tableau de bord national</p>
-            <h1 className="text-2xl font-bold tracking-wide">
-              Données sur les écoles · {anneeDisplay}
-            </h1>
+            <h1 className="text-2xl font-bold tracking-wide">Données sur les écoles</h1>
+            <p className="mt-1 text-sm font-medium opacity-95">
+              Année scolaire : {dataYearLabel}
+              {mixedYears && (
+                <span className="ml-2 text-xs font-normal opacity-80">
+                  (certains indicateurs affichent la dernière année disponible)
+                </span>
+              )}
+            </p>
           </div>
           <div className="hidden sm:flex h-14 w-14 rounded-full bg-white/15 ring-1 ring-white/30 items-center justify-center backdrop-blur-sm">
             <BarChart3 className="h-7 w-7" />
@@ -432,12 +475,6 @@ const Dashboard = () => {
                 <h3 className="text-sm font-semibold text-primary uppercase tracking-wide">
                   Nombre d'établissement
                 </h3>
-                {stats.etabYear && (
-                  <p className="text-[11px] text-muted-foreground -mt-2">
-                    Année {stats.etabYear - 1}-{stats.etabYear}
-                    {stats.etabYear !== latestYear && " (dernière disponible)"}
-                  </p>
-                )}
                 <div className="space-y-1.5 text-sm">
                   <div className="flex gap-3">
                     <span className="text-muted-foreground w-20">Préscolaire:</span>
@@ -473,12 +510,6 @@ const Dashboard = () => {
                 <h3 className="text-sm font-semibold text-secondary uppercase tracking-wide">
                   Nombre d'élèves
                 </h3>
-                {stats.elevesYear && (
-                  <p className="text-[11px] text-muted-foreground -mt-2">
-                    Année {stats.elevesYear - 1}-{stats.elevesYear}
-                    {stats.elevesYear !== latestYear && " (dernière disponible)"}
-                  </p>
-                )}
                 <div className="space-y-1.5 text-sm">
                   <div className="flex gap-3">
                     <span className="text-muted-foreground w-20">Préscolaire:</span>
@@ -514,12 +545,6 @@ const Dashboard = () => {
                 <h3 className="text-sm font-semibold text-destructive uppercase tracking-wide">
                   Nombre d'enseignants en salle
                 </h3>
-                {stats.enseignantsYear && (
-                  <p className="text-[11px] text-muted-foreground -mt-2">
-                    Année {stats.enseignantsYear - 1}-{stats.enseignantsYear}
-                    {stats.enseignantsYear !== latestYear && " (dernière disponible)"}
-                  </p>
-                )}
                 <div className="space-y-1.5 text-sm">
                   <div className="flex gap-3">
                     <span className="text-muted-foreground w-20">Préscolaire:</span>
@@ -553,7 +578,7 @@ const Dashboard = () => {
           <div className="flex items-center gap-3 mb-6">
             <div className="h-8 w-1 rounded-full bg-gradient-to-b from-primary to-secondary" />
             <h2 className="text-lg font-semibold text-foreground">
-              Répartition des diplômes par niveau
+              Répartition des diplômes académiques des enseignants
             </h2>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

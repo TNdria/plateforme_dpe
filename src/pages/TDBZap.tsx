@@ -736,19 +736,7 @@ const TDBZap = () => {
                   </tbody>
                 </table>
 
-                {/* Ressources financières */}
-                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '3px' }} border={1} cellPadding={1} cellSpacing={0}>
-                  <thead>
-                    <tr style={s.gris}><th colSpan={4} style={s.th}>Ressources financières en Ariary</th></tr>
-                  </thead>
-                  <tbody>
-                    <tr><td style={s.td}>Caisse écoles/Subvention/Autres</td>
-                      <td style={{ ...s.td, textAlign: 'right' }}>{fmt(z.caisse?.total_fce || 0)}</td>
-                      <td style={{ ...s.td, textAlign: 'right' }}>{fmt(c.caisse?.total_fce || 0)}</td>
-                      <td style={{ ...s.td, textAlign: 'right' }}>{fmt(d.caisse?.total_fce || 0)}</td>
-                    </tr>
-                  </tbody>
-                </table>
+                
               </td>
             </tr>
           </tbody>

@@ -1,8 +1,10 @@
 /**
- * EfficienceGrid — reproduit la grille 3x3 (faces + moto) du TDB École
+ * EfficienceGrid — reproduit la grille 3x3 (faces + repère Madagascar) du TDB École
  * et l'utilise pour CISCO / ZAP / DREN. Calcule scoreX (ressources) et
- * scoreY (résultats), bin en 3 niveaux, place la moto dans la cellule.
+ * scoreY (résultats), bin en 3 niveaux, place le repère dans la cellule.
  */
+import MadagascarPin from '@/components/score/MadagascarPin';
+
 interface Props {
   entity: any;             // cisco / zap / dren / ecole bag
   niveau?: 'primaire' | 'college' | 'lycee';
@@ -79,7 +81,9 @@ export function EfficienceGrid({ entity, niveau = 'primaire', entityLabel = 'Ent
                     {active && (
                       <>
                         <span style={{ position: 'absolute', top: 4, right: 6, fontSize: 9, fontWeight: 'bold', color: '#2e7d32' }}>{entityLabel}</span>
-                        <span style={{ position: 'absolute', right: 4, bottom: 2, fontSize: 22 }} title="Position actuelle">🏍️</span>
+                        <span style={{ position: 'absolute', right: 4, bottom: 2, lineHeight: 0 }}>
+                          <MadagascarPin size={22} title="Situation actuelle" />
+                        </span>
                       </>
                     )}
                   </td>
@@ -99,9 +103,10 @@ export function EfficienceGrid({ entity, niveau = 'primaire', entityLabel = 'Ent
         </tbody>
       </table>
       <div style={{ marginTop: 8, fontSize: 10, border: '1px solid #888', padding: 6, background: '#fff', lineHeight: 1.45 }}>
-        <div><b>Position :</b> Ressources <i>{niveauX}</i> · Résultats <i>{niveauY}</i> (X={scoreX.toFixed(1)} / Y={scoreY.toFixed(1)})</div>
+        <div>Ressources <i>{niveauX}</i> · Résultats <i>{niveauY}</i> (X={scoreX.toFixed(1)} / Y={scoreY.toFixed(1)})</div>
         <div style={{ marginTop: 4 }}>{reco}</div>
       </div>
+
     </div>
   );
 }
