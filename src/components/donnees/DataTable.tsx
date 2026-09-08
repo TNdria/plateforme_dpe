@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect } from "react";
 import {
   Table,
   TableBody,
@@ -6,16 +6,16 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+} from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   Download,
   Search,
@@ -29,22 +29,22 @@ import {
   FileSpreadsheet,
   FileText,
   Grid3x3,
-} from 'lucide-react';
-import { toast } from 'sonner';
+} from "lucide-react";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import * as XLSX from 'xlsx';
-import { cn } from '@/lib/utils';
+} from "@/components/ui/dialog";
+import * as XLSX from "xlsx";
+import { cn } from "@/lib/utils";
 
 interface Column {
   key: string;
   label: string;
-  align?: 'left' | 'center' | 'right';
+  align?: "left" | "center" | "right";
   width?: number;
   render?: (value: any, row: any) => React.ReactNode;
 }
@@ -53,32 +53,32 @@ const formatColumnLabel = (label: string) => {
   const normalized = label.trim().toUpperCase();
 
   const replacements: Array<[string, string]> = [
-    ['EFF. ', 'Effectifs '],
-    ['EFF ', 'Effectifs '],
-    ['ENS. EN CLASSE', 'Enseignants en classe'],
-    ['TOTAL PERS.', 'Total personnel'],
-    ['TOTAL PERSONNEL', 'Total personnel'],
-    ['FONCTIONNAIRES', 'Fonctionnaires'],
-    ['CONTRACTUELS', 'Contractuels'],
-    ['QUALIFIÉ(E)S', 'Qualifié(e)s'],
-    ['FRAM SUB', 'FRAM subventionné'],
-    ['FRAM NON SUB', 'FRAM non subventionné'],
-    ['SDC BE', 'SDC bon état'],
-    ['SDC ME', 'SDC moyen état'],
-    ['TYPE_SOURCE_EAU', 'Source d’eau'],
-    ['TYPE_SOURCE_ELECTRICITE', 'Source d’électricité'],
-    ['CATEGORIE_COMMUNE', 'Zone'],
-    ['NOM_ETAB', 'Établissement'],
-    ['CODE_ETAB', 'Code établissement'],
-    ['CODE', 'Code'],
-    ['DREN', 'DREN'],
-    ['CISCO', 'CISCO'],
-    ['COMMUNE', 'Commune'],
-    ['ZAP', 'ZAP'],
-    ['FOKONTANY', 'Fokontany'],
-    ['PLACES', 'Places'],
-    ['EAU', 'Eau'],
-    ['ÉLECTRICITÉ', 'Électricité'],
+    ["EFF. ", "Effectifs "],
+    ["EFF ", "Effectifs "],
+    ["ENS. EN CLASSE", "Enseignants en classe"],
+    ["TOTAL PERS.", "Total personnel"],
+    ["TOTAL PERSONNEL", "Total personnel"],
+    ["FONCTIONNAIRES", "Fonctionnaires"],
+    ["CONTRACTUELS", "Contractuels"],
+    ["QUALIFIÉ(E)S", "Qualifié(e)s"],
+    ["FRAM SUB", "FRAM subventionné"],
+    ["FRAM NON SUB", "FRAM non subventionné"],
+    ["SDC BE", "SDC bon état"],
+    ["SDC ME", "SDC moyen état"],
+    ["TYPE_SOURCE_EAU", "Source d’eau"],
+    ["TYPE_SOURCE_ELECTRICITE", "Source d’électricité"],
+    ["CATEGORIE_COMMUNE", "Zone"],
+    ["NOM_ETAB", "Établissement"],
+    ["CODE_ETAB", "Code établissement"],
+    ["CODE", "Code"],
+    ["DREN", "DREN"],
+    ["CISCO", "CISCO"],
+    ["COMMUNE", "Commune"],
+    ["ZAP", "ZAP"],
+    ["FOKONTANY", "Fokontany"],
+    ["PLACES", "Places"],
+    ["EAU", "Eau"],
+    ["ÉLECTRICITÉ", "Électricité"],
   ];
 
   let formatted = normalized;
@@ -86,7 +86,7 @@ const formatColumnLabel = (label: string) => {
     formatted = formatted.replace(from, to);
   });
 
-  return formatted.replace(/\s+/g, ' ').trim();
+  return formatted.replace(/\s+/g, " ").trim();
 };
 
 const getColumnWidth = (col: Column) => {
@@ -96,15 +96,23 @@ const getColumnWidth = (col: Column) => {
 };
 
 const cellClass = (col: Column, isHeader: boolean) => {
-  const base = 'overflow-hidden text-ellipsis whitespace-nowrap';
+  const base = "overflow-hidden text-ellipsis whitespace-nowrap";
   const align =
-    col.align === 'right'
-      ? 'text-right'
-      : col.align === 'center'
-        ? 'text-center'
-        : 'text-left';
+    col.align === "right" ? "text-right" : col.align === "center" ? "text-center" : "text-left";
   return `${base} ${align}`;
 };
+
+// Classes appliquées à la première colonne quand elle est figée pendant le
+// défilement horizontal : sticky à gauche, fond opaque (sinon le texte des
+// autres colonnes transparaît en dessous), léger liséré pour la distinguer
+// du reste du tableau, et un z-index supérieur à celui des autres cellules
+// (le coin haut-gauche doit rester au-dessus de tout le reste).
+const stickyColClass = (isHeader: boolean, headerClassName?: string) =>
+  cn(
+    "sticky left-0",
+    isHeader ? cn("z-30", headerClassName || "bg-muted/95") : "z-10 bg-background",
+    "shadow-[2px_0_4px_-2px_rgba(0,0,0,0.15)]",
+  );
 
 interface DataTableProps {
   data: any[];
@@ -116,24 +124,36 @@ interface DataTableProps {
   pageSizeOptions?: number[];
   hasAppliedFilter?: boolean;
   hasSelectedDren?: boolean;
+  /**
+   * Hauteur maximale de la zone de défilement du tableau (lignes). Doit être
+   * une valeur bornée (px, vh, ...) — sans cela le conteneur grandit avec le
+   * contenu, ne défile jamais lui-même, et l'entête "sticky" essaie alors de
+   * se coller au haut de la fenêtre au lieu du haut du tableau, où elle se
+   * retrouve masquée par l'entête sticky de la page. Défaut : 65vh.
+   */
+  maxHeight?: string | number;
+  /** Fige la première colonne pendant le défilement horizontal. Défaut : true. */
+  stickyFirstColumn?: boolean;
 }
 
 const DataTable = ({
   data,
   columns,
   title,
-  exportFilename = 'export.csv',
+  exportFilename = "export.csv",
   pageSize = 10,
   headerClassName,
   pageSizeOptions = [10, 25, 50, 100],
   hasAppliedFilter = false,
   hasSelectedDren = false,
+  maxHeight = "65vh",
+  stickyFirstColumn = true,
 }: DataTableProps) => {
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(pageSize);
   const [showExportModal, setShowExportModal] = useState(false);
-  const [exportFormat, setExportFormat] = useState<'csv' | 'xlsx'>('xlsx');
+  const [exportFormat, setExportFormat] = useState<"csv" | "xlsx">("xlsx");
   // Affiche/masque les bordures de grille du tableau (lignes + colonnes),
   // utile pour bien distinguer les colonnes lorsqu'elles sont nombreuses.
   const [showGrid, setShowGrid] = useState(false);
@@ -147,7 +167,7 @@ const DataTable = ({
       columns.some((col) => {
         const value = row[col.key];
         return value?.toString().toLowerCase().includes(searchLower);
-      })
+      }),
     );
   }, [data, search, columns]);
 
@@ -157,65 +177,58 @@ const DataTable = ({
   // `table-layout: fixed`, ce qui romprait l'alignement voulu.
   const totalTableWidth = useMemo(
     () => columns.reduce((sum, col) => sum + getColumnWidth(col), 0),
-    [columns]
+    [columns],
   );
 
   const totalPages = Math.ceil(filteredData.length / rowsPerPage);
   const paginatedData = filteredData.slice(
     (currentPage - 1) * rowsPerPage,
-    currentPage * rowsPerPage
+    currentPage * rowsPerPage,
   );
 
-  const buildExportFileName = (format: 'csv' | 'xlsx') => {
-    const base = exportFilename.replace(/\.(csv|xlsx)$/i, '');
+  const buildExportFileName = (format: "csv" | "xlsx") => {
+    const base = exportFilename.replace(/\.(csv|xlsx)$/i, "");
     return `${base}.${format}`;
   };
 
-  const handleExport = (format: 'csv' | 'xlsx') => {
+  const handleExport = (format: "csv" | "xlsx") => {
     if (filteredData.length === 0) {
-      toast.error('Aucune donnée à exporter');
+      toast.error("Aucune donnée à exporter");
       return;
     }
 
     const headers = columns.map((c) => formatColumnLabel(c.label));
 
-    if (format === 'csv') {
+    if (format === "csv") {
       const rows = filteredData.map((row) =>
         columns.map((col) => {
           const value = row[col.key];
-          return typeof value === 'string' && value.includes(',')
-            ? `"${value}"`
-            : (value ?? '');
-        })
+          return typeof value === "string" && value.includes(",") ? `"${value}"` : (value ?? "");
+        }),
       );
 
-      const csv = [headers.join(';'), ...rows.map((r) => r.join(';'))].join(
-        '\n'
-      );
-      const blob = new Blob(['\ufeff' + csv], {
-        type: 'text/csv;charset=utf-8;',
+      const csv = [headers.join(";"), ...rows.map((r) => r.join(";"))].join("\n");
+      const blob = new Blob(["\ufeff" + csv], {
+        type: "text/csv;charset=utf-8;",
       });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
-      a.download = buildExportFileName('csv');
+      a.download = buildExportFileName("csv");
       a.click();
       URL.revokeObjectURL(url);
-      toast.success('Export CSV téléchargé');
+      toast.success("Export CSV téléchargé");
     } else {
       const rows = filteredData.map((row) =>
         Object.fromEntries(
-          columns.map((col) => [
-            formatColumnLabel(col.label),
-            row[col.key] ?? '',
-          ])
-        )
+          columns.map((col) => [formatColumnLabel(col.label), row[col.key] ?? ""]),
+        ),
       );
       const sheet = XLSX.utils.json_to_sheet(rows);
       const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, sheet, 'Données');
-      XLSX.writeFile(workbook, buildExportFileName('xlsx'));
-      toast.success('Export Excel téléchargé');
+      XLSX.utils.book_append_sheet(workbook, sheet, "Données");
+      XLSX.writeFile(workbook, buildExportFileName("xlsx"));
+      toast.success("Export Excel téléchargé");
     }
 
     setShowExportModal(false);
@@ -244,7 +257,7 @@ const DataTable = ({
         </div>
         <div className="flex items-center gap-2">
           <Button
-            variant={showGrid ? 'secondary' : 'outline'}
+            variant={showGrid ? "secondary" : "outline"}
             size="sm"
             onClick={() => setShowGrid((v) => !v)}
             title="Afficher/masquer la grille du tableau"
@@ -257,7 +270,7 @@ const DataTable = ({
             size="sm"
             onClick={() => {
               if (filteredData.length === 0) {
-                toast.error('Aucune donnée à exporter');
+                toast.error("Aucune donnée à exporter");
                 return;
               }
               setShowExportModal(true);
@@ -271,11 +284,8 @@ const DataTable = ({
       </div>
 
       {/* Tableau */}
-      <div className="flex-1 overflow-auto relative">
-        <Table
-          className="table-fixed"
-          style={{ width: totalTableWidth, minWidth: '100%' }}
-        >
+      <div className="flex-1 overflow-auto relative" style={{ maxHeight }}>
+        <Table className="table-fixed" style={{ width: totalTableWidth, minWidth: "100%" }}>
           <colgroup>
             {columns.map((col) => (
               <col key={col.key} style={{ width: getColumnWidth(col) }} />
@@ -283,15 +293,18 @@ const DataTable = ({
           </colgroup>
           <TableHeader
             className={cn(
-              'sticky top-0 z-20 backdrop-blur supports-[backdrop-filter]:bg-muted/80',
-              headerClassName || 'bg-muted/95'
+              "sticky top-0 z-20 backdrop-blur supports-[backdrop-filter]:bg-muted/80",
+              headerClassName || "bg-muted/95",
             )}
           >
-            <TableRow className={showGrid ? 'divide-x' : undefined}>
-              {columns.map((col) => (
+            <TableRow className={showGrid ? "divide-x" : undefined}>
+              {columns.map((col, colIndex) => (
                 <TableHead
                   key={col.key}
-                  className={cellClass(col, true)}
+                  className={cn(
+                    cellClass(col, true),
+                    stickyFirstColumn && colIndex === 0 && stickyColClass(true, headerClassName),
+                  )}
                   title={formatColumnLabel(col.label)}
                 >
                   {formatColumnLabel(col.label)}
@@ -302,20 +315,19 @@ const DataTable = ({
           <TableBody>
             {paginatedData.length > 0 ? (
               paginatedData.map((row, i) => (
-                <TableRow key={i} className={showGrid ? 'divide-x' : undefined}>
-                  {columns.map((col) => {
+                <TableRow key={i} className={showGrid ? "divide-x" : undefined}>
+                  {columns.map((col, colIndex) => {
                     const value = row[col.key];
-                    const display = col.render
-                      ? col.render(value, row)
-                      : (value ?? '-');
+                    const display = col.render ? col.render(value, row) : (value ?? "-");
 
                     return (
                       <TableCell
                         key={col.key}
-                        className={cellClass(col, false)}
-                        title={
-                          typeof display === 'string' ? display : undefined
-                        }
+                        className={cn(
+                          cellClass(col, false),
+                          stickyFirstColumn && colIndex === 0 && stickyColClass(false),
+                        )}
+                        title={typeof display === "string" ? display : undefined}
                       >
                         {display}
                       </TableCell>
@@ -344,15 +356,12 @@ const DataTable = ({
                         </p>
 
                         <p className="text-xs text-muted-foreground mt-1.5 max-w-sm">
-                          Sélectionnez une DREN pour commencer la recherche des
-                          établissements.
+                          Sélectionnez une DREN pour commencer la recherche des établissements.
                         </p>
                       </>
                     ) : !hasAppliedFilter ? (
                       <>
-                        <p className="text-sm font-semibold text-foreground">
-                          Filtres prêts
-                        </p>
+                        <p className="text-sm font-semibold text-foreground">Filtres prêts</p>
 
                         <p className="text-xs text-muted-foreground mt-1.5 max-w-sm">
                           Les critères sont sélectionnés.
@@ -367,8 +376,7 @@ const DataTable = ({
                         </p>
 
                         <p className="text-xs text-muted-foreground mt-1.5 max-w-sm">
-                          Aucun établissement ne correspond aux filtres
-                          appliqués.
+                          Aucun établissement ne correspond aux filtres appliqués.
                           <br />
                           Essayez de modifier vos critères.
                         </p>
@@ -390,9 +398,9 @@ const DataTable = ({
               Exporter les données
             </DialogTitle>
             <DialogDescription>
-              {filteredData.length} ligne{filteredData.length > 1 ? 's' : ''}{' '}
-              prête{filteredData.length > 1 ? 's' : ''} à être exportée
-              {filteredData.length > 1 ? 's' : ''}.
+              {filteredData.length} ligne{filteredData.length > 1 ? "s" : ""} prête
+              {filteredData.length > 1 ? "s" : ""} à être exportée
+              {filteredData.length > 1 ? "s" : ""}.
             </DialogDescription>
           </DialogHeader>
 
@@ -401,16 +409,16 @@ const DataTable = ({
               <p className="text-sm font-medium mb-2">Format du fichier</p>
               <div className="grid grid-cols-2 gap-2">
                 <Button
-                  variant={exportFormat === 'xlsx' ? 'default' : 'outline'}
-                  onClick={() => setExportFormat('xlsx')}
+                  variant={exportFormat === "xlsx" ? "default" : "outline"}
+                  onClick={() => setExportFormat("xlsx")}
                   className="justify-start"
                 >
                   <FileSpreadsheet className="mr-2 h-4 w-4" />
                   Excel (.xlsx)
                 </Button>
                 <Button
-                  variant={exportFormat === 'csv' ? 'default' : 'outline'}
-                  onClick={() => setExportFormat('csv')}
+                  variant={exportFormat === "csv" ? "default" : "outline"}
+                  onClick={() => setExportFormat("csv")}
                   className="justify-start"
                 >
                   <FileText className="mr-2 h-4 w-4" />
@@ -422,8 +430,8 @@ const DataTable = ({
             <div className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
               <p className="font-medium text-foreground">Contenu exporté</p>
               <p className="mt-1">
-                Tableau {title} avec les colonnes visibles et les résultats
-                filtrés par votre recherche.
+                Tableau {title} avec les colonnes visibles et les résultats filtrés par votre
+                recherche.
               </p>
             </div>
           </div>
@@ -444,22 +452,13 @@ const DataTable = ({
       <div className="flex items-center justify-between gap-3 p-3 border-t bg-gradient-to-r from-muted/40 via-card to-muted/40 flex-wrap">
         <div className="flex items-center gap-3 flex-wrap">
           <span className="text-sm text-muted-foreground">
-            Page{' '}
-            <span className="font-semibold text-foreground">{currentPage}</span>{' '}
-            sur{' '}
-            <span className="font-semibold text-foreground">
-              {Math.max(1, totalPages)}
-            </span>
+            Page <span className="font-semibold text-foreground">{currentPage}</span> sur{" "}
+            <span className="font-semibold text-foreground">{Math.max(1, totalPages)}</span>
             <span className="mx-2">·</span>
-            <span className="font-semibold text-foreground">
-              {filteredData.length}
-            </span>{' '}
-            résultats
+            <span className="font-semibold text-foreground">{filteredData.length}</span> résultats
           </span>
           <div className="flex items-center gap-1.5">
-            <span className="text-xs text-muted-foreground hidden sm:inline">
-              Lignes par page
-            </span>
+            <span className="text-xs text-muted-foreground hidden sm:inline">Lignes par page</span>
             <Select
               value={String(rowsPerPage)}
               onValueChange={(v) => {

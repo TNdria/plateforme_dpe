@@ -210,6 +210,13 @@ export interface Zap {
   CISCO?: string;
 }
 
+export interface COMMUNE {
+  CODE_COMMUNE: number;
+  CODE_CISCO?: number;
+  CODE_DREN?: number;
+  COMMUNE: string;
+}
+
 export interface Etablissement {
   CODE_ETAB: number | string;
   NOM_ETAB: string;
@@ -555,7 +562,7 @@ export const donneesApi = {
     codeCisco: number,
     codeZap: number = 0
   ) =>
-    fetchDB<any[]>('getCommunes', {
+    fetchDB<COMMUNE[]>('getCommunes', {
       code_dren: codeDren,
       code_cisco: codeCisco,
       code_zap: codeZap,

@@ -1,21 +1,16 @@
-import { useEffect, useMemo, useState, useCallback } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { Card, CardContent } from '@/components/ui/card';
+import { useEffect, useMemo, useState, useCallback } from "react";
+import { Link, useParams } from "react-router-dom";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+} from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Loader2,
   Filter,
@@ -37,30 +32,30 @@ import {
   Download,
   FileSpreadsheet,
   FileText,
-} from 'lucide-react';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { besoinsApi, type Dren, type Cisco, type Zap } from '@/services/api';
-import { notify } from '@/contexts/NotificationsContext';
-import { toast } from 'sonner';
-import DataTable from '@/components/donnees/DataTable';
-import { useAuth } from '@/contexts/AuthContext';
-import DataActionsBar from '@/components/admin/DataActionsBar';
-import { cn } from '@/lib/utils';
-import logoMen from '@/assets/logoMen.jpg';
-import logoDpe from '@/assets/logoDpe.jpg';
-import { useDonneesFilters } from '@/hooks/useDonneesFilters';
+} from "lucide-react";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { besoinsApi, type Dren, type Cisco, type Zap } from "@/services/api";
+import { notify } from "@/contexts/NotificationsContext";
+import { toast } from "sonner";
+import DataTable from "@/components/donnees/DataTable";
+import { useAuth } from "@/contexts/AuthContext";
+import DataActionsBar from "@/components/admin/DataActionsBar";
+import { cn } from "@/lib/utils";
+import logoMen from "@/assets/logoMen.jpg";
+import logoDpe from "@/assets/logoDpe.jpg";
+import { useDonneesFilters } from "@/hooks/useDonneesFilters";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import * as XLSX from 'xlsx';
+} from "@/components/ui/dialog";
+import * as XLSX from "xlsx";
 
-type Niveau = 'primaire' | 'college' | 'lycee';
-type Categorie = 'salles' | 'enseignants' | 'tb' | 'manuels';
-type ExportFormat = 'csv' | 'xlsx';
+type Niveau = "primaire" | "college" | "lycee";
+type Categorie = "salles" | "enseignants" | "tb" | "manuels";
+type ExportFormat = "csv" | "xlsx";
 
 const NIVEAU_META: Record<
   Niveau,
@@ -75,40 +70,40 @@ const NIVEAU_META: Record<
   }
 > = {
   primaire: {
-    label: 'Primaire',
+    label: "Primaire",
     icon: BookOpen,
-    badgeBg: 'bg-emerald-600',
-    badgeText: 'text-white',
-    activeBg: 'bg-emerald-600',
-    activeText: 'text-white',
-    ring: 'ring-emerald-500/30',
+    badgeBg: "bg-emerald-600",
+    badgeText: "text-white",
+    activeBg: "bg-emerald-600",
+    activeText: "text-white",
+    ring: "ring-emerald-500/30",
   },
   college: {
-    label: 'Collège',
+    label: "Collège",
     icon: School,
-    badgeBg: 'bg-blue-600',
-    badgeText: 'text-white',
-    activeBg: 'bg-blue-600',
-    activeText: 'text-white',
-    ring: 'ring-blue-500/30',
+    badgeBg: "bg-blue-600",
+    badgeText: "text-white",
+    activeBg: "bg-blue-600",
+    activeText: "text-white",
+    ring: "ring-blue-500/30",
   },
   lycee: {
-    label: 'Lycée',
+    label: "Lycée",
     icon: GraduationCap,
-    badgeBg: 'bg-violet-600',
-    badgeText: 'text-white',
-    activeBg: 'bg-violet-600',
-    activeText: 'text-white',
-    ring: 'ring-violet-500/30',
+    badgeBg: "bg-violet-600",
+    badgeText: "text-white",
+    activeBg: "bg-violet-600",
+    activeText: "text-white",
+    ring: "ring-violet-500/30",
   },
 };
 
 const secteurLabel: Record<string, string> = {
-  '2': 'Tous',
-  '0': 'Public',
-  '1': 'Privé',
+  "2": "Tous",
+  "0": "Public",
+  "1": "Privé",
 };
-const getSecteurLabel = (value: string) => secteurLabel[value] ?? 'Tous';
+const getSecteurLabel = (value: string) => secteurLabel[value] ?? "Tous";
 
 // Ratios standards MEN Madagascar (fallback si effectifs détaillés indisponibles)
 const RATIOS: Record<
@@ -129,19 +124,17 @@ const NORME_ELEVE_SDC: Record<Niveau, number> = {
 
 // Détection zone rurale (rural = commune de type rural)
 const isRural = (row: any): boolean => {
-  const cat = String(
-    row?.CATEGORIE_COMMUNE ?? row?.categorie_commune ?? row?.MILIEU ?? ''
-  )
+  const cat = String(row?.CATEGORIE_COMMUNE ?? row?.categorie_commune ?? row?.MILIEU ?? "")
     .toLowerCase()
     .trim();
-  return cat.startsWith('rural') || cat === 'r';
+  return cat.startsWith("rural") || cat === "r";
 };
 
 const pickNumRaw = (row: any, keys: string[]): number | null => {
   if (!row) return null;
   for (const k of keys) {
     const v = row[k] ?? row[k.toLowerCase()] ?? row[k.toUpperCase()];
-    if (v != null && v !== '') {
+    if (v != null && v !== "") {
       const n = Number(v);
       if (Number.isFinite(n)) return n;
     }
@@ -150,23 +143,23 @@ const pickNumRaw = (row: any, keys: string[]): number | null => {
 };
 
 const getGroupePeda = (row: any): number => {
-  const t1 = pickNumRaw(row, ['EFF_T1', 'eff_t1']) || 0;
-  const t2 = pickNumRaw(row, ['EFF_T2', 'eff_t2']) || 0;
-  const t3 = pickNumRaw(row, ['EFF_T3', 'eff_t3']) || 0;
-  const t4 = pickNumRaw(row, ['EFF_T4', 'eff_t4']) || 0;
-  const t5 = pickNumRaw(row, ['EFF_T5', 'eff_t5']) || 0;
+  const t1 = pickNumRaw(row, ["EFF_T1", "eff_t1"]) || 0;
+  const t2 = pickNumRaw(row, ["EFF_T2", "eff_t2"]) || 0;
+  const t3 = pickNumRaw(row, ["EFF_T3", "eff_t3"]) || 0;
+  const t4 = pickNumRaw(row, ["EFF_T4", "eff_t4"]) || 0;
+  const t5 = pickNumRaw(row, ["EFF_T5", "eff_t5"]) || 0;
   return Math.ceil((t1 + t2 + t3) / 50) + Math.ceil((t4 + t5) / 50);
 };
 
 const getNbSection = (row: any): number =>
-  pickNumRaw(row, ['NB_SECTION', 'SECTIONS', 'NB_SECTIONS', 'SECTION']) ?? 0;
+  pickNumRaw(row, ["NB_SECTION", "SECTIONS", "NB_SECTIONS", "SECTION"]) ?? 0;
 
 const computeRequisPrimaire = (row: any, effTotal: number): number => {
-  const t1 = pickNumRaw(row, ['EFF_T1', 'eff_t1']) || 0;
-  const t2 = pickNumRaw(row, ['EFF_T2', 'eff_t2']) || 0;
-  const t3 = pickNumRaw(row, ['EFF_T3', 'eff_t3']) || 0;
-  const t4 = pickNumRaw(row, ['EFF_T4', 'eff_t4']) || 0;
-  const t5 = pickNumRaw(row, ['EFF_T5', 'eff_t5']) || 0;
+  const t1 = pickNumRaw(row, ["EFF_T1", "eff_t1"]) || 0;
+  const t2 = pickNumRaw(row, ["EFF_T2", "eff_t2"]) || 0;
+  const t3 = pickNumRaw(row, ["EFF_T3", "eff_t3"]) || 0;
+  const t4 = pickNumRaw(row, ["EFF_T4", "eff_t4"]) || 0;
+  const t5 = pickNumRaw(row, ["EFF_T5", "eff_t5"]) || 0;
 
   if ([t1, t2, t3, t4, t5].every((v) => v === 0)) {
     return Math.ceil((effTotal || 0) / 50);
@@ -192,9 +185,9 @@ const computeRequisLycee = (row: any): number => {
   if (eff > 0) return Math.ceil(eff / 30); // ratio standard lycée
 
   // Essayer les effectifs par classe si disponibles
-  const eff2nde = pickNumRaw(row, ['EFF_2NDE', 'eff_2nde']) || 0;
-  const eff1re = pickNumRaw(row, ['EFF_1RE', 'eff_1re']) || 0;
-  const effTle = pickNumRaw(row, ['EFF_TLE', 'eff_tle']) || 0;
+  const eff2nde = pickNumRaw(row, ["EFF_2NDE", "eff_2nde"]) || 0;
+  const eff1re = pickNumRaw(row, ["EFF_1RE", "eff_1re"]) || 0;
+  const effTle = pickNumRaw(row, ["EFF_TLE", "eff_tle"]) || 0;
 
   return Math.ceil((eff2nde + eff1re + effTle) / 30);
 };
@@ -210,13 +203,13 @@ type CategorieDef = {
 
 const CATEGORIES: CategorieDef[] = [
   {
-    id: 'salles',
-    label: 'Besoins en salles de classe',
-    shortLabel: 'Salles de classe',
+    id: "salles",
+    label: "Besoins en salles de classe",
+    shortLabel: "Salles de classe",
     icon: Building2,
-    unit: 'salles',
+    unit: "salles",
     computeRequis: (eff: number, niv: Niveau, row?: any) => {
-      if (niv === 'primaire') {
+      if (niv === "primaire") {
         const grp = getGroupePeda(row);
         return isRural(row) ? grp : Math.ceil(grp / 2);
       }
@@ -226,26 +219,26 @@ const CATEGORIES: CategorieDef[] = [
     },
   },
   {
-    id: 'enseignants',
-    label: 'Besoins en enseignants',
-    shortLabel: 'Enseignants',
+    id: "enseignants",
+    label: "Besoins en enseignants",
+    shortLabel: "Enseignants",
     icon: Users,
-    unit: 'enseignants',
+    unit: "enseignants",
     computeRequis: (eff: number, niv: Niveau, row?: any) =>
-      niv === 'primaire'
+      niv === "primaire"
         ? computeRequisPrimaire(row, eff)
-        : niv === 'college'
+        : niv === "college"
           ? computeRequisCollege(row)
           : computeRequisLycee(row),
   },
   {
-    id: 'tb',
-    label: 'Besoins en tables-bancs (places assises)',
-    shortLabel: 'Tables-bancs',
+    id: "tb",
+    label: "Besoins en tables-bancs (places assises)",
+    shortLabel: "Tables-bancs",
     icon: Armchair,
-    unit: 'places',
+    unit: "places",
     computeRequis: (eff: number, niv: Niveau, row?: any) => {
-      if (niv === 'primaire') {
+      if (niv === "primaire") {
         if (isRural(row)) return eff || 0;
         const grp = getGroupePeda(row);
         return Math.ceil(grp / 2) * 50;
@@ -254,23 +247,22 @@ const CATEGORIES: CategorieDef[] = [
     },
   },
   {
-    id: 'manuels',
-    label: 'Besoins en manuels',
-    shortLabel: 'Manuels',
+    id: "manuels",
+    label: "Besoins en manuels",
+    shortLabel: "Manuels",
     icon: Library,
-    unit: 'manuels',
+    unit: "manuels",
     computeRequis: (eff: number, niv: Niveau) => {
-      if (niv === 'primaire') return Math.ceil((eff || 0) / 2);
+      if (niv === "primaire") return Math.ceil((eff || 0) / 2);
       return Math.ceil((eff || 0) * 1.5); // ratio approximatif secondaire
     },
   },
 ];
 
-const getCodeEtab = (row: any): string =>
-  String(row?.CODE_ETAB ?? row?.code_etab ?? '').trim();
+const getCodeEtab = (row: any): string => String(row?.CODE_ETAB ?? row?.code_etab ?? "").trim();
 
 const getEffectifs = (row: any): number =>
-  pickNumRaw(row, ['EFFECTIFS', 'eff_total', 'EFFECTIF', 'EFF_TOTAL']) ?? 0;
+  pickNumRaw(row, ["EFFECTIFS", "eff_total", "EFFECTIF", "EFF_TOTAL"]) ?? 0;
 const dedupeByCodeEtab = (rows: any[]): any[] => {
   const byCode = new Map<string, any>();
   rows.forEach((row) => {
@@ -286,29 +278,27 @@ const dedupeByCodeEtab = (rows: any[]): any[] => {
 
 const computeRow = (row: any, cat: CategorieDef, niveau: Niveau) => {
   const eff = getEffectifs(row);
-  const computedRequis = cat.computeRequis
-    ? cat.computeRequis(eff, niveau, row)
-    : 0;
+  const computedRequis = cat.computeRequis ? cat.computeRequis(eff, niveau, row) : 0;
 
   let existant = 0;
-  let warning = '';
+  let warning = "";
 
   switch (cat.id) {
-    case 'salles':
-      existant = pickNumRaw(row, ['SDC_EXISTANT', 'SDC_BE', 'sdc_be']) ?? 0;
+    case "salles":
+      existant = pickNumRaw(row, ["SDC_EXISTANT", "SDC_BE", "sdc_be"]) ?? 0;
       break;
-    case 'enseignants':
-      existant = pickNumRaw(row, ['ENS_EXISTANT', 'en_classe']) ?? 0;
+    case "enseignants":
+      existant = pickNumRaw(row, ["ENS_EXISTANT", "en_classe"]) ?? 0;
       break;
-    case 'tb':
-      existant = pickNumRaw(row, ['PLACES', 'places_n2', 'places_n3']) ?? 0;
+    case "tb":
+      existant = pickNumRaw(row, ["PLACES", "places_n2", "places_n3"]) ?? 0;
       break;
-    case 'manuels':
-      if (niveau === 'college' || niveau === 'lycee') {
+    case "manuels":
+      if (niveau === "college" || niveau === "lycee") {
         existant = 0;
-        warning = 'Données manuels non disponibles pour le secondaire';
+        warning = "Données manuels non disponibles pour le secondaire";
       } else {
-        existant = pickNumRaw(row, ['MANUEL_EXISTANT', 'manuel_existant']) ?? 0;
+        existant = pickNumRaw(row, ["MANUEL_EXISTANT", "manuel_existant"]) ?? 0;
       }
       break;
   }
@@ -318,20 +308,17 @@ const computeRow = (row: any, cat: CategorieDef, niveau: Niveau) => {
 
   const couverture =
     computedRequis > 0
-      ? Math.max(
-          0,
-          Math.min(100, ((computedRequis - besoin) / computedRequis) * 100)
-        )
+      ? Math.max(0, Math.min(100, ((computedRequis - besoin) / computedRequis) * 100))
       : 100;
 
-  const statut: 'correcte' | 'moderes' | 'critiques' =
+  const statut: "correcte" | "moderes" | "critiques" =
     computedRequis <= 0
-      ? 'correcte'
+      ? "correcte"
       : couverture >= 80
-        ? 'correcte'
+        ? "correcte"
         : couverture >= 50
-          ? 'moderes'
-          : 'critiques';
+          ? "moderes"
+          : "critiques";
 
   return {
     requis: Math.round(computedRequis),
@@ -344,17 +331,14 @@ const computeRow = (row: any, cat: CategorieDef, niveau: Niveau) => {
   };
 };
 
-const formatNumber = (n: number) =>
-  new Intl.NumberFormat('fr-FR').format(Math.round(n || 0));
+const formatNumber = (n: number) => new Intl.NumberFormat("fr-FR").format(Math.round(n || 0));
 
 const besoinsCache = new Map<string, any[]>();
 
 const Besoins = () => {
   const { niveau: niveauParam } = useParams<{ niveau: Niveau }>();
   const niveau: Niveau = (
-    ['primaire', 'college', 'lycee'].includes(niveauParam || '')
-      ? niveauParam
-      : 'primaire'
+    ["primaire", "college", "lycee"].includes(niveauParam || "") ? niveauParam : "primaire"
   ) as Niveau;
   const meta = NIVEAU_META[niveau];
   const NiveauIcon = meta.icon;
@@ -378,21 +362,23 @@ const Besoins = () => {
   const [zaps, setZaps] = useState<Zap[]>([]);
   const [annee, setAnnee] = useState<number>(2025); // Année par défaut
   const selectedSecteur = filters.selectedSecteur;
-  const [codeDren, setCodeDren] = useState<string>(
-    drenLocked ? String(userDren) : '0'
-  );
-  const [codeCisco, setCodeCisco] = useState<string>(
-    ciscoLocked ? String(userCisco) : '0'
-  );
-  const [codeZap, setCodeZap] = useState<string>('0');
+  const [codeDren, setCodeDren] = useState<string>(drenLocked ? String(userDren) : "0");
+  const [codeCisco, setCodeCisco] = useState<string>(ciscoLocked ? String(userCisco) : "0");
+  const [codeZap, setCodeZap] = useState<string>("0");
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingFilters, setLoadingFilters] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
-  const [categorie, setCategorie] = useState<Categorie>('salles');
+  const [categorie, setCategorie] = useState<Categorie>("salles");
   const activeCat = CATEGORIES.find((c) => c.id === categorie)!;
   const [showExportModal, setShowExportModal] = useState(false);
-  const [exportFormat, setExportFormat] = useState<ExportFormat>('xlsx');
+  const [exportFormat, setExportFormat] = useState<ExportFormat>("xlsx");
+  const [isFilterDirty, setIsFilterDirty] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+
+  const markFilterDirty = () => {
+    if (!isResetting) setIsFilterDirty(true);
+  };
 
   const fetchData = useCallback(
     async (
@@ -400,7 +386,7 @@ const Besoins = () => {
       cc: number,
       cz: number,
       an: number = 2025,
-      opts: { silent?: boolean } = {}
+      opts: { silent?: boolean } = {},
     ) => {
       const cacheKey = `${niveau}:${cd}:${cc}:${cz}:${an}`;
 
@@ -414,9 +400,9 @@ const Besoins = () => {
       setLoading(true);
       try {
         let res: any[] = [];
-        if (niveau === 'primaire') {
+        if (niveau === "primaire") {
           res = await besoinsApi.getBesoinsN1(cd, cc, cz, an);
-        } else if (niveau === 'college') {
+        } else if (niveau === "college") {
           res = await besoinsApi.getBesoinsN2(cd, cc, cz, an);
         } else {
           res = await besoinsApi.getBesoinsN3(cd, cc, cz, an);
@@ -433,14 +419,14 @@ const Besoins = () => {
           notify({
             title: `Données chargées avec succès`,
             message: `${formatNumber(deduped.length)} établissements analysés pour l'année ${an - 1}-${an}`,
-            type: 'success',
+            type: "success",
             silent: false, // Change à true si tu veux une notification discrète
           });
         } else if (deduped.length === 0) {
           notify({
-            title: 'Aucune donnée trouvée',
+            title: "Aucune donnée trouvée",
             message: `Aucun établissement trouvé pour les filtres sélectionnés (${an - 1}-${an}).`,
-            type: 'warning',
+            type: "warning",
           });
         }
         // ====================================================
@@ -449,9 +435,9 @@ const Besoins = () => {
       } catch (e) {
         console.error(e);
         notify({
-          title: 'Erreur de chargement',
+          title: "Erreur de chargement",
           message: `Impossible de récupérer les besoins pour ${meta.label}.`,
-          type: 'error',
+          type: "error",
         });
         setData([]);
         return [];
@@ -459,7 +445,7 @@ const Besoins = () => {
         setLoading(false);
       }
     },
-    [niveau, meta.label]
+    [niveau, meta.label],
   );
 
   /* Chargement initial */
@@ -472,7 +458,7 @@ const Besoins = () => {
         if (cancelled) return;
         setDrens(d || []);
       } catch {
-        toast.error('Erreur chargement DREN');
+        toast.error("Erreur chargement DREN");
       }
 
       const initialDren = drenLocked ? userDren : 0;
@@ -480,7 +466,7 @@ const Besoins = () => {
 
       setCodeDren(String(initialDren));
       setCodeCisco(String(initialCisco));
-      setCodeZap('0');
+      setCodeZap("0");
       setZaps([]);
       setAnnee(2025); // Année par défaut
 
@@ -504,35 +490,27 @@ const Besoins = () => {
     };
   }, [niveau, drenLocked, ciscoLocked, userDren, userCisco, fetchData]);
 
-  // Chargement automatique quand l'année change
-  useEffect(() => {
-    if (codeDren !== undefined && codeCisco !== undefined) {
-      fetchData(
-        parseInt(codeDren),
-        parseInt(codeCisco),
-        parseInt(codeZap),
-        annee
-      );
-    }
-  }, [annee, codeDren, codeCisco, codeZap, fetchData]);
+  // Le rechargement des données ne part plus automatiquement à chaque
+  // changement de filtre (DREN/CISCO/ZAP/Année) : cela provoquait un
+  // double appel au montage et rendait le bouton "Appliquer" inopérant.
+  // Le fetch est désormais déclenché explicitement par handleFilter
+  // (clic sur "Appliquer") ou par handleReset — comme dans Donnees.tsx.
 
   // Chargement automatique des ZAP quand DREN et CISCO sont figés (restriction utilisateur)
   useEffect(() => {
-    if (drenLocked && ciscoLocked && codeCisco !== '0') {
+    if (drenLocked && ciscoLocked && codeCisco !== "0") {
       const loadLockedZaps = async () => {
         setLoadingFilters(true);
         try {
           const z = await besoinsApi.getZaps(userDren, userCisco);
           const uniqueZaps = z
             ? Array.from(
-                new Map(
-                  z.map((item: any) => [String(item.CODE_ZAP).trim(), item])
-                ).values()
+                new Map(z.map((item: any) => [String(item.CODE_ZAP).trim(), item])).values(),
               )
             : [];
           setZaps(uniqueZaps);
         } catch (error) {
-          console.error('Erreur ZAP restreint:', error);
+          console.error("Erreur ZAP restreint:", error);
           setZaps([]);
         } finally {
           setLoadingFilters(false);
@@ -547,12 +525,13 @@ const Besoins = () => {
     if (drenLocked) return;
 
     setCodeDren(value);
-    setCodeCisco('0');
-    setCodeZap('0');
+    setCodeCisco("0");
+    setCodeZap("0");
     setCiscos([]);
     setZaps([]);
+    markFilterDirty();
 
-    if (value === '0') return;
+    if (value === "0") return;
 
     setLoadingFilters(true);
 
@@ -564,8 +543,8 @@ const Besoins = () => {
         : [];
       setCiscos(uniqueCiscos);
     } catch (error) {
-      console.error('Erreur CISCO:', error);
-      toast.error('Erreur chargement CISCO');
+      console.error("Erreur CISCO:", error);
+      toast.error("Erreur chargement CISCO");
       setCiscos([]);
     } finally {
       setLoadingFilters(false);
@@ -576,10 +555,11 @@ const Besoins = () => {
     if (ciscoLocked) return;
 
     setCodeCisco(value);
-    setCodeZap('0');
+    setCodeZap("0");
     setZaps([]);
+    markFilterDirty();
 
-    if (value === '0') return;
+    if (value === "0") return;
 
     setLoadingFilters(true);
 
@@ -590,17 +570,13 @@ const Besoins = () => {
       const z = await besoinsApi.getZaps(currentDren, currentCisco);
 
       const uniqueZaps = z
-        ? Array.from(
-            new Map(
-              z.map((item: any) => [String(item.CODE_ZAP).trim(), item])
-            ).values()
-          )
+        ? Array.from(new Map(z.map((item: any) => [String(item.CODE_ZAP).trim(), item])).values())
         : [];
 
       setZaps(uniqueZaps);
     } catch (error: any) {
-      console.error('Erreur ZAP:', error);
-      toast.error('Erreur lors du chargement des ZAP');
+      console.error("Erreur ZAP:", error);
+      toast.error("Erreur lors du chargement des ZAP");
       setZaps([]);
     } finally {
       setLoadingFilters(false);
@@ -608,33 +584,32 @@ const Besoins = () => {
   };
 
   const handleFilter = () => {
-    fetchData(
-      parseInt(codeDren),
-      parseInt(codeCisco),
-      parseInt(codeZap),
-      annee
-    );
+    setIsFilterDirty(false);
+    fetchData(parseInt(codeDren), parseInt(codeCisco), parseInt(codeZap), annee);
   };
 
   const handleReset = () => {
     if (drenLocked) return;
 
-    setCodeDren('0');
-    setCodeCisco('0');
-    setCodeZap('0');
+    setIsResetting(true);
+    setCodeDren("0");
+    setCodeCisco("0");
+    setCodeZap("0");
     setCiscos([]);
     setZaps([]);
 
     // Réinitialisation année à la valeur par défaut
     setAnnee(2025);
+    setIsFilterDirty(false);
 
     fetchData(0, 0, 0, 2025);
+    setTimeout(() => setIsResetting(false), 0);
   };
 
   const enrichedData = useMemo(() => {
     return data.map((row) => {
       const c = computeRow(row, activeCat, niveau);
-      const zone = isRural(row) ? 'Rurale' : 'Urbaine';
+      const zone = isRural(row) ? "Rurale" : "Urbaine";
       return {
         ...row,
         ZONE: zone,
@@ -644,19 +619,18 @@ const Besoins = () => {
         EXCEDENT: c.excedent,
         COUVERTURE: c.couverture,
         STATUT: c.statut,
-        WARNING: c.warning || '',
+        WARNING: c.warning || "",
       };
     });
   }, [data, activeCat, niveau]);
 
   const filteredData = useMemo(() => {
     return enrichedData.filter((row) => {
-      const rowSecteur = String(row.SECTEUR ?? row.secteur ?? '').trim();
+      const rowSecteur = String(row.SECTEUR ?? row.secteur ?? "").trim();
 
-      if (selectedSecteur === '2') return true;
-      if (selectedSecteur === '0')
-        return rowSecteur === '0' || rowSecteur === '';
-      if (selectedSecteur === '1') return rowSecteur === '1';
+      if (selectedSecteur === "2") return true;
+      if (selectedSecteur === "0") return rowSecteur === "0" || rowSecteur === "";
+      if (selectedSecteur === "1") return rowSecteur === "1";
 
       return true;
     });
@@ -681,31 +655,25 @@ const Besoins = () => {
       excedent += row.EXCEDENT;
 
       switch (row.STATUT) {
-        case 'correcte':
+        case "correcte":
           correcte++;
           break;
 
-        case 'moderes':
+        case "moderes":
           moderes++;
           break;
 
-        case 'critiques':
+        case "critiques":
           critiques++;
           break;
       }
     }
 
     const couverture =
-      requis > 0
-        ? Math.max(0, Math.min(100, ((requis - besoins) / requis) * 100))
-        : 0;
+      requis > 0 ? Math.max(0, Math.min(100, ((requis - besoins) / requis) * 100)) : 0;
 
-    const status: 'correcte' | 'moderes' | 'critiques' =
-      couverture >= 80
-        ? 'correcte'
-        : couverture >= 50
-          ? 'moderes'
-          : 'critiques';
+    const status: "correcte" | "moderes" | "critiques" =
+      couverture >= 80 ? "correcte" : couverture >= 50 ? "moderes" : "critiques";
 
     return {
       ecoles,
@@ -726,7 +694,7 @@ const Besoins = () => {
     const map = new Map<string, string>();
     zaps.forEach((z: any) => {
       if (z.CODE_ZAP) {
-        map.set(String(z.CODE_ZAP).trim(), z.ZAP || z.zap || '');
+        map.set(String(z.CODE_ZAP).trim(), z.ZAP || z.zap || "");
       }
     });
     return map;
@@ -736,72 +704,71 @@ const Besoins = () => {
   const columns = useMemo(() => {
     const getStatutColor = (statut: string) => {
       switch (statut?.toLowerCase()) {
-        case 'correcte':
-          return 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800';
-        case 'moderes':
-          return 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800';
-        case 'critiques':
-          return 'bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800';
+        case "correcte":
+          return "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800";
+        case "moderes":
+          return "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800";
+        case "critiques":
+          return "bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-800";
         default:
-          return 'bg-muted text-muted-foreground border-border';
+          return "bg-muted text-muted-foreground border-border";
       }
     };
 
     const getCouvertureColor = (couverture: number) => {
       if (couverture >= 80)
-        return 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300';
+        return "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300";
       if (couverture >= 50)
-        return 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300';
-      return 'bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-300';
+        return "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300";
+      return "bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-950 dark:text-rose-300";
     };
 
     return [
       {
-        key: 'DREN',
-        label: 'DREN',
+        key: "DREN",
+        label: "DREN",
         width: 140,
         sortable: true,
-        align: 'left' as const,
+        align: "left" as const,
       },
       {
-        key: 'CISCO',
-        label: 'CISCO',
+        key: "CISCO",
+        label: "CISCO",
         width: 140,
         sortable: true,
-        align: 'left' as const,
+        align: "left" as const,
       },
       {
-        key: 'ZAP',
-        label: 'ZAP',
+        key: "ZAP",
+        label: "ZAP",
         width: 180,
         sortable: true,
-        align: 'left' as const,
+        align: "left" as const,
         render: (value: any, row: any) => {
-          const zapName =
-            zapMap.get(String(row?.CODE_ZAP || value)) || value || '—';
+          const zapName = zapMap.get(String(row?.CODE_ZAP || value)) || value || "—";
           return <span className="font-medium text-sm">{zapName}</span>;
         },
       },
       {
-        key: 'NOM_ETAB',
-        label: 'Nom Établissement',
+        key: "NOM_ETAB",
+        label: "Nom Établissement",
         width: 260,
         sortable: true,
-        align: 'left' as const,
+        align: "left" as const,
       },
       {
-        key: 'CODE_ETAB',
-        label: 'Code',
+        key: "CODE_ETAB",
+        label: "Code",
         width: 110,
         sortable: true,
-        align: 'left' as const,
+        align: "left" as const,
       },
       {
-        key: 'ZONE',
-        label: 'Zone',
+        key: "ZONE",
+        label: "Zone",
         width: 110,
         sortable: true,
-        align: 'center' as const,
+        align: "center" as const,
         render: (value: string) => (
           <Badge
             variant="outline"
@@ -812,74 +779,68 @@ const Besoins = () => {
         ),
       },
       {
-        key: 'EFFECTIFS',
-        label: 'Effectifs',
+        key: "EFFECTIFS",
+        label: "Effectifs",
         width: 110,
         sortable: true,
-        align: 'center' as const,
+        align: "center" as const,
         render: (v: any) => formatNumber(Number(v) || 0),
       },
       {
-        key: 'REQUIS',
-        label: 'Requis',
+        key: "REQUIS",
+        label: "Requis",
         width: 110,
         sortable: true,
-        align: 'center' as const,
+        align: "center" as const,
         render: (v: any) => formatNumber(Number(v) || 0),
       },
       {
-        key: 'EXISTANT',
-        label: 'Existant',
+        key: "EXISTANT",
+        label: "Existant",
         width: 110,
         sortable: true,
-        align: 'center' as const,
+        align: "center" as const,
         render: (v: any) => formatNumber(Number(v) || 0),
       },
       {
-        key: 'BESOIN',
-        label: 'Besoin',
+        key: "BESOIN",
+        label: "Besoin",
         width: 110,
         sortable: true,
-        align: 'center' as const,
+        align: "center" as const,
         render: (v: any) => formatNumber(Number(v) || 0),
       },
       {
-        key: 'EXCEDENT',
-        label: 'Excédent',
+        key: "EXCEDENT",
+        label: "Excédent",
         width: 110,
         sortable: true,
-        align: 'center' as const,
+        align: "center" as const,
         render: (v: any) => formatNumber(Number(v) || 0),
       },
       {
-        key: 'COUVERTURE',
-        label: 'Couverture',
+        key: "COUVERTURE",
+        label: "Couverture",
         width: 120,
         sortable: true,
-        align: 'center' as const,
+        align: "center" as const,
         render: (value: number) => {
           const cov = Number(value) || 0;
           return (
-            <Badge
-              variant="outline"
-              className={cn('font-semibold', getCouvertureColor(cov))}
-            >
+            <Badge variant="outline" className={cn("font-semibold", getCouvertureColor(cov))}>
               {cov.toFixed(0)}%
             </Badge>
           );
         },
       },
       {
-        key: 'STATUT',
-        label: 'Statut',
+        key: "STATUT",
+        label: "Statut",
         width: 130,
         sortable: true,
-        align: 'center' as const,
+        align: "center" as const,
         render: (value: string) => (
-          <Badge
-            variant="outline"
-            className={cn('font-medium capitalize', getStatutColor(value))}
-          >
+          <Badge variant="outline" className={cn("font-medium capitalize", getStatutColor(value))}>
             {value}
           </Badge>
         ),
@@ -891,15 +852,15 @@ const Besoins = () => {
     const filtered = filteredData;
     const filename = `besoins_${catId}_${niveau}_${getSecteurLabel(selectedSecteur)}_${annee}_${new Date().toISOString().slice(0, 10)}`;
 
-    if (exportFormat === 'xlsx') {
+    if (exportFormat === "xlsx") {
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.json_to_sheet(filtered);
-      XLSX.utils.book_append_sheet(wb, ws, 'Besoins');
+      XLSX.utils.book_append_sheet(wb, ws, "Besoins");
       XLSX.writeFile(wb, `${filename}.xlsx`);
     } else {
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.json_to_sheet(filtered);
-      XLSX.writeFile(wb, `${filename}.csv`, { bookType: 'csv' });
+      XLSX.writeFile(wb, `${filename}.csv`, { bookType: "csv" });
     }
 
     toast.success(`Export ${annee} réussi`);
@@ -933,7 +894,7 @@ const Besoins = () => {
                   Besoins Scolaires — {meta.label}
                 </h1>
                 <p className="text-xs text-muted-foreground">
-                  Ministère de l'Éducation Nationale · Année scolaire{' '}
+                  Ministère de l'Éducation Nationale · Année scolaire{" "}
                   <strong className="text-foreground">
                     {annee - 1}-{annee}
                   </strong>
@@ -951,14 +912,11 @@ const Besoins = () => {
                   </Badge>
                 )}
                 {lastUpdate && (
-                  <Badge
-                    variant="outline"
-                    className="gap-1 text-xs text-muted-foreground"
-                  >
+                  <Badge variant="outline" className="gap-1 text-xs text-muted-foreground">
                     <RefreshCw className="h-3 w-3" />
-                    {lastUpdate.toLocaleTimeString('fr-FR', {
-                      hour: '2-digit',
-                      minute: '2-digit',
+                    {lastUpdate.toLocaleTimeString("fr-FR", {
+                      hour: "2-digit",
+                      minute: "2-digit",
                     })}
                     • {annee - 1}-{annee}
                   </Badge>
@@ -968,11 +926,7 @@ const Besoins = () => {
                   tableLabel={`Besoins ${meta.label}`}
                   onChange={handleFilter}
                 />
-                <Button
-                  onClick={() => setShowExportModal(true)}
-                  size="sm"
-                  variant="outline"
-                >
+                <Button onClick={() => setShowExportModal(true)} size="sm" variant="outline">
                   <Download className="mr-2 h-4 w-4" /> Exporter
                 </Button>
               </div>
@@ -991,12 +945,12 @@ const Besoins = () => {
                         key={n}
                         to={`/besoins/${n}`}
                         className={cn(
-                          'inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide transition-colors',
+                          "inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide transition-colors",
                           active
-                            ? cn(m.activeBg, m.activeText, 'shadow-inner')
-                            : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'
+                            ? cn(m.activeBg, m.activeText, "shadow-inner")
+                            : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground",
                         )}
-                        aria-current={active ? 'page' : undefined}
+                        aria-current={active ? "page" : undefined}
                       >
                         <Icon className="h-3 w-3" /> {m.label}
                       </Link>
@@ -1013,29 +967,28 @@ const Besoins = () => {
                   color="bg-emerald-500"
                   label="Couverture correcte"
                   count={stats.correcte}
-                  active={stats.status === 'correcte'}
+                  active={stats.status === "correcte"}
                 />
                 <LegendChip
                   color="bg-amber-500"
                   label="Besoins modérés"
                   count={stats.moderes}
-                  active={stats.status === 'moderes'}
+                  active={stats.status === "moderes"}
                 />
                 <LegendChip
                   color="bg-rose-500"
                   label="Besoins critiques"
                   count={stats.critiques}
-                  active={stats.status === 'critiques'}
+                  active={stats.status === "critiques"}
                 />
                 <Tooltip>
                   <TooltipTrigger>
                     <Info className="h-3.5 w-3.5 text-muted-foreground" />
                   </TooltipTrigger>
                   <TooltipContent className="max-w-[280px] text-xs">
-                    Répartition des établissements selon leur taux de couverture
-                    : ≥ 80 % correcte · 50–80 % modérés · &lt; 50 % critiques.
-                    L'élément mis en avant correspond à la situation globale du
-                    périmètre filtré.
+                    Répartition des établissements selon leur taux de couverture : ≥ 80 % correcte ·
+                    50–80 % modérés · &lt; 50 % critiques. L'élément mis en avant correspond à la
+                    situation globale du périmètre filtré.
                   </TooltipContent>
                 </Tooltip>
               </div>
@@ -1046,7 +999,7 @@ const Besoins = () => {
         {/* Filters bar */}
         <Card
           className="border-border/60 shadow-sm animate-fade-in overflow-hidden"
-          style={{ animationDelay: '60ms' }}
+          style={{ animationDelay: "60ms" }}
         >
           <div className="flex items-center gap-2 px-5 py-2.5 border-b bg-muted/30">
             <Filter className="h-4 w-4 text-primary" />
@@ -1060,14 +1013,13 @@ const Besoins = () => {
                 className="text-[10px] font-normal border-green-500 text-green-600 bg-green-50 dark:bg-green-950 dark:text-green-400 px-3 py-1"
               >
                 Année {annee - 1}-{annee}
-                {(codeDren !== '0' || codeCisco !== '0' || codeZap !== '0') && (
+                {(codeDren !== "0" || codeCisco !== "0" || codeZap !== "0") && (
                   <>
-                    {' • '}
-                    {codeDren !== '0' &&
-                      drens.find((d) => String(d.CODE_DREN) === codeDren)?.DREN}
-                    {codeCisco !== '0' &&
+                    {" • "}
+                    {codeDren !== "0" && drens.find((d) => String(d.CODE_DREN) === codeDren)?.DREN}
+                    {codeCisco !== "0" &&
                       `, ${ciscos.find((c) => String(c.CODE_CISCO) === codeCisco)?.CISCO}`}
-                    {codeZap !== '0' &&
+                    {codeZap !== "0" &&
                       `, ${zaps.find((z) => String(z.CODE_ZAP) === codeZap)?.ZAP}`}
                     {`, ${getSecteurLabel(selectedSecteur)}`}
                   </>
@@ -1079,11 +1031,7 @@ const Besoins = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
               {/* DREN */}
               <FilterField label="DREN" locked={drenLocked}>
-                <Select
-                  value={codeDren}
-                  onValueChange={handleDrenChange}
-                  disabled={drenLocked}
-                >
+                <Select value={codeDren} onValueChange={handleDrenChange} disabled={drenLocked}>
                   <SelectTrigger className="bg-background h-10">
                     <SelectValue placeholder="Toutes DREN" />
                   </SelectTrigger>
@@ -1103,7 +1051,7 @@ const Besoins = () => {
                 <Select
                   value={codeCisco}
                   onValueChange={handleCiscoChange}
-                  disabled={ciscoLocked || codeDren === '0' || loadingFilters}
+                  disabled={ciscoLocked || codeDren === "0" || loadingFilters}
                 >
                   <SelectTrigger className="bg-background h-10">
                     <SelectValue placeholder="Toutes CISCO" />
@@ -1111,10 +1059,7 @@ const Besoins = () => {
                   <SelectContent side="bottom" position="popper">
                     <SelectItem value="0">Toutes CISCO</SelectItem>
                     {ciscos.map((c) => (
-                      <SelectItem
-                        key={c.CODE_CISCO}
-                        value={String(c.CODE_CISCO)}
-                      >
+                      <SelectItem key={c.CODE_CISCO} value={String(c.CODE_CISCO)}>
                         {c.CISCO}
                       </SelectItem>
                     ))}
@@ -1126,8 +1071,11 @@ const Besoins = () => {
               <FilterField label="ZAP">
                 <Select
                   value={codeZap}
-                  onValueChange={setCodeZap}
-                  disabled={codeCisco === '0' || loadingFilters}
+                  onValueChange={(v) => {
+                    setCodeZap(v);
+                    markFilterDirty();
+                  }}
+                  disabled={codeCisco === "0" || loadingFilters}
                 >
                   <SelectTrigger className="bg-background h-10">
                     <SelectValue placeholder="Toutes ZAP" />
@@ -1166,7 +1114,10 @@ const Besoins = () => {
               <FilterField label="Année Scolaire">
                 <Select
                   value={String(annee)}
-                  onValueChange={(v) => setAnnee(parseInt(v))}
+                  onValueChange={(v) => {
+                    setAnnee(parseInt(v));
+                    markFilterDirty();
+                  }}
                 >
                   <SelectTrigger className="bg-background h-10">
                     <SelectValue />
@@ -1182,18 +1133,25 @@ const Besoins = () => {
 
               {/* Boutons Action */}
               <div className="flex items-end gap-2 lg:col-span-1">
-                <Button
-                  onClick={handleFilter}
-                  disabled={loading}
-                  className="flex-1 h-10 shadow-sm"
-                >
-                  {loading ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Filter className="h-4 w-4 mr-2" />
+                <div className="flex-1 flex flex-col gap-1">
+                  <Button
+                    onClick={handleFilter}
+                    disabled={loading}
+                    className="w-full h-10 shadow-sm"
+                  >
+                    {loading ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Filter className="h-4 w-4 mr-2" />
+                    )}
+                    Appliquer
+                  </Button>
+                  {isFilterDirty && !loading && (
+                    <p className="text-[10px] text-amber-600 dark:text-amber-400 text-center font-medium">
+                      Filtres modifiés — cliquez sur Appliquer
+                    </p>
                   )}
-                  Appliquer
-                </Button>
+                </div>
                 <Button
                   variant="outline"
                   size="icon"
@@ -1213,7 +1171,7 @@ const Besoins = () => {
           value={categorie}
           onValueChange={(v) => setCategorie(v as Categorie)}
           className="animate-fade-in"
-          style={{ animationDelay: '90ms' }}
+          style={{ animationDelay: "90ms" }}
         >
           <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 h-auto p-1 bg-muted/50">
             {CATEGORIES.map((c) => {
@@ -1226,9 +1184,7 @@ const Besoins = () => {
                 >
                   <Icon className="h-4 w-4" />
                   <span className="hidden sm:inline">{c.shortLabel}</span>
-                  <span className="sm:hidden">
-                    {c.shortLabel.split(' ')[0]}
-                  </span>
+                  <span className="sm:hidden">{c.shortLabel.split(" ")[0]}</span>
                 </TabsTrigger>
               );
             })}
@@ -1238,7 +1194,7 @@ const Besoins = () => {
         {/* KPI cards (catégorie active) */}
         <div
           className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 animate-fade-in"
-          style={{ animationDelay: '120ms' }}
+          style={{ animationDelay: "120ms" }}
         >
           <StatCard
             icon={CheckCircle2}
@@ -1267,9 +1223,7 @@ const Besoins = () => {
             label="Besoin"
             value={formatNumber(stats.besoins)}
             hint={`${activeCat.unit} manquants`}
-            progress={
-              stats.requis > 0 ? (stats.besoins / stats.requis) * 100 : 0
-            }
+            progress={stats.requis > 0 ? (stats.besoins / stats.requis) * 100 : 0}
           />
           <StatCard
             icon={TrendingUp}
@@ -1284,7 +1238,7 @@ const Besoins = () => {
         {/* Table card */}
         <Card
           className="border-border/60 shadow-sm overflow-hidden animate-fade-in"
-          style={{ animationDelay: '180ms' }}
+          style={{ animationDelay: "180ms" }}
         >
           <div className="flex items-center justify-between gap-3 px-5 py-3 border-b bg-muted/30">
             <div className="flex items-center gap-2">
@@ -1295,7 +1249,7 @@ const Besoins = () => {
               {filteredData.length > 0 && (
                 <Badge variant="secondary" className="font-normal">
                   {formatNumber(filteredData.length)} ligne
-                  {filteredData.length > 1 ? 's' : ''}
+                  {filteredData.length > 1 ? "s" : ""}
                 </Badge>
               )}
             </div>
@@ -1306,41 +1260,33 @@ const Besoins = () => {
 
           <CardContent className="p-0">
             {/* Warning pour Manuels en Collège / Lycée */}
-            {activeCat.id === 'manuels' &&
-              (niveau === 'college' || niveau === 'lycee') && (
-                <div className="mx-5 mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-sm flex items-start gap-3">
-                  <AlertTriangle className="h-5 w-5 mt-0.5 flex-shrink-0 text-amber-600" />
-                  <div>
-                    <p className="font-medium">
-                      Données des manuels existants non disponibles
-                    </p>
-                    <p className="text-amber-700 mt-1 text-sm">
-                      Le calcul du besoin est effectué selon les normes MEN,
-                      mais les données d'existant ne sont pas encore intégrées
-                      pour le Collège et le Lycée.
-                    </p>
-                  </div>
+            {activeCat.id === "manuels" && (niveau === "college" || niveau === "lycee") && (
+              <div className="mx-5 mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-sm flex items-start gap-3">
+                <AlertTriangle className="h-5 w-5 mt-0.5 flex-shrink-0 text-amber-600" />
+                <div>
+                  <p className="font-medium">Données des manuels existants non disponibles</p>
+                  <p className="text-amber-700 mt-1 text-sm">
+                    Le calcul du besoin est effectué selon les normes MEN, mais les données
+                    d'existant ne sont pas encore intégrées pour le Collège et le Lycée.
+                  </p>
                 </div>
-              )}
+              </div>
+            )}
 
             {loading ? (
               <div className="flex flex-col items-center justify-center py-24 gap-3">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                <p className="text-sm text-muted-foreground">
-                  Chargement des données…
-                </p>
+                <p className="text-sm text-muted-foreground">Chargement des données…</p>
               </div>
             ) : filteredData.length === 0 ? (
               <div className="text-center py-24 px-6">
                 <div className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-muted mb-4">
                   <Filter className="h-6 w-6 text-muted-foreground" />
                 </div>
-                <p className="text-sm font-semibold text-foreground">
-                  Aucune donnée à afficher
-                </p>
+                <p className="text-sm font-semibold text-foreground">Aucune donnée à afficher</p>
                 <p className="text-xs text-muted-foreground mt-1.5 max-w-sm mx-auto">
-                  Ajustez les filtres géographiques ci-dessus puis cliquez sur «
-                  Appliquer » pour charger les besoins.
+                  Ajustez les filtres géographiques ci-dessus puis cliquez sur « Appliquer » pour
+                  charger les besoins.
                 </p>
               </div>
             ) : (
@@ -1351,6 +1297,8 @@ const Besoins = () => {
                   title={`${activeCat.label} — ${meta.label}`}
                   exportFilename={`besoins_${categorie}_${niveau}.csv`}
                   pageSize={10}
+                  maxHeight="65vh"
+                  stickyFirstColumn
                 />
               </div>
             )}
@@ -1367,21 +1315,16 @@ const Besoins = () => {
               <div className="flex items-start gap-3 p-4 rounded-lg border border-emerald-500/30 bg-emerald-500/5">
                 <div className="mt-1 h-3 w-3 rounded-full bg-emerald-500 flex-shrink-0" />
                 <div>
-                  <p className="font-medium text-emerald-700">
-                    Correcte — ≥ 80%
-                  </p>
+                  <p className="font-medium text-emerald-700">Correcte — ≥ 80%</p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    L'établissement dispose de la quasi-totalité des ressources
-                    nécessaires.
+                    L'établissement dispose de la quasi-totalité des ressources nécessaires.
                   </p>
                 </div>
               </div>
               <div className="flex items-start gap-3 p-4 rounded-lg border border-amber-500/30 bg-amber-500/5">
                 <div className="mt-1 h-3 w-3 rounded-full bg-amber-500 flex-shrink-0" />
                 <div>
-                  <p className="font-medium text-amber-700">
-                    Modéré — 50% à 79%
-                  </p>
+                  <p className="font-medium text-amber-700">Modéré — 50% à 79%</p>
                   <p className="text-xs text-muted-foreground mt-1">
                     Déficit significatif, attention particulière recommandée.
                   </p>
@@ -1390,9 +1333,7 @@ const Besoins = () => {
               <div className="flex items-start gap-3 p-4 rounded-lg border border-rose-500/30 bg-rose-500/5">
                 <div className="mt-1 h-3 w-3 rounded-full bg-rose-500 flex-shrink-0" />
                 <div>
-                  <p className="font-medium text-rose-700">
-                    Critique — &lt; 50%
-                  </p>
+                  <p className="font-medium text-rose-700">Critique — &lt; 50%</p>
                   <p className="text-xs text-muted-foreground mt-1">
                     Manque important de ressources.
                   </p>
@@ -1400,8 +1341,8 @@ const Besoins = () => {
               </div>
             </div>
             <p className="text-xs text-muted-foreground mt-4">
-              Taux de couverture = (Requis − Besoin) / Requis × 100. Calculé
-              pour chaque catégorie selon les normes MEN/DPE.
+              Taux de couverture = (Requis − Besoin) / Requis × 100. Calculé pour chaque catégorie
+              selon les normes MEN/DPE.
             </p>
           </CardContent>
         </Card>
@@ -1425,25 +1366,22 @@ const Besoins = () => {
               {/* Recap Géographique */}
               <div className="text-left sm:text-right text-[11px] leading-tight text-muted-foreground">
                 <div>
-                  <strong>DREN :</strong>{' '}
-                  {codeDren !== '0'
-                    ? drens.find((d) => String(d.CODE_DREN) === codeDren)
-                        ?.DREN || 'Toutes'
-                    : 'Toutes'}
+                  <strong>DREN :</strong>{" "}
+                  {codeDren !== "0"
+                    ? drens.find((d) => String(d.CODE_DREN) === codeDren)?.DREN || "Toutes"
+                    : "Toutes"}
                 </div>
                 <div>
-                  <strong>CISCO :</strong>{' '}
-                  {codeCisco !== '0'
-                    ? ciscos.find((c) => String(c.CODE_CISCO) === codeCisco)
-                        ?.CISCO || 'Toutes'
-                    : 'Toutes'}
+                  <strong>CISCO :</strong>{" "}
+                  {codeCisco !== "0"
+                    ? ciscos.find((c) => String(c.CODE_CISCO) === codeCisco)?.CISCO || "Toutes"
+                    : "Toutes"}
                 </div>
                 <div>
-                  <strong>ZAP :</strong>{' '}
-                  {codeZap !== '0'
-                    ? zaps.find((z) => String(z.CODE_ZAP) === codeZap)?.ZAP ||
-                      'Toutes'
-                    : 'Toutes'}
+                  <strong>ZAP :</strong>{" "}
+                  {codeZap !== "0"
+                    ? zaps.find((z) => String(z.CODE_ZAP) === codeZap)?.ZAP || "Toutes"
+                    : "Toutes"}
                 </div>
                 <div>
                   <strong>Secteur :</strong> {getSecteurLabel(selectedSecteur)}
@@ -1463,16 +1401,16 @@ const Besoins = () => {
               </label>
               <div className="flex gap-2">
                 <Button
-                  variant={exportFormat === 'xlsx' ? 'default' : 'outline'}
-                  onClick={() => setExportFormat('xlsx')}
+                  variant={exportFormat === "xlsx" ? "default" : "outline"}
+                  onClick={() => setExportFormat("xlsx")}
                   className="flex-1 h-9 text-xs font-medium"
                 >
                   <FileSpreadsheet className="mr-2 h-4 w-4" />
                   Excel (.xlsx)
                 </Button>
                 <Button
-                  variant={exportFormat === 'csv' ? 'default' : 'outline'}
-                  onClick={() => setExportFormat('csv')}
+                  variant={exportFormat === "csv" ? "default" : "outline"}
+                  onClick={() => setExportFormat("csv")}
                   className="flex-1 h-9 text-xs font-medium"
                 >
                   <FileText className="mr-2 h-4 w-4" />
@@ -1503,8 +1441,7 @@ const Besoins = () => {
                           {cat.label}
                         </div>
                         <div className="text-sm text-muted-foreground">
-                          {formatNumber(stats.ecoles)} établissements •{' '}
-                          {cat.unit}
+                          {formatNumber(stats.ecoles)} établissements • {cat.unit}
                         </div>
                       </div>
                       <Button
@@ -1547,29 +1484,22 @@ const LegendChip = ({
 }) => (
   <span
     className={cn(
-      'inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 transition-colors',
+      "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 transition-colors",
       active
-        ? 'border-foreground/20 bg-muted text-foreground font-medium shadow-sm'
-        : 'border-transparent text-muted-foreground'
+        ? "border-foreground/20 bg-muted text-foreground font-medium shadow-sm"
+        : "border-transparent text-muted-foreground",
     )}
-    title={`${count} établissement${count > 1 ? 's' : ''}`}
+    title={`${count} établissement${count > 1 ? "s" : ""}`}
   >
-    <span
-      className={cn(
-        'inline-block h-2.5 w-2.5 rounded-full ring-1 ring-border',
-        color
-      )}
-    />
+    <span className={cn("inline-block h-2.5 w-2.5 rounded-full ring-1 ring-border", color)} />
     {label}
     <span
       className={cn(
-        'tabular-nums text-[10px] rounded px-1 ml-0.5',
-        active
-          ? 'bg-background text-foreground'
-          : 'bg-muted/60 text-muted-foreground'
+        "tabular-nums text-[10px] rounded px-1 ml-0.5",
+        active ? "bg-background text-foreground" : "bg-muted/60 text-muted-foreground",
       )}
     >
-      {new Intl.NumberFormat('fr-FR').format(count)}
+      {new Intl.NumberFormat("fr-FR").format(count)}
     </span>
   </span>
 );
@@ -1592,7 +1522,7 @@ const FilterField = ({
   </div>
 );
 
-type Accent = 'success' | 'primary' | 'warning' | 'info';
+type Accent = "success" | "primary" | "warning" | "info";
 
 const StatCard = ({
   icon: Icon,
@@ -1609,33 +1539,30 @@ const StatCard = ({
   hint?: string;
   progress?: number;
 }) => {
-  const styles: Record<
-    Accent,
-    { ring: string; iconBg: string; iconColor: string; bar: string }
-  > = {
+  const styles: Record<Accent, { ring: string; iconBg: string; iconColor: string; bar: string }> = {
     success: {
-      ring: 'ring-emerald-500/30 border-emerald-500/20',
-      iconBg: 'bg-emerald-500/10',
-      iconColor: 'text-emerald-600 dark:text-emerald-400',
-      bar: 'bg-emerald-500',
+      ring: "ring-emerald-500/30 border-emerald-500/20",
+      iconBg: "bg-emerald-500/10",
+      iconColor: "text-emerald-600 dark:text-emerald-400",
+      bar: "bg-emerald-500",
     },
     primary: {
-      ring: 'ring-primary/30 border-primary/20',
-      iconBg: 'bg-primary/10',
-      iconColor: 'text-primary',
-      bar: 'bg-primary',
+      ring: "ring-primary/30 border-primary/20",
+      iconBg: "bg-primary/10",
+      iconColor: "text-primary",
+      bar: "bg-primary",
     },
     warning: {
-      ring: 'ring-amber-500/30 border-amber-500/20',
-      iconBg: 'bg-amber-500/10',
-      iconColor: 'text-amber-600 dark:text-amber-400',
-      bar: 'bg-amber-500',
+      ring: "ring-amber-500/30 border-amber-500/20",
+      iconBg: "bg-amber-500/10",
+      iconColor: "text-amber-600 dark:text-amber-400",
+      bar: "bg-amber-500",
     },
     info: {
-      ring: 'ring-blue-500/30 border-blue-500/20',
-      iconBg: 'bg-blue-500/10',
-      iconColor: 'text-blue-600 dark:text-blue-400',
-      bar: 'bg-blue-500',
+      ring: "ring-blue-500/30 border-blue-500/20",
+      iconBg: "bg-blue-500/10",
+      iconColor: "text-blue-600 dark:text-blue-400",
+      bar: "bg-blue-500",
     },
   };
 
@@ -1644,8 +1571,8 @@ const StatCard = ({
   return (
     <Card
       className={cn(
-        'group relative overflow-hidden shadow-sm hover:shadow-md transition-all h-full flex flex-col border-2',
-        s.ring
+        "group relative overflow-hidden shadow-sm hover:shadow-md transition-all h-full flex flex-col border-2",
+        s.ring,
       )}
     >
       {/* Header */}
@@ -1660,11 +1587,11 @@ const StatCard = ({
         <div className="h-14 flex items-center justify-center">
           <div
             className={cn(
-              'w-12 h-12 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110',
-              s.iconBg
+              "w-12 h-12 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110",
+              s.iconBg,
             )}
           >
-            <Icon className={cn('w-6 h-6', s.iconColor)} />
+            <Icon className={cn("w-6 h-6", s.iconColor)} />
           </div>
         </div>
 
@@ -1679,19 +1606,14 @@ const StatCard = ({
       <div className="px-4 pt-3 pb-4 border-t border-border/30 text-center">
         <div className="min-h-[36px] flex items-center justify-center">
           {hint && (
-            <p className="text-xs text-muted-foreground text-center leading-relaxed">
-              {hint}
-            </p>
+            <p className="text-xs text-muted-foreground text-center leading-relaxed">{hint}</p>
           )}
         </div>
 
-        {typeof progress === 'number' && (
+        {typeof progress === "number" && (
           <div className="mt-3 h-1 w-full bg-muted rounded-full overflow-hidden">
             <div
-              className={cn(
-                'h-full rounded-full transition-all duration-700',
-                s.bar
-              )}
+              className={cn("h-full rounded-full transition-all duration-700", s.bar)}
               style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
             />
           </div>
