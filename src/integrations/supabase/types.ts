@@ -32,6 +32,36 @@ export type Database = {
         }
         Relationships: []
       }
+      password_reset_requests: {
+        Row: {
+          created_at: string
+          id: string
+          message: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          status: string
+          username: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          message?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+          username: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          message?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+          username?: string
+        }
+        Relationships: []
+      }
       tdb_cisco: {
         Row: {
           CISCO: string | null

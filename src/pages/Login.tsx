@@ -19,6 +19,47 @@ const Login = () => {
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotUsername, setForgotUsername] = useState("");
+  const [forgotMessage, setForgotMessage] = useState("");
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotSent, setForgotSent] = useState(false);
+
+  const handleForgotSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotUsername.trim()) return;
+    setForgotLoading(true);
+    try {
+      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+      const supabaseUrl = projectId ? `https://${projectId}.supabase.co` : import.meta.env.VITE_SUPABASE_URL;
+      const res = await fetch(`${supabaseUrl}/functions/v1/db-query?action=requestPasswordReset`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({ username: forgotUsername.trim(), message: forgotMessage.trim() }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (result.success) {
+        setForgotSent(true);
+      } else {
+        toast.error(result.error || "Erreur lors de l'envoi de la demande");
+      }
+    } catch {
+      toast.error("Impossible d'envoyer la demande. Vérifiez votre connexion.");
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const closeForgot = (open: boolean) => {
+    setForgotOpen(open);
+    if (!open) {
+      setForgotSent(false);
+      setForgotUsername("");
+      setForgotMessage("");
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -160,17 +201,59 @@ const Login = () => {
                 </div>
               </form>
 
-              <Dialog open={forgotOpen} onOpenChange={setForgotOpen}>
+              <Dialog open={forgotOpen} onOpenChange={closeForgot}>
                 <DialogContent className="sm:max-w-md">
                   <DialogHeader>
                     <DialogTitle>Mot de passe oublié</DialogTitle>
-                    <DialogDescription className="pt-2 text-base text-foreground">
-                      Veuillez contacter l'administrateur.
+                    <DialogDescription>
+                      Envoyez une demande de réinitialisation à l'administrateur.
                     </DialogDescription>
                   </DialogHeader>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setForgotOpen(false)}>Fermer</Button>
-                  </DialogFooter>
+                  {forgotSent ? (
+                    <div className="space-y-4">
+                      <div className="p-4 rounded-xl bg-secondary/10 border border-secondary/20">
+                        <p className="text-sm font-medium text-foreground">
+                          Votre demande a été transmise à l'administrateur.
+                        </p>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Vous recevrez un mot de passe temporaire après validation de votre demande.
+                        </p>
+                      </div>
+                      <DialogFooter>
+                        <Button variant="outline" onClick={() => closeForgot(false)}>Fermer</Button>
+                      </DialogFooter>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleForgotSubmit} className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="forgot-username">Nom d'utilisateur</Label>
+                        <Input
+                          id="forgot-username"
+                          placeholder="Votre identifiant de connexion"
+                          value={forgotUsername}
+                          onChange={(e) => setForgotUsername(e.target.value)}
+                          required
+                          autoComplete="username"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="forgot-message">Message (optionnel)</Label>
+                        <Input
+                          id="forgot-message"
+                          placeholder="Précision pour l'administrateur"
+                          value={forgotMessage}
+                          onChange={(e) => setForgotMessage(e.target.value)}
+                          maxLength={500}
+                        />
+                      </div>
+                      <DialogFooter>
+                        <Button type="button" variant="outline" onClick={() => closeForgot(false)}>Annuler</Button>
+                        <Button type="submit" disabled={forgotLoading || !forgotUsername.trim()}>
+                          {forgotLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Envoyer la demande"}
+                        </Button>
+                      </DialogFooter>
+                    </form>
+                  )}
                 </DialogContent>
               </Dialog>
 

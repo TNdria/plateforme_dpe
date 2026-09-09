@@ -3,13 +3,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
-import { FileText, Target, ShieldCheck, Activity, Sparkles, Building2 } from 'lucide-react';
+import { FileText, Target, ShieldCheck, Activity, Sparkles, Building2, Sigma } from 'lucide-react';
 import { dashboardApi, Dren, Cisco } from '@/services/api';
 import { supabase } from '@/integrations/supabase/client';
 import { useDiagnosticDataset } from '@/hooks/useDiagnosticDataset';
 import DiagnosticFilters from '@/components/diagnostic/DiagnosticFilters';
 import DiagnosticTextView from '@/components/diagnostic/DiagnosticTextView';
 import { exportDiagnosticToPDF, exportDiagnosticToDocx } from '@/utils/diagnosticExport';
+import FormulesIndicateurs from '@/components/diagnostic/FormulesIndicateurs';
 import DataActionsBar from '@/components/admin/DataActionsBar';
 import logoMen from '@/assets/logoMen.jpg';
 import logoDpe from '@/assets/logoDpe.jpg';
@@ -223,6 +224,7 @@ const Diagnostic = () => {
                 { v: 'efficacite', i: <Activity className="h-3.5 w-3.5" />, l: 'II. Efficacité interne' },
                 { v: 'qualite', i: <ShieldCheck className="h-3.5 w-3.5" />, l: 'III. Qualité' },
                 { v: 'diagnostic', i: <Sparkles className="h-3.5 w-3.5" />, l: 'Document IA' },
+                { v: 'formules', i: <Sigma className="h-3.5 w-3.5" />, l: 'Formules' },
               ].map((t) => (
                 <TabsTrigger
                   key={t.v}
@@ -364,6 +366,10 @@ const Diagnostic = () => {
 
           <TabsContent value="diagnostic" className="flex-1 overflow-hidden m-0">
             <DiagnosticTextView diagnostic={diagnosticResult} generating={generating} />
+          </TabsContent>
+
+          <TabsContent value="formules" className="flex-1 overflow-hidden m-0">
+            <FormulesIndicateurs />
           </TabsContent>
         </Tabs>
       </div>

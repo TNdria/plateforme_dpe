@@ -37,6 +37,20 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
+async function ensureResetRequestsTable(client: any): Promise<void> {
+  await client.queryObject(`
+    CREATE TABLE IF NOT EXISTS public.password_reset_requests (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      username TEXT NOT NULL,
+      message TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      resolved_by TEXT,
+      resolved_at TIMESTAMPTZ
+    )
+  `);
+}
+
 function serializeData(data: any): any {
   if (data === null || data === undefined) return data;
   if (typeof data === 'bigint') return Number(data);
@@ -1312,6 +1326,85 @@ serve(async (req: Request) => {
         await client.queryObject(`DELETE FROM login_customuser WHERE id = ${parseInt(userId)}`);
         await client.end();
         return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      // ============ Public: Request password reset ============
+      case "requestPasswordReset": {
+        const body = await req.json();
+        const { username: ru, message: rm } = body;
+        const cleanUsername = (ru || '').trim();
+        const cleanMessage = (rm || '').toString().substring(0, 500);
+        if (!cleanUsername) {
+          await client.end();
+          return new Response(JSON.stringify({ success: false, error: "Nom d'utilisateur requis" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        await ensureResetRequestsTable(client);
+        const uCheck = await client.queryObject(`SELECT id, is_active FROM login_customuser WHERE username = '${cleanUsername.replace(/'/g, "''")}'`);
+        // Do not reveal whether the account exists — always return success
+        if (uCheck.rows.length > 0 && (uCheck.rows[0] as any).is_active) {
+          const pendingCheck = await client.queryObject(`SELECT id FROM public.password_reset_requests WHERE username = '${cleanUsername.replace(/'/g, "''")}' AND status = 'pending'`);
+          if (pendingCheck.rows.length === 0) {
+            await client.queryObject(`INSERT INTO public.password_reset_requests (username, message) VALUES ('${cleanUsername.replace(/'/g, "''")}', '${cleanMessage.replace(/'/g, "''")}')`);
+          }
+        }
+        await client.end();
+        return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      // ============ Admin: List password reset requests ============
+      case "listPasswordResetRequests": {
+        const body = await req.json();
+        const { adminUsername } = body;
+        const adminCheckR = await client.queryObject(`SELECT is_superuser FROM login_customuser WHERE username = '${(adminUsername||'').replace(/'/g, "''")}'`);
+        if (adminCheckR.rows.length === 0 || !(adminCheckR.rows[0] as any).is_superuser) {
+          await client.end();
+          return new Response(JSON.stringify({ success: false, error: "Accès refusé" }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 403 });
+        }
+        await ensureResetRequestsTable(client);
+        const reqs = await client.queryObject(`SELECT id, username, message, status, created_at, resolved_by, resolved_at FROM public.password_reset_requests ORDER BY CASE WHEN status = 'pending' THEN 0 ELSE 1 END, created_at DESC LIMIT 100`);
+        await client.end();
+        return new Response(JSON.stringify({ success: true, requests: serializeData(reqs.rows) }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      // ============ Admin: Resolve password reset request ============
+      case "resolvePasswordReset": {
+        const body = await req.json();
+        const { adminUsername, requestId, action: resolveAction } = body;
+        const adminCheckRes = await client.queryObject(`SELECT is_superuser FROM login_customuser WHERE username = '${(adminUsername||'').replace(/'/g, "''")}'`);
+        if (adminCheckRes.rows.length === 0 || !(adminCheckRes.rows[0] as any).is_superuser) {
+          await client.end();
+          return new Response(JSON.stringify({ success: false, error: "Accès refusé" }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 403 });
+        }
+        await ensureResetRequestsTable(client);
+        const reqRow = await client.queryObject(`SELECT id, username, status FROM public.password_reset_requests WHERE id = '${(requestId||'').replace(/'/g, "''")}'`);
+        if (reqRow.rows.length === 0) {
+          await client.end();
+          return new Response(JSON.stringify({ success: false, error: "Demande introuvable" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        const reqData = reqRow.rows[0] as any;
+        if (reqData.status !== 'pending') {
+          await client.end();
+          return new Response(JSON.stringify({ success: false, error: "Cette demande a déjà été traitée" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        if (resolveAction === 'reject') {
+          await client.queryObject(`UPDATE public.password_reset_requests SET status = 'rejected', resolved_by = '${(adminUsername||'').replace(/'/g, "''")}', resolved_at = NOW() WHERE id = '${reqData.id}'`);
+          await client.end();
+          return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        // Approve: generate a temporary password and set it on the account
+        const charset = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+        const randBytes = new Uint8Array(10);
+        crypto.getRandomValues(randBytes);
+        const tempPassword = Array.from(randBytes).map(b => charset[b % charset.length]).join('');
+        const saltR = crypto.randomUUID().replace(/-/g, '').substring(0, 22);
+        const encR = new TextEncoder();
+        const keyMatR = await crypto.subtle.importKey('raw', encR.encode(tempPassword), 'PBKDF2', false, ['deriveBits']);
+        const bitsR = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: encR.encode(saltR), iterations: 600000, hash: 'SHA-256' }, keyMatR, 256);
+        const hashR = `pbkdf2_sha256$600000$${saltR}$${btoa(String.fromCharCode(...new Uint8Array(bitsR)))}`;
+        await client.queryObject(`UPDATE login_customuser SET password = '${hashR}' WHERE username = '${reqData.username.replace(/'/g, "''")}'`);
+        await client.queryObject(`UPDATE public.password_reset_requests SET status = 'resolved', resolved_by = '${(adminUsername||'').replace(/'/g, "''")}', resolved_at = NOW() WHERE id = '${reqData.id}'`);
+        await client.end();
+        return new Response(JSON.stringify({ success: true, username: reqData.username, tempPassword }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
       // ============ Admin: Import data (insert rows into a table) ============

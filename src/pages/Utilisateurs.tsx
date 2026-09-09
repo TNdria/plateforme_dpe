@@ -79,6 +79,43 @@ const Utilisateurs = () => {
 
   useEffect(() => { loadUsers(); }, [loadUsers]);
 
+  // Password reset requests
+  interface ResetRequest { id: string; username: string; message: string | null; status: string; created_at: string; resolved_by: string | null; resolved_at: string | null; }
+  const [resetRequests, setResetRequests] = useState<ResetRequest[]>([]);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [tempPasswordInfo, setTempPasswordInfo] = useState<{ username: string; tempPassword: string } | null>(null);
+
+  const loadResetRequests = useCallback(async () => {
+    if (!isAdmin) return;
+    setResetLoading(true);
+    try {
+      const res = await adminFetch('listPasswordResetRequests', { adminUsername: user?.username });
+      if (res.success) setResetRequests(res.requests);
+    } catch { /* silent */ }
+    setResetLoading(false);
+  }, [isAdmin, user?.username]);
+
+  useEffect(() => { loadResetRequests(); }, [loadResetRequests]);
+
+  const pendingResetCount = resetRequests.filter(r => r.status === 'pending').length;
+
+  const handleResolveReset = async (id: string, action: 'approve' | 'reject') => {
+    try {
+      const res = await adminFetch('resolvePasswordReset', { adminUsername: user?.username, requestId: id, action });
+      if (res.success) {
+        if (action === 'approve') {
+          setTempPasswordInfo({ username: res.username, tempPassword: res.tempPassword });
+          toast.success(`Mot de passe réinitialisé pour ${res.username}`);
+        } else {
+          toast.success('Demande rejetée');
+        }
+        loadResetRequests();
+      } else {
+        toast.error(res.error || 'Erreur');
+      }
+    } catch { toast.error('Erreur de connexion'); }
+  };
+
   const handleCreate = async () => {
     if (!formData.username || formData.username.length < 3) { toast.error('Identifiant requis (min 3 car.)'); return; }
     if (!formData.password || formData.password.length < 4) { toast.error('Mot de passe requis (min 4 car.)'); return; }
@@ -278,6 +315,10 @@ const Utilisateurs = () => {
           <TabsList>
             <TabsTrigger value="users" className="gap-2"><Users className="w-4 h-4" />Utilisateurs ({users.length})</TabsTrigger>
             <TabsTrigger value="import" className="gap-2"><FileSpreadsheet className="w-4 h-4" />Import CSV / Excel</TabsTrigger>
+            <TabsTrigger value="resets" className="gap-2">
+              <RefreshCw className="w-4 h-4" />Réinitialisations
+              {pendingResetCount > 0 && <Badge variant="destructive" className="text-xs px-1.5">{pendingResetCount}</Badge>}
+            </TabsTrigger>
           </TabsList>
 
           {/* ============ Users Tab ============ */}
@@ -433,6 +474,62 @@ const Utilisateurs = () => {
               </CardContent>
             </Card>
           </TabsContent>
+
+          <TabsContent value="resets" className="space-y-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="text-lg">Demandes de réinitialisation de mot de passe</CardTitle>
+                <Button variant="outline" size="sm" onClick={loadResetRequests} disabled={resetLoading}>
+                  <RefreshCw className={`w-4 h-4 mr-2 ${resetLoading ? 'animate-spin' : ''}`} />Actualiser
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {resetRequests.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">Aucune demande de réinitialisation.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Utilisateur</TableHead>
+                          <TableHead>Message</TableHead>
+                          <TableHead>Date</TableHead>
+                          <TableHead>Statut</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {resetRequests.map((r) => (
+                          <TableRow key={r.id}>
+                            <TableCell className="font-medium">{r.username}</TableCell>
+                            <TableCell className="text-sm text-muted-foreground max-w-[250px] truncate">{r.message || '—'}</TableCell>
+                            <TableCell className="text-sm">{new Date(r.created_at).toLocaleString('fr-FR')}</TableCell>
+                            <TableCell>
+                              {r.status === 'pending' ? (
+                                <Badge variant="secondary" className="text-xs">En attente</Badge>
+                              ) : r.status === 'resolved' ? (
+                                <Badge className="text-xs">Traitée{r.resolved_by ? ` par ${r.resolved_by}` : ''}</Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-xs">Rejetée</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {r.status === 'pending' && (
+                                <div className="flex justify-end gap-2">
+                                  <Button size="sm" onClick={() => handleResolveReset(r.id, 'approve')}>Réinitialiser</Button>
+                                  <Button size="sm" variant="outline" onClick={() => handleResolveReset(r.id, 'reject')}>Rejeter</Button>
+                                </div>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
       </div>
 
@@ -511,6 +608,30 @@ const Utilisateurs = () => {
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDelete(null)}>Annuler</Button>
             <Button variant="destructive" onClick={handleDelete}><Trash2 className="w-4 h-4 mr-1" />Supprimer</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ============ Temp Password Dialog ============ */}
+      <Dialog open={!!tempPasswordInfo} onOpenChange={() => setTempPasswordInfo(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Mot de passe temporaire généré</DialogTitle>
+            <DialogDescription>
+              Communiquez ce mot de passe à <strong>{tempPasswordInfo?.username}</strong>. Il devra le changer après connexion depuis son profil.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="p-4 rounded-xl bg-muted border border-border text-center">
+            <code className="text-xl font-mono font-bold tracking-widest select-all">{tempPasswordInfo?.tempPassword}</code>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => { if (tempPasswordInfo) { navigator.clipboard?.writeText(tempPasswordInfo.tempPassword); toast.success('Copié'); } }}
+            >
+              Copier
+            </Button>
+            <Button onClick={() => setTempPasswordInfo(null)}>Fermer</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
