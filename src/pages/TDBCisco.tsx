@@ -7,7 +7,6 @@ import { PDFViewer } from '@/components/pdf/PDFViewer';
 import { dashboardApi, tdbApi, Dren, Cisco } from '@/services/api';
 import { printTdb } from '@/utils/printTdb';
 import { GenderLabel } from '@/components/score/GenderRow';
-import { ScoreY, computeScoreY } from '@/components/score/ScoreY';
 import { TDBShell } from '@/components/tdb/TDBShell';
 import { TDBImportDialog } from '@/components/tdb/TDBImportDialog';
 import { DisparityIcon } from '@/components/score/DisparityIcon';
@@ -264,19 +263,6 @@ const TDBCisco = () => {
                     CISCO : <b>{tdbData.names.CISCO}</b> &nbsp;&nbsp;
                     Code : <b>{selectedCisco}</b>
                   </span>
-                  {(() => {
-                    const red_ensemble = pctVal(Number(c.ressources?.red_g||0)+Number(c.ressources?.red_f||0), c.ressources?.nbr_eleve);
-                    const txRetentionTotal = pctVal(c.ressources?.eff_t5, c.ressources?.eff_t1);
-                    const TPA = Number(c.ressources?.tpa ?? c.indicateurs?.TPA ?? 0);
-                    const tx_admis = pctVal(Number(c.cepe?.admis_g||0)+Number(c.cepe?.admis_f||0), Number(c.cepe?.nbr_g||0)+Number(c.cepe?.nbr_f||0));
-                    const y = computeScoreY({ red_ensemble, txRetentionTotal, TPA, tx_admis });
-                    return (
-                      <div style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 10px', background: '#f5f7fa', border: '1px solid #ccd', borderRadius: 6 }}>
-                        <span style={{ fontSize: 11, color: '#555' }}>Score Y :</span>
-                        <ScoreY value={y} showLabel showIcon={false} />
-                      </div>
-                    );
-                  })()}
                 </td>
                 <td style={{ width: '15%', verticalAlign: 'top', textAlign: 'center' }}>
                   <img src="/img/logoDpe.jpg" width="80" height="80" alt="DPE" style={{ maxWidth: '80px', borderRadius: 4 }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
@@ -731,30 +717,18 @@ const TDBCisco = () => {
             </BarChart>
           </ResponsiveContainer>
         </div>
-        {/* Ligne 2: Efficience — scatter (55%) + grille de positionnement (45%) */}
-        <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
-          <div style={{ border: '1px solid #000', padding: 10, width: '55%' }}>
-            <h4 style={{ textAlign: 'center', fontSize: 12, fontWeight: 'bold', marginBottom: 8 }}>Efficience — votre CISCO (en rouge) comparée à sa DREN et à MADA</h4>
-            <ResponsiveContainer width="100%" height={320}>
-              <ScatterChart margin={{ top: 10, right: 40, left: 10, bottom: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" dataKey="x" name="Ressources" domain={[0, 100]} label={{ value: 'Ressources (%)', position: 'insideBottom', offset: -10, fontSize: 10 }} tick={{ fontSize: 9 }} />
-                <YAxis type="number" dataKey="y" name="Résultats" domain={[0, 100]} label={{ value: 'Résultats (%)', angle: -90, position: 'insideLeft', fontSize: 10 }} tick={{ fontSize: 9 }} />
-                <Tooltip cursor={{ strokeDasharray: '3 3' }} formatter={(v:any,n:string)=>[`${v}%`,n]} />
-                <ReferenceLine x={50} stroke="#999" strokeDasharray="3 3" />
-                <ReferenceLine y={50} stroke="#999" strokeDasharray="3 3" />
-                <Scatter data={efficienceData}>
-                  {efficienceData.map((entry:any,i:number)=>(<Cell key={i} fill={entry.isCurrent?'#e74c3c':'#337ab7'} />))}
-                  <LabelList dataKey="name" position="right" style={{ fontSize: 8 }} />
-                </Scatter>
-              </ScatterChart>
-            </ResponsiveContainer>
-          </div>
-          <div style={{ border: '1px solid #000', padding: 10, width: '45%' }}>
-            <h4 style={{ textAlign: 'center', fontSize: 12, fontWeight: 'bold', marginBottom: 8 }}>Positionnement ressources / résultats</h4>
-            <EfficienceGrid entity={c} niveau="primaire" entityLabel="CISCO" />
-          </div>
+        {/* Ligne 2: Efficience — bloc unique (pictogrammes + points de comparaison) */}
+        <div style={{ border: '1px solid #000', padding: 10 }}>
+          <h4 style={{ textAlign: 'center', fontSize: 12, fontWeight: 'bold', marginBottom: 8 }}>Efficience — positionnement ressources / résultats de votre CISCO</h4>
+          <EfficienceGrid
+            entity={c}
+            niveau="primaire"
+            entityLabel="CISCO"
+            points={efficienceData}
+            pointsTitle="CISCO comparée à sa DREN et à MADA"
+          />
         </div>
+
 
           </div>
           </div>

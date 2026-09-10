@@ -981,6 +981,36 @@ const Donnees = () => {
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
+            {/* Période à télécharger — le fichier ne contient que cette période */}
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 block">
+                Période à télécharger
+              </label>
+              <Select
+                value={selectedAnnee}
+                onValueChange={(value) => {
+                  setSelectedAnnee(value);
+                  markFilterDirty();
+                }}
+              >
+                <SelectTrigger className="h-9 w-full text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[...ANNEES].reverse().map((a) => (
+                    <SelectItem key={a} value={a}>
+                      Année scolaire {Number(a) - 1}-{a}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="mt-1.5 text-[11px] text-muted-foreground">
+                {isFilterDirty
+                  ? "Période modifiée : cliquez sur Appliquer pour recharger les données avant le téléchargement."
+                  : `Le fichier contiendra uniquement l'année scolaire ${Number(selectedAnnee) - 1}-${selectedAnnee}.`}
+              </p>
+            </div>
+
             <div>
               <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 block">
                 Format du fichier

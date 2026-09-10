@@ -8,7 +8,6 @@ import { printTdb } from '@/utils/printTdb';
 import { PDFViewer } from '@/components/pdf/PDFViewer';
 import { GenderLabel } from '@/components/score/GenderRow';
 import DisparityIcon from '@/components/score/DisparityIcon';
-import { ScoreY, computeScoreY } from '@/components/score/ScoreY';
 import { TDBShell } from '@/components/tdb/TDBShell';
 import { TDBImportDialog } from '@/components/tdb/TDBImportDialog';
 import { EfficienceGrid } from '@/components/tdb/EfficienceGrid';
@@ -218,19 +217,6 @@ const TDBDren = () => {
               <b style={{ fontSize: '14px' }}>Ministère de l'Éducation Nationale</b><br />
               <b style={{ fontSize: '13px' }}>TABLEAU DE BORD DE LA DREN : {anneeDisplay}</b><br />
               <span style={{ fontSize: '12px' }}>DREN : <b>{tdbData.names.DREN}</b> &nbsp;&nbsp; Code : <b>{selectedDren}</b></span>
-              {(() => {
-                const red_ensemble = pctVal(Number(d.ressources?.red_g||0)+Number(d.ressources?.red_f||0), d.ressources?.nbr_eleve);
-                const txRetentionTotal = pctVal(d.ressources?.eff_t5, d.ressources?.eff_t1);
-                const TPA = Number(d.ressources?.tpa ?? d.indicateurs?.TPA ?? 0);
-                const tx_admis = pctVal(Number(d.cepe?.admis_g||0)+Number(d.cepe?.admis_f||0), Number(d.cepe?.nbr_g||0)+Number(d.cepe?.nbr_f||0));
-                const y = computeScoreY({ red_ensemble, txRetentionTotal, TPA, tx_admis });
-                return (
-                  <div style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 10px', background: '#f5f7fa', border: '1px solid #ccd', borderRadius: 6 }}>
-                    <span style={{ fontSize: 11, color: '#555' }}>Score Y :</span>
-                    <ScoreY value={y} showLabel showIcon={false} />
-                  </div>
-                );
-              })()}
             </td>
             <td style={{ width: '15%', verticalAlign: 'top', textAlign: 'center' }}>
               <img src="/img/logoDpe.jpg" width="80" height="80" alt="DPE" style={{ maxWidth: '80px', borderRadius: 4 }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
@@ -634,26 +620,17 @@ const TDBDren = () => {
                 <td style={{ width: '55%', verticalAlign: 'top', paddingRight: 4 }}>
                   <div style={{ border: '1px solid #000', padding: '8px' }}>
                     <h4 style={{ textAlign: 'center', fontSize: '11px', fontWeight: 'bold', marginBottom: '6px' }}>{efficienceTitre}</h4>
-                    <ResponsiveContainer width="100%" height={300}>
-                      <ScatterChart margin={{ top: 10, right: 30, left: 10, bottom: 20 }}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis type="number" dataKey="x" name="Ressources" domain={[0, 100]} label={{ value: 'Ressources (%)', position: 'insideBottom', offset: -10, fontSize: 10 }} tick={{ fontSize: 10 }} />
-                        <YAxis type="number" dataKey="y" name="Résultats" domain={[0, 100]} label={{ value: 'Résultats (%)', angle: -90, position: 'insideLeft', fontSize: 10 }} tick={{ fontSize: 10 }} />
-                        <Tooltip cursor={{ strokeDasharray: '3 3' }} formatter={(value: any, name: string) => [`${value}%`, name]} />
-                        <ReferenceLine x={50} stroke="#999" strokeDasharray="3 3" />
-                        <ReferenceLine y={50} stroke="#999" strokeDasharray="3 3" />
-                        <Scatter data={efficienceData}>
-                          {efficienceData.map((entry: any, index: number) => (<Cell key={index} fill={entry.isCurrent ? '#d9534f' : '#337ab7'} />))}
-                          <LabelList dataKey="name" position="right" style={{ fontSize: 9 }} />
-                        </Scatter>
-                      </ScatterChart>
-                    </ResponsiveContainer>
+                    <EfficienceGrid
+                      entity={d}
+                      niveau="primaire"
+                      entityLabel="DREN"
+                      points={efficienceData}
+                      pointsTitle="Comparaison des entités"
+                    />
                   </div>
+
                 </td>
                 <td style={{ width: '45%', verticalAlign: 'top', paddingLeft: 4 }}>
-                  <div style={{ border: '1px solid #000', padding: '8px', marginBottom: 6 }}>
-                    <EfficienceGrid entity={d} niveau="primaire" entityLabel="DREN" />
-                  </div>
                   <div style={{ border: '1px solid #000' }}>
                     <div style={{ ...st.gris, padding: '4px 6px', fontSize: 11 }}>Conclusion</div>
                     <div style={{ padding: '6px 8px', fontSize: 10, lineHeight: 1.55 }}>

@@ -164,14 +164,14 @@ const BaseLayerWatcher = ({ onChange }: { onChange: (name: string) => void }) =>
 };
 
 // ─── Icônes établissements (même FA que SIG) ─────────────────────────────────
-// SIG : n0/n1 = fa-book-open, n2 = fa-school, n3 = fa-building
+// Convention unique : tous les établissements = fa-school (bâtiment), la couleur distingue le niveau
 // Couleur = code couleur thématique (blanc / vert / rouge)
 
 const NIVEAU_FA: Record<Niveau, string> = {
-  prescolaire: "fas fa-book-open",
-  primaire: "fas fa-book-open",
+  prescolaire: "fas fa-school",
+  primaire: "fas fa-school",
   college: "fas fa-school",
-  lycee: "fas fa-building",
+  lycee: "fas fa-school",
 };
 
 /** Directions de placement du libellé autour du marker (évite le chevauchement) */

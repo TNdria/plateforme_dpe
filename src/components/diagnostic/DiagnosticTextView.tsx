@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { FileText, Loader2 } from 'lucide-react';
+import { FileText, Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import DiagnosticMarkdownRenderer from './DiagnosticMarkdownRenderer';
 
@@ -12,9 +13,33 @@ interface DiagnosticTextViewProps {
     generatedAt: string;
   } | null;
   generating: boolean;
+  /** Message d'erreur si la génération a échoué */
+  error?: string | null;
+  /** Relancer la génération */
+  onRetry?: () => void;
 }
 
-const DiagnosticTextView = ({ diagnostic, generating }: DiagnosticTextViewProps) => {
+const DiagnosticTextView = ({ diagnostic, generating, error, onRetry }: DiagnosticTextViewProps) => {
+  if (!generating && error && !diagnostic) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="max-w-md px-4 text-center">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-destructive/10">
+            <AlertTriangle className="h-7 w-7 text-destructive" />
+          </div>
+          <p className="font-medium text-foreground">La génération n'a pas abouti</p>
+          <p className="mt-2 text-sm text-muted-foreground">{error}</p>
+          {onRetry && (
+            <Button variant="outline" size="sm" className="mt-4 gap-2" onClick={onRetry}>
+              <RefreshCw className="h-4 w-4" />
+              Relancer la génération
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   if (generating) {
     return (
       <div className="h-full flex items-center justify-center">

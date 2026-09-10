@@ -242,9 +242,9 @@ function getLegendItems(niveau: OrsNiveau, categoryFilter: string): LegendItem[]
       {
         color: ORS_COLORS.eligible,
         label: "Village éligible — Nouvelle Création",
-        iconClass: "fas fa-home",
+        iconClass: "fas fa-circle",
       },
-      { color: ORS_COLORS.nonEligible, label: "Village non éligible", iconClass: "fas fa-home" },
+      { color: ORS_COLORS.nonEligible, label: "Village non éligible", iconClass: "fas fa-circle" },
     );
     items.push(
       { color: ORS_COLORS.limiteDren, label: "Limite DREN", iconClass: "fa fa-square" },
@@ -262,12 +262,12 @@ function getLegendItems(niveau: OrsNiveau, categoryFilter: string): LegendItem[]
         {
           color: ORS_COLORS.eligible,
           label: `Éligible — ${critereLabel}`,
-          iconClass: "fas fa-book-open",
+          iconClass: "fas fa-school",
         },
         {
           color: ORS_COLORS.nonEligible,
           label: `Non éligible — ${critereLabel}`,
-          iconClass: "fas fa-book-open",
+          iconClass: "fas fa-school",
         },
       );
     } else {
@@ -275,25 +275,25 @@ function getLegendItems(niveau: OrsNiveau, categoryFilter: string): LegendItem[]
         {
           color: ORS_COLORS.default,
           label: "École Primaire Publique",
-          iconClass: "fas fa-book-open",
+          iconClass: "fas fa-school",
         },
-        { color: ORS_COLORS.prive, label: "École Primaire Privée", iconClass: "fas fa-book-open" },
+        { color: ORS_COLORS.prive, label: "École Primaire Privée", iconClass: "fas fa-school" },
         {
           color: ORS_COLORS.villageHorsZone,
           label: "Village hors zone (hors aire de recrutement)",
-          iconClass: "fas fa-home",
+          iconClass: "fas fa-circle",
         },
         {
           color: ORS_COLORS.villageCouvert,
           label: "Village couvert (dans l'aire de recrutement)",
-          iconClass: "fas fa-home",
+          iconClass: "fas fa-circle",
         },
       );
     }
   } else {
     const isCollege = niveau === "college";
-    const mainIcon = isCollege ? "fas fa-school" : "fas fa-building";
-    const secondaryIcon = isCollege ? "fas fa-book-open" : "fas fa-school";
+    const mainIcon = isCollege ? "fas fa-school" : "fas fa-school";
+    const secondaryIcon = isCollege ? "fas fa-school" : "fas fa-school";
     const mainLabel = isCollege ? "CEG public" : "Lycée public";
     const secondaryLabel = isCollege ? "EPP dans zone CEG" : "Collège existant";
     const exclusionLabel = isCollege
@@ -328,12 +328,12 @@ function getLegendItems(niveau: OrsNiveau, categoryFilter: string): LegendItem[]
         {
           color: ORS_COLORS.villageHorsZone,
           label: "Village hors zone (hors aire de recrutement)",
-          iconClass: "fas fa-home",
+          iconClass: "fas fa-circle",
         },
         {
           color: ORS_COLORS.villageCouvert,
           label: "Village couvert (dans l'aire de recrutement)",
-          iconClass: "fas fa-home",
+          iconClass: "fas fa-circle",
         },
       );
     }

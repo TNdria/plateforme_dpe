@@ -175,19 +175,19 @@ const NIVEAU_CONFIG: Record<
   string,
   { fa: string; label: string; aireColor: string; rayon: number }
 > = {
-  n0: { fa: "fas fa-book-open", label: "PRESCO", aireColor: "green", rayon: 2 },
+  n0: { fa: "fas fa-school", label: "PRESCO", aireColor: "green", rayon: 2 },
   n1: {
-    fa: "fas fa-book-open",
+    fa: "fas fa-school",
     label: "PRIMAIRE",
     aireColor: "green",
     rayon: 2,
   },
   n2: { fa: "fas fa-school", label: "COLLEGE", aireColor: "blue", rayon: 5 },
-  n3: { fa: "fas fa-building", label: "LYCEE", aireColor: "yellow", rayon: 20 },
+  n3: { fa: "fas fa-school", label: "LYCEE", aireColor: "yellow", rayon: 20 },
 };
 
 const VILLAGE_CONFIG = {
-  fa: "fas fa-home",
+  fa: "fas fa-circle",
   label: "Village",
   aireColor: "#a35b08",
   rayon: 5,

@@ -1,9 +1,9 @@
 /**
  * Ouvre une fenêtre d'impression contenant le HTML exact du TDB.
- * - Format A3 PORTRAIT (297 × 420 mm), tenant sur UNE SEULE page
+ * - Format A4 PORTRAIT (210 × 297 mm), tenant sur UNE SEULE page
  * - Texte 100 % sélectionnable, SVG Recharts vectoriels (pas d'aplatissement)
  * - Aucun effet d'« aperçu papier » (pas d'ombre, pas de bordure de feuille)
- * - Le contenu est mis à l'échelle pour tenir intégralement dans la page A3
+ * - Le contenu est mis à l'échelle pour occuper intégralement la page A4
  *
  * Mode 'print'   : déclenche directement la boîte d'impression du navigateur
  *                  (= « Enregistrer en PDF »). C'est la SEULE façon d'obtenir
@@ -12,11 +12,14 @@
  */
 export type HtmlPdfMode = 'print' | 'preview';
 
-// A3 portrait à 96 dpi, marges déduites
-const A3_MARGIN_MM = 4;
+// A4 portrait à 96 dpi, marges d'impression déduites. Le contenu est mis à
+// l'échelle pour occuper TOUTE la page (plus de grand vide en bas de page).
+const A3_MARGIN_MM = 6;
 const MM_TO_PX = 96 / 25.4;
-const A3_PAGE_WIDTH_PX = Math.round((297 - A3_MARGIN_MM * 2) * MM_TO_PX); // ≈ 1092
-const A3_PAGE_HEIGHT_PX = Math.round((420 - A3_MARGIN_MM * 2) * MM_TO_PX); // ≈ 1557
+const A3_PAGE_WIDTH_PX = Math.round((210 - A3_MARGIN_MM * 2) * MM_TO_PX); // ≈ 748
+const A3_PAGE_HEIGHT_PX = Math.round((297 - A3_MARGIN_MM * 2) * MM_TO_PX); // ≈ 1077
+/** Étirement vertical maximal autorisé pour remplir la page sans déformer. */
+const MAX_STRETCH_Y = 1.3;
 
 
 export const openHtmlPdf = (
@@ -53,11 +56,11 @@ export const openHtmlPdf = (
     }
   });
 
-  // Largeur réelle du TDB à l'écran (fallback 1191 px = A3 portrait).
+  // Largeur réelle du TDB à l'écran (fallback 1191 px = largeur écran).
   const srcRect = contentElement.getBoundingClientRect();
   const contentWidth = Math.round(srcRect.width) || 1191;
 
-  // Mise à l'échelle uniforme pour tenir dans la largeur utile A3 portrait
+  // Mise à l'échelle uniforme pour tenir dans la largeur utile A4 portrait
   // (la hauteur est ensuite ajustée en JS pour tenir sur UNE seule page).
   const scale = A3_PAGE_WIDTH_PX / contentWidth;
 
@@ -87,7 +90,7 @@ export const openHtmlPdf = (
       filter: none !important;
     }
 
-    /* Wrapper : largeur exacte A3 portrait en px */
+    /* Wrapper : largeur exacte A4 portrait en px */
     .__pdf-stage {
       width: ${A3_PAGE_WIDTH_PX}px;
       margin: 0 auto;
@@ -96,7 +99,7 @@ export const openHtmlPdf = (
     }
     @media print { .__pdf-stage { padding-top: 0; } }
 
-    /* Contenu original mis à l'échelle pour tenir sur une page A3 */
+    /* Contenu original mis à l'échelle pour tenir sur une page A4 */
     .__pdf-body {
       width: ${contentWidth}px;
       transform: scale(${scale});
@@ -158,21 +161,28 @@ export const openHtmlPdf = (
       var STAGE_W = ${A3_PAGE_WIDTH_PX};
       var BASE_W = ${contentWidth};
 
+      var MAX_STRETCH_Y = ${MAX_STRETCH_Y};
+
       function fit() {
         var body = document.querySelector('.__pdf-body');
         var scaler = document.querySelector('.__pdf-scaler');
         if (!body || !scaler) return;
 
-        // Échelle de base : remplir la largeur A3 portrait
-        var scale = STAGE_W / BASE_W;
-        body.style.transform = 'scale(' + scale + ')';
-        var h = body.getBoundingClientRect().height;
+        // 1) Hauteur naturelle du contenu (sans transformation)
+        body.style.transform = 'none';
+        var natH = body.getBoundingClientRect().height || 1;
 
-        // Réduction supplémentaire pour que TOUT le contenu tienne
-        // sur UNE seule page A3 portrait (pas de deuxième page).
-        if (h > PAGE_H) {
-          scale = scale * (PAGE_H / h);
-          body.style.transform = 'scale(' + scale + ')';
+        // 2) Échelle uniforme : tenir en largeur ET en hauteur sur UNE page
+        var scale = Math.min(STAGE_W / BASE_W, PAGE_H / natH);
+        body.style.transform = 'scale(' + scale + ')';
+
+        // 3) Remplissage : si le contenu laisse un vide en bas de page, on
+        //    étire verticalement (dans une limite raisonnable) pour occuper
+        //    toute la page A4 sans rendre le texte illisible.
+        var used = natH * scale;
+        var stretch = Math.min(PAGE_H / Math.max(used, 1), MAX_STRETCH_Y);
+        if (stretch > 1.01) {
+          body.style.transform = 'scale(' + scale + ',' + (scale * stretch) + ')';
         }
         scaler.style.height = PAGE_H + 'px';
       }

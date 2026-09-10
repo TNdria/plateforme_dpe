@@ -346,11 +346,11 @@ const createEtablissementIcon = (iconType: EtablissementIconType, color: string)
 const createEtablissementIconHtml = (iconType: EtablissementIconType, color: string) =>
   createEtablissementIcon(iconType, color).options.html as string;
 
-// Icône village (règles du 05/09/2026) : "fas fa-home", pas un simple point,
+// Icône village (convention 2026) : simple point ("fas fa-circle"),
 // cohérent avec la légende. Taille réduite par rapport aux établissements
 // pour rester lisible malgré la densité potentiellement élevée de villages.
 const createVillageIconHtml = (color: string) =>
-  `<i class="fas fa-home" style="color:${color};font-size:16px;line-height:22px;text-shadow:0 1px 2px rgba(15,23,42,.35)" aria-hidden="true"></i>`;
+  `<i class="fas fa-circle" style="color:${color};font-size:9px;line-height:22px;text-shadow:0 1px 2px rgba(15,23,42,.35)" aria-hidden="true"></i>`;
 
 // Éligibilité (booléenne) d'un établissement pour le critère actif — sert à
 // la fois à la couleur (getCategoryColor) et au nouveau filtre

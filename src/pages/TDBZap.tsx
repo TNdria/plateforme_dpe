@@ -744,34 +744,19 @@ const TDBZap = () => {
 
         {/* EFFICIENCE ET SUIVI LONGITUDINAL */}
         <div style={s.titre}>Efficience et suivi longitudinal des cohortes d'élèves</div>
-        <div style={{ border: '1px solid #000', display: 'grid', gridTemplateColumns: '38% 28% 34%', minHeight: '320px' }}>
-          {/* Efficience scatter — même logique que les TDB CISCO / DREN */}
+        <div style={{ border: '1px solid #000', display: 'grid', gridTemplateColumns: '50% 50%', minHeight: '320px' }}>
+          {/* Efficience — bloc unique (pictogrammes + points de comparaison précis) */}
           <div style={{ padding: '8px', borderRight: '1px solid #ccc' }}>
-            <h4 style={{ textAlign: 'center', fontSize: '11px', fontWeight: 'bold', marginBottom: '6px' }}>Efficience — votre ZAP (en rouge) comparée à sa CISCO et à sa DREN</h4>
-            <ResponsiveContainer width="100%" height={290}>
-              <ScatterChart margin={{ top: 10, right: 30, left: 10, bottom: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" dataKey="x" name="Ressources" domain={[0, 100]}
-                  label={{ value: 'Ressources (%)', position: 'insideBottom', offset: -10, fontSize: 10 }} tick={{ fontSize: 9 }} />
-                <YAxis type="number" dataKey="y" name="Résultats" domain={[0, 100]}
-                  label={{ value: 'Résultats (%)', angle: -90, position: 'insideLeft', fontSize: 10 }} tick={{ fontSize: 9 }} />
-                <Tooltip cursor={{ strokeDasharray: '3 3' }} formatter={(value: any, name: string) => [`${value}%`, name]} />
-                <ReferenceLine x={50} stroke="#999" strokeDasharray="3 3" />
-                <ReferenceLine y={50} stroke="#999" strokeDasharray="3 3" />
-                <Scatter data={efficienceData}>
-                  {efficienceData.map((entry: any, index: number) => (
-                    <Cell key={index} fill={entry.isCurrent ? '#e74c3c' : '#337ab7'} />
-                  ))}
-                  <LabelList dataKey="name" position="right" style={{ fontSize: 8 }} />
-                </Scatter>
-              </ScatterChart>
-            </ResponsiveContainer>
+            <h4 style={{ textAlign: 'center', fontSize: '11px', fontWeight: 'bold', marginBottom: '6px' }}>Efficience — positionnement ressources / résultats de votre ZAP</h4>
+            <EfficienceGrid
+              entity={z}
+              niveau="primaire"
+              entityLabel="ZAP"
+              points={efficienceData}
+              pointsTitle="ZAP comparée à sa CISCO et à sa DREN"
+            />
           </div>
-          {/* Positionnement ressources / résultats (identique aux autres TDB) */}
-          <div style={{ padding: '8px', borderRight: '1px solid #ccc' }}>
-            <h4 style={{ textAlign: 'center', fontSize: '11px', fontWeight: 'bold', marginBottom: '6px' }}>Positionnement ressources / résultats</h4>
-            <EfficienceGrid entity={z} niveau="primaire" entityLabel="ZAP" />
-          </div>
+
           {/* Suivi longitudinal des cohortes */}
           <div style={{ padding: '8px' }}>
 

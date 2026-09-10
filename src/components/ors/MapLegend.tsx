@@ -20,14 +20,14 @@ interface MapLegendProps {
 
 const primaireLegendItems: LegendItem[] = [
   {
-    icon: <i className="fas fa-book-open w-4 text-center" style={{ color: ORS_COLORS.default }} />,
+    icon: <i className="fas fa-school w-4 text-center" style={{ color: ORS_COLORS.default }} />,
     label: "École Primaire Publique",
     color: ORS_COLORS.default,
     description: "EPP existant",
   },
 
   {
-    icon: <i className="fas fa-book-open w-4 text-center" style={{ color: ORS_COLORS.prive }} />,
+    icon: <i className="fas fa-school w-4 text-center" style={{ color: ORS_COLORS.prive }} />,
     label: "École Primaire Privée",
     color: ORS_COLORS.prive,
     description: "Établissement privé",
@@ -56,7 +56,7 @@ const primaireLegendItems: LegendItem[] = [
 
   {
     icon: (
-      <i className="fas fa-home w-4 text-center" style={{ color: ORS_COLORS.villageHorsZone }} />
+      <i className="fas fa-circle w-4 text-center" style={{ color: ORS_COLORS.villageHorsZone }} />
     ),
     label: "Village hors zone",
     color: ORS_COLORS.villageHorsZone,
@@ -65,7 +65,7 @@ const primaireLegendItems: LegendItem[] = [
 
   {
     icon: (
-      <i className="fas fa-home w-4 text-center" style={{ color: ORS_COLORS.villageCouvert }} />
+      <i className="fas fa-circle w-4 text-center" style={{ color: ORS_COLORS.villageCouvert }} />
     ),
     label: "Village couvert",
     color: ORS_COLORS.villageCouvert,
@@ -107,7 +107,7 @@ const collegeLegendItems: LegendItem[] = [
   },
 
   {
-    icon: <i className="fas fa-book-open w-4 text-center" style={{ color: ORS_COLORS.default }} />,
+    icon: <i className="fas fa-school w-4 text-center" style={{ color: ORS_COLORS.default }} />,
     label: "EPP dans zone CEG",
     color: ORS_COLORS.default,
     description: "École couverte par un CEG",
@@ -115,7 +115,7 @@ const collegeLegendItems: LegendItem[] = [
 
   {
     icon: (
-      <i className="fas fa-book-open w-4 text-center" style={{ color: ORS_COLORS.nonEligible }} />
+      <i className="fas fa-school w-4 text-center" style={{ color: ORS_COLORS.nonEligible }} />
     ),
     label: "EPP HORS zone",
     color: ORS_COLORS.nonEligible,
@@ -123,7 +123,7 @@ const collegeLegendItems: LegendItem[] = [
   },
 
   {
-    icon: <i className="fas fa-book-open w-4 text-center" style={{ color: ORS_COLORS.prive }} />,
+    icon: <i className="fas fa-school w-4 text-center" style={{ color: ORS_COLORS.prive }} />,
     label: "École privée",
     color: ORS_COLORS.prive,
     description: "Hors analyse d'éligibilité",
@@ -131,7 +131,7 @@ const collegeLegendItems: LegendItem[] = [
 
   {
     icon: (
-      <i className="fas fa-home w-4 text-center" style={{ color: ORS_COLORS.villageHorsZone }} />
+      <i className="fas fa-circle w-4 text-center" style={{ color: ORS_COLORS.villageHorsZone }} />
     ),
     label: "Village hors zone",
     color: ORS_COLORS.villageHorsZone,
@@ -140,7 +140,7 @@ const collegeLegendItems: LegendItem[] = [
 
   {
     icon: (
-      <i className="fas fa-home w-4 text-center" style={{ color: ORS_COLORS.villageCouvert }} />
+      <i className="fas fa-circle w-4 text-center" style={{ color: ORS_COLORS.villageCouvert }} />
     ),
     label: "Village couvert",
     color: ORS_COLORS.villageCouvert,
@@ -174,7 +174,7 @@ const collegeLegendItems: LegendItem[] = [
 const lyceeLegendItems: LegendItem[] = [
   {
     icon: (
-      <i className="fas fa-building w-5 text-center" style={{ color: NIVEAU_MAIN_COLOR.lycee }} />
+      <i className="fas fa-school w-5 text-center" style={{ color: NIVEAU_MAIN_COLOR.lycee }} />
     ),
     label: "Lycée public",
     color: NIVEAU_MAIN_COLOR.lycee,
@@ -203,7 +203,7 @@ const lyceeLegendItems: LegendItem[] = [
 
   {
     icon: (
-      <i className="fas fa-home w-4 text-center" style={{ color: ORS_COLORS.villageHorsZone }} />
+      <i className="fas fa-circle w-4 text-center" style={{ color: ORS_COLORS.villageHorsZone }} />
     ),
     label: "Village hors zone",
     color: ORS_COLORS.villageHorsZone,
@@ -211,7 +211,7 @@ const lyceeLegendItems: LegendItem[] = [
 
   {
     icon: (
-      <i className="fas fa-home w-4 text-center" style={{ color: ORS_COLORS.villageCouvert }} />
+      <i className="fas fa-circle w-4 text-center" style={{ color: ORS_COLORS.villageCouvert }} />
     ),
     label: "Village couvert",
     color: ORS_COLORS.villageCouvert,
@@ -243,13 +243,13 @@ const lyceeLegendItems: LegendItem[] = [
 
 const sigLegendItems: LegendItem[] = [
   {
-    icon: <i className="fas fa-book-open w-4 text-center" style={{ color: "#8b5cf6" }} />,
+    icon: <i className="fas fa-school w-4 text-center" style={{ color: "#8b5cf6" }} />,
     label: "Préscolaire Public",
     color: "#8b5cf6",
   },
 
   {
-    icon: <i className="fas fa-book-open w-4 text-center" style={{ color: "#36b9cc" }} />,
+    icon: <i className="fas fa-school w-4 text-center" style={{ color: "#36b9cc" }} />,
     label: "Primaire Public",
     color: "#36b9cc",
   },
@@ -261,13 +261,13 @@ const sigLegendItems: LegendItem[] = [
   },
 
   {
-    icon: <i className="fas fa-building w-4 text-center" style={{ color: "#f59e0b" }} />,
+    icon: <i className="fas fa-school w-4 text-center" style={{ color: "#f59e0b" }} />,
     label: "Lycée Public",
     color: "#f59e0b",
   },
 
   {
-    icon: <i className="fas fa-home w-4 text-center" style={{ color: "#f6c23e" }} />,
+    icon: <i className="fas fa-circle w-4 text-center" style={{ color: "#f6c23e" }} />,
     label: "Village",
     color: "#f6c23e",
   },
@@ -279,7 +279,7 @@ const sigLegendItems: LegendItem[] = [
 
 const datavizLegendItems: LegendItem[] = [
   {
-    icon: <i className="fas fa-book-open w-4 text-center" style={{ color: "#36b9cc" }} />,
+    icon: <i className="fas fa-school w-4 text-center" style={{ color: "#36b9cc" }} />,
     label: "École Publique",
     color: "#36b9cc",
   },
@@ -291,7 +291,7 @@ const datavizLegendItems: LegendItem[] = [
   },
 
   {
-    icon: <i className="fas fa-home w-4 text-center" style={{ color: "#e74a3b" }} />,
+    icon: <i className="fas fa-circle w-4 text-center" style={{ color: "#e74a3b" }} />,
     label: "Village",
     color: "#e74a3b",
   },

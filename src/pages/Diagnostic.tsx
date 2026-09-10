@@ -102,6 +102,7 @@ const Diagnostic = () => {
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [diagnosticResult, setDiagnosticResult] = useState<DiagnosticResult | null>(null);
+  const [genError, setGenError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('monographie');
 
   const { dataset, loading: statsLoading } = useDiagnosticDataset(Number(selectedDren), Number(selectedCisco));
@@ -127,8 +128,13 @@ const Diagnostic = () => {
   };
 
   const handleGenerateDiagnostic = async () => {
-    if (!dataset) { toast.error('Données non chargées'); return; }
-    setGenerating(true); setDiagnosticResult(null); setActiveTab('diagnostic');
+    if (generating) return;
+    if (!dataset) {
+      const msg = 'Les données ne sont pas encore chargées. Choisissez une DREN / CISCO et une année, puis relancez.';
+      setGenError(msg); setActiveTab('diagnostic'); toast.error(msg);
+      return;
+    }
+    setGenerating(true); setGenError(null); setDiagnosticResult(null); setActiveTab('diagnostic');
     try {
       const drenName = drens.find(d => d.CODE_DREN === Number(selectedDren))?.DREN || '';
       const ciscoName = ciscos.find(c => c.CODE_CISCO === Number(selectedCisco))?.CISCO || '';
@@ -137,11 +143,14 @@ const Diagnostic = () => {
       });
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
+      if (!(data as any)?.diagnostic) throw new Error('Le service de génération n\'a renvoyé aucun contenu.');
       setDiagnosticResult(data as DiagnosticResult);
       toast.success('Diagnostic généré selon le plan officiel du MEN');
     } catch (err: any) {
       console.error(err);
-      toast.error(err?.message || 'Erreur lors de la génération du diagnostic');
+      const msg = err?.message || 'Erreur lors de la génération du diagnostic';
+      setGenError(msg);
+      toast.error(msg);
     } finally { setGenerating(false); }
   };
 
@@ -365,7 +374,12 @@ const Diagnostic = () => {
           </TabsContent>
 
           <TabsContent value="diagnostic" className="flex-1 overflow-hidden m-0">
-            <DiagnosticTextView diagnostic={diagnosticResult} generating={generating} />
+            <DiagnosticTextView
+              diagnostic={diagnosticResult}
+              generating={generating}
+              error={genError}
+              onRetry={handleGenerateDiagnostic}
+            />
           </TabsContent>
 
           <TabsContent value="formules" className="flex-1 overflow-hidden m-0">

@@ -23,7 +23,7 @@ export const printTdb = (contentElement: HTMLElement, title: string) => {
   <title>${title}</title>
   <style>
     @page {
-      size: A3 portrait;
+      size: A4 portrait;
       margin: 8mm;
     }
     * {
