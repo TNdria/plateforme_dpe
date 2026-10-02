@@ -174,13 +174,16 @@ export async function fetchDjangoOrFallback<T>(
     return await fetchAPI<T>(endpoint);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    const isNotFound = /404|Not Found/i.test(errorMessage);
+    // Les erreurs de droits sont définitives : ne jamais les contourner via
+    // une autre source. Les erreurs réseau/5xx du Django local ou distant,
+    // elles, peuvent utiliser la source Supabase de secours.
+    const isClientError = /API Error: (400|401|403)/i.test(errorMessage);
 
-    if (!isNotFound) {
+    if (isClientError) {
       throw error;
     }
 
-    console.warn(`Django endpoint ${endpoint} returned 404; falling back to Supabase action ${action}.`);
+    console.warn(`Django endpoint ${endpoint} is unavailable; falling back to Supabase action ${action}.`);
     return fetchDB<T>(action, params);
   }
 }
@@ -677,19 +680,32 @@ export const donneesApi = {
 };
 
 export const besoinsApi = {
-  getDrens: () => fetchAPI<Dren[]>('/besoins/dren/'),
-  getCiscos: (codeDren: number) => fetchAPI<Cisco[]>(`/besoins/cisco/${codeDren}/`),
+  getDrens: () => fetchDjangoOrFallback<Dren[]>('/besoins/dren/', 'getDrens'),
+  getCiscos: (codeDren: number) =>
+    fetchDjangoOrFallback<Cisco[]>(`/besoins/cisco/${codeDren}/`, 'getCiscos', {
+      code_dren: codeDren,
+    }),
   getZaps: (codeDren: number, codeCisco: number) =>
-    fetchAPI<Zap[]>(`/besoins/zap/${codeDren}/${codeCisco}/`),
+    fetchDjangoOrFallback<Zap[]>(`/besoins/zap/${codeDren}/${codeCisco}/`, 'getZaps', {
+      code_dren: codeDren,
+      code_cisco: codeCisco,
+      code_commune: 0,
+    }),
 
   getBesoinsN1: (codeDren = 0, codeCisco = 0, codeZap = 0, annee = 2025) =>
-    fetchAPI<any[]>(`/besoins/n1/${codeDren}/${codeCisco}/${codeZap}/${annee}/`),
+    fetchDjangoOrFallback<any[]>(`/besoins/n1/${codeDren}/${codeCisco}/${codeZap}/${annee}/`, 'getBesoinsPrimaire', {
+      code_dren: codeDren, code_cisco: codeCisco, code_zap: codeZap, annee,
+    }),
 
   getBesoinsN2: (codeDren = 0, codeCisco = 0, codeZap = 0, annee = 2025) =>
-    fetchAPI<any[]>(`/besoins/n2/${codeDren}/${codeCisco}/${codeZap}/${annee}/`),
+    fetchDjangoOrFallback<any[]>(`/besoins/n2/${codeDren}/${codeCisco}/${codeZap}/${annee}/`, 'getBesoinsCollege', {
+      code_dren: codeDren, code_cisco: codeCisco, code_zap: codeZap, annee,
+    }),
 
   getBesoinsN3: (codeDren = 0, codeCisco = 0, codeZap = 0, annee = 2025) =>
-    fetchAPI<any[]>(`/besoins/n3/${codeDren}/${codeCisco}/${codeZap}/${annee}/`),
+    fetchDjangoOrFallback<any[]>(`/besoins/n3/${codeDren}/${codeCisco}/${codeZap}/${annee}/`, 'getBesoinsLycee', {
+      code_dren: codeDren, code_cisco: codeCisco, code_zap: codeZap, annee,
+    }),
 };
 
 // Diagnostic API - Based on src/diagnostic/urls.py

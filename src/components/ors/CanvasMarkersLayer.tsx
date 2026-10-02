@@ -114,3 +114,4 @@ export const CanvasMarkersLayer = ({ points, visible = true }: Props) => {
 };
 
 export default CanvasMarkersLayer;
+

@@ -83,6 +83,7 @@ const menuItems: { section?: string; items: MenuItem[] }[] = [
         icon: GraduationCap,
         requiresAuth: true,
         children: [
+          { label: "Besoins Préscolaire", path: "/besoins/prescolaire" },
           { label: "Besoins Primaire", path: "/besoins/primaire" },
           { label: "Besoins Collège", path: "/besoins/college" },
           { label: "Besoins Lycée", path: "/besoins/lycee" },
@@ -142,6 +143,7 @@ const Sidebar = () => {
   const [openMenus, setOpenMenus] = useState<string[]>([
     "Tableau de Bord",
     "Données",
+    "Besoins",
     "Géolocalisation",
     "ORS",
   ]);

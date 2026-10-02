@@ -41,6 +41,7 @@ import { donneesApi } from "@/services/api";
 import DataActionsBar from "@/components/admin/DataActionsBar";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
+import { getZoneInfo } from "@/lib/zone";
 import logoMen from "@/assets/logoMen.jpg";
 import logoDpe from "@/assets/logoDpe.jpg";
 
@@ -118,6 +119,29 @@ const SECTION_THEME: Record<
   },
 };
 
+const zoneColumn = {
+  key: "CATEGORIE_COMMUNE",
+  label: "ZONE",
+  width: 132,
+  align: "center" as const,
+  render: (_value: unknown, row: Record<string, unknown>) => {
+    const zone = getZoneInfo(row);
+    const styles = {
+      rural:
+        "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-300",
+      urban:
+        "border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-800 dark:bg-sky-950/60 dark:text-sky-300",
+      unknown:
+        "border-slate-300 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300",
+    };
+    return (
+      <Badge variant="outline" className={cn("font-medium", styles[zone.kind])}>
+        {zone.label}
+      </Badge>
+    );
+  },
+};
+
 const getEcolesColumns = (annee: string = "2025") => [
   { key: "CODE_ETAB", label: "CODE", width: 120 },
   { key: "DREN", label: "DREN", width: 90 },
@@ -126,7 +150,7 @@ const getEcolesColumns = (annee: string = "2025") => [
   { key: "ZAP", label: "ZAP", width: 90 },
   { key: "FOKONTANY", label: "FOKONTANY", width: 140 },
   { key: "NOM_ETAB", label: "ÉTABLISSEMENT", width: 240 },
-  { key: "CATEGORIE_COMMUNE", label: "ZONE", width: 90 },
+  zoneColumn,
   {
     key: `eff_${annee}`,
     label: `EFF. ${annee}`,
@@ -148,7 +172,7 @@ const getElevesColumns = (niveau: Niveau) => {
     { key: "COMMUNE", label: "COMMUNE", width: 130 },
     { key: "ZAP", label: "ZAP", width: 90 },
     { key: "NOM_ETAB", label: "ÉTABLISSEMENT", width: 240 },
-    { key: "CATEGORIE_COMMUNE", label: "ZONE", width: 90 },
+    zoneColumn,
     {
       key: "eff_2022",
       label: "EFF. 2022",
@@ -214,7 +238,7 @@ const getPersonnelsColumns = (annee: string = "2025") => [
   { key: "COMMUNE", label: "COMMUNE", width: 130 },
   { key: "ZAP", label: "ZAP", width: 90 },
   { key: "NOM_ETAB", label: "ÉTABLISSEMENT", width: 240 },
-  { key: "CATEGORIE_COMMUNE", label: "ZONE", width: 90 },
+  zoneColumn,
   {
     key: `eff_${annee}`,
     label: `EFF. ${annee}`,
@@ -281,8 +305,6 @@ const getTotalEleves = (data: any[], niveau: Niveau) => {
   const keys = keysByNiveau[niveau];
   return data.reduce((acc, row) => acc + sum(row, keys), 0);
 };
-
-const donneesCache = new Map<string, any[]>();
 
 const Donnees = () => {
   const { niveau: niveauParam } = useParams<{ niveau: string }>();
@@ -351,15 +373,6 @@ const Donnees = () => {
     const zap = filters.selectedZap !== "0" ? Number(filters.selectedZap) : 0;
     const secteur = Number(filters.selectedSecteur);
     const annee = Number(selectedAnnee);
-    const cacheKey = `${niveau}:${annee}:${dren}:${cisco}:${commune}:${zap}:${secteur}`;
-
-    if (donneesCache.has(cacheKey)) {
-      setData(donneesCache.get(cacheKey)!);
-      setHasLoadedOnce(true);
-      setLastUpdate(new Date());
-      return;
-    }
-
     setLoading(true);
     try {
       let result: any[] = [];
@@ -379,7 +392,6 @@ const Donnees = () => {
       }
 
       const nextData = Array.isArray(result) ? result : [];
-      donneesCache.set(cacheKey, nextData);
       setData(nextData);
       setHasLoadedOnce(true);
       setLastUpdate(new Date());
@@ -712,7 +724,9 @@ const Donnees = () => {
               <Select
                 value={filters.selectedZap}
                 onValueChange={(value) => {
-                  filters.setSelectedZap(value);
+                  // Une commune doit toujours appartenir au ZAP sélectionné.
+                  // Le hook recharge la liste et remet la commune à "Toutes".
+                  filters.handleZapChange(value);
                   markFilterDirty();
                 }}
                 disabled={filters.selectedCisco === "0" || filters.loadingFilters}
@@ -892,6 +906,7 @@ const Donnees = () => {
                 hasSelectedDren={filters.selectedDren !== "0"}
                 maxHeight="65vh"
                 stickyFirstColumn
+                stickyHeader
               />
             </div>
           ) : (

@@ -20,7 +20,7 @@ interface AuthContextType {
     username: string,
     password: string,
   ) => Promise<{ success: boolean; error?: string; redirect?: string }>;
-  logout: () => void;
+  logout: () => Promise<void>;
   updateProfile: (data: {
     first_name?: string;
     last_name?: string;
@@ -43,17 +43,6 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
-// Fix (audit 02/09/2026) : le login ci-dessous ne parlait qu'à une edge
-// function Supabase (db-query?action=login) — jamais au backend Django. Le
-// badge "Connecté en tant que X" venait donc uniquement de Supabase, sans
-// qu'aucune session Django ne soit jamais créée, ce qui causait un 401
-// "Authentification requise" sur tout endpoint Django protégé
-// (@require_superuser, @require_json_auth), quel que soit l'état des cookies
-// (SameSite/Secure) ou du mode maintenance. `loginDjangoSession` établit la
-// vraie session Django en parallèle, en best-effort : si Django est
-// injoignable, on ne bloque pas la connexion Supabase existante, mais les
-// fonctionnalités qui dépendent d'une session Django resteront en échec tant
-// que ce second appel n'a pas réussi.
 const DJANGO_BASE_URL = "https://dpe-men.mg";
 
 async function loginDjangoSession(username: string, password: string): Promise<boolean> {
@@ -66,26 +55,9 @@ async function loginDjangoSession(username: string, password: string): Promise<b
       credentials: "include",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: body.toString(),
-      // login_view répond par une redirection HTTP (302) vers /dashboard/ en
-      // cas de succès ; le Set-Cookie de session arrive sur cette première
-      // réponse, avant que fetch() ne suive la redirection — inutile de lire
-      // le corps de la réponse suivie, seul le fait que l'appel ait abouti
-      // sans erreur réseau nous intéresse ici.
-      // login_view répond par une redirection HTTP (302) vers /dashboard/ en
-      // cas de succès ; le Set-Cookie de session arrive sur cette première
-      // réponse. redirect:'manual' empêche fetch() de suivre cette
-      // redirection vers une page HTML cross-origin (qui échouerait sinon au
-      // niveau CORS) — la réponse obtenue est "opaque" et illisible, mais
-      // c'est normal : seul le cookie déjà posé nous intéresse ici.
       redirect: "manual",
     });
-    // En mode 'manual', une redirection donne un type 'opaqueredirect' avec
-    // status 0 — res.ok est donc toujours false ici, mais ce n'est pas un
-    // échec : c'est le signe que Django a bien répondu par une redirection
-    // (donc probablement un login réussi). On ne peut pas lire le corps pour
-    // distinguer un vrai échec (identifiants invalides, qui recharge
-    // login.html avec un statut 200 lisible en cross-origin grâce à
-    // corsheaders) d'un succès (302 → réponse opaque en mode 'manual').
+    // redirect:manual → succès = opaqueredirect (status 0)
     return res.type === "opaqueredirect";
   } catch (err) {
     console.warn("Session Django non établie (login parallèle) :", err);
@@ -97,16 +69,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Ne restaure PAS depuis localStorage : chaque chargement part déconnecté.
+  // Évite les sessions « collées » sur le même navigateur / machine.
   useEffect(() => {
-    // Check if user is stored in localStorage
-    const storedUser = localStorage.getItem("dpe_user");
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser));
-      } catch {
-        localStorage.removeItem("dpe_user");
-      }
-    }
+    localStorage.removeItem("dpe_user");
+    setUser(null);
     setIsLoading(false);
   }, []);
 
@@ -160,10 +127,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return { success: false, error: result?.error || "Identifiants invalides" };
       }
 
-      // Établit la vraie session Django (cookie) en parallèle — nécessaire
-      // pour tout endpoint Django protégé (SIG config, etc.). Best-effort :
-      // on ne bloque pas la connexion si Django ne répond pas, mais on
-      // prévient si ça échoue pour ne pas laisser croire que tout fonctionne.
       const djangoOk = await loginDjangoSession(username, password);
       if (!djangoOk) {
         notify({
@@ -185,7 +148,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         is_superuser: result.user.is_superuser,
       };
 
-      localStorage.setItem("dpe_user", JSON.stringify(userData));
+      // Stockage session-only pour l'UI de cet onglet (pas de persistance long terme)
+      sessionStorage.setItem("dpe_user", JSON.stringify(userData));
       setUser(userData);
 
       notify({
@@ -207,9 +171,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
     const name = user?.first_name || user?.username;
+    try {
+      await fetch(`${DJANGO_BASE_URL}/login/logout/`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch (e) {
+      console.warn("Logout Django échoué:", e);
+    }
     localStorage.removeItem("dpe_user");
+    sessionStorage.removeItem("dpe_user");
     setUser(null);
     notify({
       title: "Déconnexion",
@@ -258,13 +231,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return { success: false, error: result.error };
       }
 
-      // Update local user data
       const updatedUser = {
         ...user,
         first_name: data.first_name || user.first_name,
         last_name: data.last_name || user.last_name,
       };
-      localStorage.setItem("dpe_user", JSON.stringify(updatedUser));
+      sessionStorage.setItem("dpe_user", JSON.stringify(updatedUser));
       setUser(updatedUser);
 
       notify({

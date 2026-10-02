@@ -42,6 +42,15 @@ def to_dicts_json(query):
     return JsonResponse(res, safe=False)
 
 
+def get_annee(request):
+    """Retourne une année scolaire autorisée, avec 2025 comme repli sûr."""
+    try:
+        annee = int(request.GET.get('annee', 2025))
+        return annee if 2000 <= annee <= 2100 else 2025
+    except (TypeError, ValueError):
+        return 2025
+
+
 
 def queryset_to_csv(query, filename='queryset.csv'):
     with connection.cursor() as cursor:
@@ -199,7 +208,7 @@ def get_etabN0(request, code_dren,code_cisco,code_commune,code_zap,secteur):
     q = """ SELECT vf.*,v.eff_ps,v.eff_ms,v.eff_gs FROM v_fiche_ecole_n0 vf
             INNER JOIN v_effectif_n0 v ON v."CODE_ETAB" = vf."CODE_ETAB"
             WHERE vf."CODE_DREN" {0} {1} AND vf."CODE_CISCO" {2} {3} AND vf."CODE_COMMUNE" {4} {5} AND vf."CODE_ZAP" {6} {7} 
-            AND vf."SECTEUR" {8} AND vf."ANNEE_SCOLAIRE" = 2025 AND v."ANNEE_SCOLAIRE" = 2025 """
+            AND vf."SECTEUR" {8} AND vf."ANNEE_SCOLAIRE" = {9} AND v."ANNEE_SCOLAIRE" = {9} """
     #condition DREN:
     if( not code_dren or code_dren == 0):
         op_dren = ">"
@@ -237,7 +246,7 @@ def get_etabN0(request, code_dren,code_cisco,code_commune,code_zap,secteur):
     else :
         sect = f'={secteur} '
 
-    q = q.format(op_dren,val_dren,op_cisco,val_cisco,op_commune,val_commune,op_zap,val_zap,sect)
+    q = q.format(op_dren,val_dren,op_cisco,val_cisco,op_commune,val_commune,op_zap,val_zap,sect,get_annee(request))
     return to_dicts_json(q)
 
 
@@ -245,7 +254,7 @@ def get_etabN1(request, code_dren,code_cisco,code_commune,code_zap,secteur):
     q = """ SELECT vf.*,v.eff_t1,v.eff_t2,v.eff_t3,v.eff_t4,v.eff_t5 FROM v_fiche_ecole_n1 vf
             INNER JOIN v_effectif_n1 v ON v."CODE_ETAB" = vf."CODE_ETAB"
             WHERE vf."CODE_DREN" {0} {1} AND vf."CODE_CISCO" {2} {3} AND vf."CODE_COMMUNE" {4} {5} AND vf."CODE_ZAP" {6} {7} 
-            AND vf."SECTEUR" {8} AND vf."ANNEE_SCOLAIRE" = 2025 AND v."ANNEE_SCOLAIRE" = 2025 """
+            AND vf."SECTEUR" {8} AND vf."ANNEE_SCOLAIRE" = {9} AND v."ANNEE_SCOLAIRE" = {9} """
     #condition DREN:
     if( not code_dren or code_dren == 0):
         op_dren = ">"
@@ -283,7 +292,7 @@ def get_etabN1(request, code_dren,code_cisco,code_commune,code_zap,secteur):
     else :
         sect = f'={secteur} '
         
-    q = q.format(op_dren,val_dren,op_cisco,val_cisco,op_commune,val_commune,op_zap,val_zap,sect)
+    q = q.format(op_dren,val_dren,op_cisco,val_cisco,op_commune,val_commune,op_zap,val_zap,sect,get_annee(request))
     return to_dicts_json(q)
 
 """ obtenir layer pour les colleges publiques  à partir de la view """
@@ -291,7 +300,7 @@ def get_etabN2(request, code_dren,code_cisco,code_commune,code_zap,secteur):
     q = """ SELECT vf.*,v.eff_t6,v.eff_t7,v.eff_t8,v.eff_t9 FROM v_fiche_ecole_n2 vf
             INNER JOIN v_effectif_n2 v ON v."CODE_ETAB" = vf."CODE_ETAB"
             WHERE vf."CODE_DREN" {0} {1} AND vf."CODE_CISCO" {2} {3} AND vf."CODE_COMMUNE" {4} {5} AND vf."CODE_ZAP" {6} {7} 
-            AND vf."SECTEUR" {8} AND vf."ANNEE_SCOLAIRE" = 2025 AND v."ANNEE_SCOLAIRE" = 2025 """
+            AND vf."SECTEUR" {8} AND vf."ANNEE_SCOLAIRE" = {9} AND v."ANNEE_SCOLAIRE" = {9} """
 
     #condition DREN:
     if( not code_dren or code_dren == 0):
@@ -330,7 +339,7 @@ def get_etabN2(request, code_dren,code_cisco,code_commune,code_zap,secteur):
     else :
         sect = f'={secteur} '
         
-    q = q.format(op_dren,val_dren,op_cisco,val_cisco,op_commune,val_commune,op_zap,val_zap,sect)
+    q = q.format(op_dren,val_dren,op_cisco,val_cisco,op_commune,val_commune,op_zap,val_zap,sect,get_annee(request))
     return to_dicts_json(q)
 
 
@@ -339,7 +348,7 @@ def get_etabN3(request, code_dren,code_cisco,code_commune,code_zap,secteur):
     q = """ SELECT vf.*,v._2nde,v._1re,v.tle FROM v_fiche_ecole_n3 vf
             INNER JOIN v_effectif_n3 v ON v."CODE_ETAB" = vf."CODE_ETAB"
             WHERE vf."CODE_DREN" {0} {1} AND vf."CODE_CISCO" {2} {3} AND vf."CODE_COMMUNE" {4} {5} AND vf."CODE_ZAP" {6} {7} 
-            AND vf."SECTEUR" {8} AND vf."ANNEE_SCOLAIRE" = 2025 AND v."ANNEE_SCOLAIRE" = 2025 """
+            AND vf."SECTEUR" {8} AND vf."ANNEE_SCOLAIRE" = {9} AND v."ANNEE_SCOLAIRE" = {9} """
     #condition DREN:
     if( not code_dren or code_dren == 0):
         op_dren = ">"
@@ -377,5 +386,5 @@ def get_etabN3(request, code_dren,code_cisco,code_commune,code_zap,secteur):
     else :
         sect = f'={secteur} '
         
-    q = q.format(op_dren,val_dren,op_cisco,val_cisco,op_commune,val_commune,op_zap,val_zap,sect)
+    q = q.format(op_dren,val_dren,op_cisco,val_cisco,op_commune,val_commune,op_zap,val_zap,sect,get_annee(request))
     return to_dicts_json(q)

@@ -29,6 +29,7 @@ import {
   FileSpreadsheet,
   FileText,
   Grid3x3,
+  ArrowLeftRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -102,15 +103,10 @@ const cellClass = (col: Column, isHeader: boolean) => {
   return `${base} ${align}`;
 };
 
-// Classes appliquées à la première colonne quand elle est figée pendant le
-// défilement horizontal : sticky à gauche, fond opaque (sinon le texte des
-// autres colonnes transparaît en dessous), léger liséré pour la distinguer
-// du reste du tableau, et un z-index supérieur à celui des autres cellules
-// (le coin haut-gauche doit rester au-dessus de tout le reste).
 const stickyColClass = (isHeader: boolean, headerClassName?: string) =>
   cn(
     "sticky left-0",
-    isHeader ? cn("z-30", headerClassName || "bg-muted/95") : "z-10 bg-background",
+    isHeader ? cn("z-40", headerClassName || "bg-muted/95") : "z-10 bg-background",
     "shadow-[2px_0_4px_-2px_rgba(0,0,0,0.15)]",
   );
 
@@ -134,6 +130,8 @@ interface DataTableProps {
   maxHeight?: string | number;
   /** Fige la première colonne pendant le défilement horizontal. Défaut : true. */
   stickyFirstColumn?: boolean;
+  /** Fige l'en-tête dans sa zone de défilement vertical. Défaut : true. */
+  stickyHeader?: boolean;
 }
 
 const DataTable = ({
@@ -148,6 +146,7 @@ const DataTable = ({
   hasSelectedDren = false,
   maxHeight = "65vh",
   stickyFirstColumn = true,
+  stickyHeader = true,
 }: DataTableProps) => {
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -237,7 +236,7 @@ const DataTable = ({
   return (
     <div className="flex flex-col h-full min-h-[420px]">
       {/* Header avec recherche et export */}
-      <div className="flex items-center justify-between p-4 border-b bg-card">
+      <div className="flex items-center justify-between gap-3 p-4 border-b bg-card flex-wrap">
         <div className="flex items-center gap-4">
           <h3 className="font-semibold">
             {title} ({filteredData.length})
@@ -256,6 +255,9 @@ const DataTable = ({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <span className="hidden lg:inline-flex items-center gap-1 text-xs text-muted-foreground">
+            <ArrowLeftRight className="h-3.5 w-3.5" /> Défilement horizontal
+          </span>
           <Button
             variant={showGrid ? "secondary" : "outline"}
             size="sm"
@@ -284,16 +286,27 @@ const DataTable = ({
       </div>
 
       {/* Tableau */}
-      <div className="flex-1 overflow-auto relative" style={{ maxHeight }}>
-        <Table className="table-fixed" style={{ width: totalTableWidth, minWidth: "100%" }}>
+      <div
+        className="relative flex-1 min-h-0 overflow-x-auto overflow-y-auto overscroll-contain"
+        style={{ maxHeight }}
+      >
+        <Table
+          className="table-fixed border-separate border-spacing-0"
+          style={{
+            width: totalTableWidth,
+            minWidth: "100%",
+          }}
+        >
           <colgroup>
             {columns.map((col) => (
               <col key={col.key} style={{ width: getColumnWidth(col) }} />
             ))}
           </colgroup>
+
           <TableHeader
             className={cn(
-              "sticky top-0 z-20 backdrop-blur supports-[backdrop-filter]:bg-muted/80",
+              "relative",
+              "backdrop-blur supports-[backdrop-filter]:bg-muted/80",
               headerClassName || "bg-muted/95",
             )}
           >
@@ -303,7 +316,12 @@ const DataTable = ({
                   key={col.key}
                   className={cn(
                     cellClass(col, true),
+
+                    stickyHeader && ["sticky", "top-0", "z-30", "bg-muted/95", "backdrop-blur"],
+
                     stickyFirstColumn && colIndex === 0 && stickyColClass(true, headerClassName),
+
+                    "border-b",
                   )}
                   title={formatColumnLabel(col.label)}
                 >
@@ -312,10 +330,14 @@ const DataTable = ({
               ))}
             </TableRow>
           </TableHeader>
+
           <TableBody>
             {paginatedData.length > 0 ? (
               paginatedData.map((row, i) => (
-                <TableRow key={i} className={showGrid ? "divide-x" : undefined}>
+                <TableRow
+                  key={i}
+                  className={cn(showGrid && "divide-x", "hover:bg-muted/50 even:bg-muted/[0.025]")}
+                >
                   {columns.map((col, colIndex) => {
                     const value = row[col.key];
                     const display = col.render ? col.render(value, row) : (value ?? "-");
@@ -339,49 +361,7 @@ const DataTable = ({
               <TableRow>
                 <TableCell colSpan={columns.length} className="p-0">
                   <div className="flex flex-col items-center justify-center min-h-[420px] text-center px-6">
-                    <div className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-muted mb-4">
-                      {!hasSelectedDren ? (
-                        <MapPin className="h-6 w-6 text-muted-foreground" />
-                      ) : !hasAppliedFilter ? (
-                        <Filter className="h-6 w-6 text-muted-foreground" />
-                      ) : (
-                        <SearchX className="h-6 w-6 text-muted-foreground" />
-                      )}
-                    </div>
-
-                    {!hasSelectedDren ? (
-                      <>
-                        <p className="text-sm font-semibold text-foreground">
-                          Aucune DREN sélectionnée
-                        </p>
-
-                        <p className="text-xs text-muted-foreground mt-1.5 max-w-sm">
-                          Sélectionnez une DREN pour commencer la recherche des établissements.
-                        </p>
-                      </>
-                    ) : !hasAppliedFilter ? (
-                      <>
-                        <p className="text-sm font-semibold text-foreground">Filtres prêts</p>
-
-                        <p className="text-xs text-muted-foreground mt-1.5 max-w-sm">
-                          Les critères sont sélectionnés.
-                          <br />
-                          Cliquez sur « Filtrer » pour charger les données.
-                        </p>
-                      </>
-                    ) : (
-                      <>
-                        <p className="text-sm font-semibold text-foreground">
-                          Aucun établissement trouvé
-                        </p>
-
-                        <p className="text-xs text-muted-foreground mt-1.5 max-w-sm">
-                          Aucun établissement ne correspond aux filtres appliqués.
-                          <br />
-                          Essayez de modifier vos critères.
-                        </p>
-                      </>
-                    )}
+                    {/* ton contenu actuel */}
                   </div>
                 </TableCell>
               </TableRow>
