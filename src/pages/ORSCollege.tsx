@@ -61,7 +61,7 @@ const ORSCollege = () => {
   const [layerVisibility, setLayerVisibility] = useState<LayerVisibility>({
     publiques: true,
     prives: true,
-    villages: true,
+    villages: true, aires: false,
   });
   const [tableBancFilter, setTableBancFilter] = useState<TableBancFilter>("tous");
 

@@ -24,6 +24,8 @@ export interface LayerVisibility {
 export type TableBancFilter = "tous" | "suffisant" | "insuffisant";
 
 interface MapFiltersProps {
+  niveau?: string;
+  aireRecrutementMeters?: number;
   drens: DREN[];
   ciscos: CISCO[];
   selectedDren: number;

@@ -11,6 +11,7 @@ import { TDBShell } from '@/components/tdb/TDBShell';
 import { TDBImportDialog } from '@/components/tdb/TDBImportDialog';
 import { DisparityIcon } from '@/components/score/DisparityIcon';
 import { EfficienceGrid } from '@/components/tdb/EfficienceGrid';
+import { GoulotBars, buildGoulotItems, pctSansDiplome } from '@/components/tdb/GoulotBars';
 import DataActionsBar from '@/components/admin/DataActionsBar';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -232,8 +233,6 @@ const TDBCisco = () => {
     // la CISCO courante à sa DREN et à MADA avec les données déjà affichées.
     const fallbackEfficience = [
       { name: tdbData.names?.CISCO || 'CISCO', code: selectedCisco, isCurrent: true, ...scoresFrom(aggToSrc(c)) },
-      { name: `DREN ${tdbData.names?.DREN || ''}`.trim(), code: 'dren', isCurrent: false, ...scoresFrom(aggToSrc(d)) },
-      { name: 'MADAGASCAR', code: 'mada', isCurrent: false, ...scoresFrom(aggToSrc(m)) },
     ];
 
     const hasRaw = rawEfficience.length > 0 && !rawEfficience.every((p: any) => p.x === 0 && p.y === 0);
@@ -675,7 +674,7 @@ const TDBCisco = () => {
                   <tbody>
                     {[
                       ['Élèves par maître', [ratio(c.ressources.nbr_eleve, c.personnel.pers_en_classe, 0), ratio(d.ressources.nbr_eleve, d.personnel.pers_en_classe, 0), ratio(m.ressources.nbr_eleve, m.personnel.pers_en_classe, 0)]],
-                      ['% sans diplôme péd.', [pct(c.personnel.sans_diplome_ped, c.personnel.pers_en_classe), pct(d.personnel.sans_diplome_ped, d.personnel.pers_en_classe), pct(m.personnel.sans_diplome_ped, m.personnel.pers_en_classe)]],
+                      ['% sans diplôme péd.', [pctSansDiplome(c.personnel), pctSansDiplome(d.personnel), pctSansDiplome(m.personnel)]],
                       ['Classes péd. / salle', [ratio(c.sections.nbr_section, c.sections.nbr_sdc, 0), ratio(d.sections.nbr_section, d.sections.nbr_sdc, 0), ratio(m.sections.nbr_section, m.sections.nbr_sdc, 0)]],
                       ['Élèves / place assise', [ratio(c.ressources.nbr_eleve, c.places.places_assises), ratio(d.ressources.nbr_eleve, d.places.places_assises), ratio(m.ressources.nbr_eleve, m.places.places_assises)]],
                       ['Élèves / Latrine', [ratio(c.ressources.nbr_eleve, c.places.latrines, 0), ratio(d.ressources.nbr_eleve, d.places.latrines, 0), ratio(m.ressources.nbr_eleve, m.places.latrines, 0)]],
@@ -686,6 +685,8 @@ const TDBCisco = () => {
                     ))}
                     <tr><td style={{ ...styles.td, paddingLeft: '10px' }}>-Mathématique</td>{[ratio(c.ressources.nbr_eleve, c.manuels?.maths, 0), ratio(d.ressources.nbr_eleve, d.manuels?.maths, 0), ratio(m.ressources.nbr_eleve, m.manuels?.maths, 0)].map((v, i) => <td key={i} style={{ ...styles.td, textAlign: 'right', ...manq(v) }}>{v}</td>)}</tr>
                     <tr><td style={{ ...styles.td, paddingLeft: '10px' }}>-Français</td>{[ratio(c.ressources.nbr_eleve, c.manuels?.francais, 0), ratio(d.ressources.nbr_eleve, d.manuels?.francais, 0), ratio(m.ressources.nbr_eleve, m.manuels?.francais, 0)].map((v, i) => <td key={i} style={{ ...styles.td, textAlign: 'right', ...manq(v) }}>{v}</td>)}</tr>
+                    <tr style={styles.gris}><td colSpan={4} style={{ ...styles.td, fontWeight: 'bold' }}>Ressources financières par élève</td></tr>
+                    <tr><td style={styles.td}>Caisse école</td>{[c, d, m].map((l, i) => { const v = ratio(l.ressources?.caisse_ecole, l.ressources?.nbr_eleve, 0); return <td key={i} style={{ ...styles.td, textAlign: 'right', ...manq(v) }}>{v}</td>; })}</tr>
                   </tbody>
                 </table>
                 
@@ -701,31 +702,17 @@ const TDBCisco = () => {
           <div>
           <div ref={(el) => { sectionRefs.current[2] = el; }} style={{ padding: '10px', background: '#fff' }}>
         <div style={styles.titreIndicateur}><b>Goulot d'Étranglement&nbsp;&nbsp;et&nbsp;&nbsp;Efficience</b></div>
-        {/* Ligne 1: Goulot pleine largeur */}
-        <div style={{ border: '1px solid #000', padding: 10, marginBottom: 8 }}>
-          <h4 style={{ textAlign: 'center', fontSize: 12, fontWeight: 'bold', marginBottom: 10 }}>Analyse des goulots d'étranglement</h4>
-          <ResponsiveContainer width="100%" height={340}>
-            <BarChart data={goulotData} layout="vertical" margin={{ top: 5, right: 40, left: 20, bottom: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis type="number" domain={[0, 100]} />
-              <YAxis dataKey="name" type="category" tick={{ fontSize: 9 }} width={220} interval={0} />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey="cisco" fill="#337ab7" name="CISCO" barSize={12} />
-              <Bar dataKey="dren" fill="#5cb85c" name="DREN" barSize={12} />
-              <Bar dataKey="mada" fill="#f0ad4e" name="MADA" barSize={12} />
-            </BarChart>
-          </ResponsiveContainer>
+        <div style={{ marginBottom: 8 }}>
+          <GoulotBars items={buildGoulotItems(c, 'cepe', 't5')} />
         </div>
-        {/* Ligne 2: Efficience — bloc unique (pictogrammes + points de comparaison) */}
         <div style={{ border: '1px solid #000', padding: 10 }}>
-          <h4 style={{ textAlign: 'center', fontSize: 12, fontWeight: 'bold', marginBottom: 8 }}>Efficience — positionnement ressources / résultats de votre CISCO</h4>
+          <h4 style={{ textAlign: 'center', fontSize: 12, fontWeight: 'bold', marginBottom: 8 }}>Efficience — votre CISCO parmi les CISCO de la DREN</h4>
           <EfficienceGrid
             entity={c}
             niveau="primaire"
             entityLabel="CISCO"
             points={efficienceData}
-            pointsTitle="CISCO comparée à sa DREN et à MADA"
+            parentPoint={{ name: `DREN ${tdbData.names?.DREN || ''}`.trim(), ...scoresFrom(aggToSrc(d)) }}
           />
         </div>
 

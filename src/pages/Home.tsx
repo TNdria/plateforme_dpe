@@ -5,7 +5,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import {
   GraduationCap,
   BarChart3,
-  Map,
   Users,
   FileText,
   ArrowRight,
@@ -18,10 +17,8 @@ import {
   UserCheck,
   Shield,
   Cpu,
-  Database,
   ChevronRight,
   Target,
-  Layers,
   BarChart4,
   MapPin,
   Baby,
@@ -177,40 +174,6 @@ const Home = () => {
     return num.toLocaleString("fr-FR");
   };
 
-  const features = [
-    {
-      icon: BarChart4,
-      title: "Tableau de Bord Intelligent",
-      description: "Analyse en temps réel des indicateurs éducatifs avec IA",
-      gradient: "from-blue-500 via-blue-600 to-cyan-500",
-      path: "/dashboard",
-      badge: "Nouveau",
-    },
-    {
-      icon: Map,
-      title: "Carte Scolaire Interactive",
-      description: "Visualisation géospatiale des infrastructures éducatives",
-      gradient: "from-emerald-500 via-teal-500 to-green-500",
-      path: "/ors-primaire",
-      badge: "3D",
-    },
-    {
-      icon: Database,
-      title: "Base de Données Centralisée",
-      description: "Données structurées et normalisées pour tous les niveaux",
-      gradient: "from-orange-500 via-amber-500 to-yellow-500",
-      path: "/donnees/primaire",
-      badge: "Sécurisé",
-    },
-    {
-      icon: Layers,
-      title: "Référentiel Unifié",
-      description: "Gestion centralisée des établissements et acteurs",
-      gradient: "from-purple-500 via-violet-500 to-fuchsia-500",
-      path: "/referentiel",
-      badge: "Complet",
-    },
-  ];
 
   const anneeLabel = stats.annee ? `${stats.annee - 1}-${stats.annee}` : null;
 
@@ -487,73 +450,6 @@ const Home = () => {
           </div>
         </section>
 
-        {/* Features Section */}
-        <section id="features" className="container mx-auto px-6 py-20 scroll-trigger">
-          <div className="max-w-6xl mx-auto">
-            <div className="text-center mb-16">
-              <div className="inline-block px-4 py-2 bg-primary/20 backdrop-blur-sm rounded-full mb-4">
-                <span className="text-sm font-semibold text-primary">FONCTIONNALITÉS</span>
-              </div>
-              <h2 className="text-3xl md:text-5xl font-bold mb-6 text-white">
-                Une plateforme <span className="text-primary">complète</span>
-              </h2>
-              <p className="text-lg text-gray-400 max-w-2xl mx-auto">
-                Tous les outils nécessaires pour la gestion et l'analyse du système éducatif
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {features.map((feature, index) => (
-                <div
-                  key={feature.title}
-                  className="group relative overflow-hidden rounded-3xl bg-gradient-to-b from-white/5 to-white/10 backdrop-blur-sm border border-white/10 hover:border-white/30 transition-all duration-500 hover:-translate-y-2 cursor-pointer scroll-trigger"
-                  onClick={() => navigate(feature.path)}
-                  style={{ animationDelay: `${index * 0.15}s` }}
-                >
-                  {/* Gradient overlay */}
-                  <div className="absolute inset-0 bg-gradient-to-br from-transparent via-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-
-                  <div className="relative z-10 p-8 h-full flex flex-col">
-                    {/* Badge */}
-                    {feature.badge && (
-                      <div className="inline-flex items-center justify-center px-3 py-1 bg-white/10 backdrop-blur-sm rounded-full mb-6 self-start">
-                        <span className="text-xs font-medium text-white">{feature.badge}</span>
-                      </div>
-                    )}
-
-                    {/* Icon */}
-                    <div
-                      className={`inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br ${feature.gradient} rounded-3xl mb-6 shadow-2xl group-hover:scale-110 group-hover:rotate-3 transition-all duration-500`}
-                    >
-                      <feature.icon className="w-10 h-10 text-white" />
-                    </div>
-
-                    {/* Content */}
-                    <div className="flex-grow">
-                      <h3 className="text-xl font-bold text-white mb-3 group-hover:text-primary-foreground transition-colors">
-                        {feature.title}
-                      </h3>
-                      <p className="text-gray-400 mb-6 leading-relaxed">{feature.description}</p>
-                    </div>
-
-                    {/* CTA */}
-                    <div className="flex items-center justify-between pt-6 border-t border-white/10 group-hover:border-white/20 transition-colors">
-                      <span className="text-sm font-medium text-white opacity-0 group-hover:opacity-100 translate-x-4 group-hover:translate-x-0 transition-all duration-300">
-                        Explorer
-                      </span>
-                      <div className="p-2 bg-white/10 rounded-lg group-hover:bg-primary/20 transition-colors">
-                        <ArrowRight className="h-5 w-5 text-white transform group-hover:translate-x-1 transition-transform" />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Shine effect */}
-                  <div className="absolute top-0 -left-full w-1/2 h-full bg-gradient-to-r from-transparent via-white/10 to-transparent group-hover:left-full transition-all duration-1000" />
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
 
         {/* ORS Modules Section */}
         <section id="ors" className="container mx-auto px-6 py-20 scroll-trigger">

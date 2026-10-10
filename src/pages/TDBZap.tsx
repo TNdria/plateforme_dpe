@@ -11,6 +11,7 @@ import emojiSad from '@/assets/emoji-sad.jpg';
 import { TDBShell } from '@/components/tdb/TDBShell';
 import { TDBImportDialog } from '@/components/tdb/TDBImportDialog';
 import { EfficienceGrid } from '@/components/tdb/EfficienceGrid';
+import { GoulotBars, buildGoulotItems, pctSansDiplome } from '@/components/tdb/GoulotBars';
 import { DisparityIcon } from '@/components/score/DisparityIcon';
 import DataActionsBar from '@/components/admin/DataActionsBar';
 import {
@@ -248,8 +249,6 @@ const TDBZap = () => {
     // Fallback : comparaison ZAP / CISCO / DREN avec les données déjà affichées
     const fallbackEfficience = [
       { name: tdbData.names?.ZAP || 'ZAP', code: selectedZap, isCurrent: true, ...scoresFrom(aggToSrc(z)) },
-      { name: `CISCO ${tdbData.names?.CISCO || ''}`.trim(), code: 'cisco', isCurrent: false, ...scoresFrom(aggToSrc(c)) },
-      { name: `DREN ${tdbData.names?.DREN || ''}`.trim(), code: 'dren', isCurrent: false, ...scoresFrom(aggToSrc(d)) },
     ];
 
     const hasRawEff = rawEfficience.length > 0 && !rawEfficience.every((p: any) => p.x === 0 && p.y === 0);
@@ -499,34 +498,6 @@ const TDBZap = () => {
                   </td>
                 </tr></tbody></table>
 
-                {/* Disparité with smileys */}
-                <table style={{ width: '100%', marginTop: '4px' }}><tbody><tr>
-                  <td style={{ width: '50%', verticalAlign: 'top', paddingRight: '2px' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'center' }} border={1} cellPadding={1} cellSpacing={0}>
-                      <thead><tr style={s.gris}><th colSpan={3} style={s.th}>Disparité au dépens des</th></tr></thead>
-                      <tbody>
-                        <tr>
-                          <td style={{ ...s.td, textAlign: 'center', padding: '4px' }}>{getSmiley(abZap, abCisco)}</td>
-                          <td style={{ ...s.td, textAlign: 'center', padding: '4px' }}>{getSmiley(redZap, redCisco)}</td>
-                          <td style={{ ...s.td, textAlign: 'center', padding: '4px' }}>{getSmiley(abZap + redZap, abCisco + redCisco)}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </td>
-                  <td style={{ width: '50%', verticalAlign: 'top', paddingLeft: '2px' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'center' }} border={1} cellPadding={1} cellSpacing={0}>
-                      <thead><tr style={s.gris}><th colSpan={3} style={s.th}>Disparité au dépens des</th></tr></thead>
-                      <tbody>
-                        <tr>
-                          <td style={{ ...s.td, textAlign: 'center', padding: '4px' }}>{getSmiley(redZap, redCisco)}</td>
-                          <td style={{ ...s.td, textAlign: 'center', padding: '4px' }}>{getSmiley(abZap, abCisco)}</td>
-                          <td style={{ ...s.td, textAlign: 'center', padding: '4px' }}>{getSmiley(abZap + redZap, abCisco + redCisco)}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </td>
-                </tr></tbody></table>
-
                 {/* Enfants 10ans déscolarisés / jamais scolarisés */}
                 <table style={{ width: '100%', marginTop: '4px' }}><tbody><tr>
                   <td style={{ width: '50%', verticalAlign: 'top', paddingRight: '2px' }}>
@@ -722,7 +693,7 @@ const TDBZap = () => {
                   <tbody>
                     {[
                       ['Nombre d\'élèves par maître', [ratio(z.ressources?.nbr_eleve, z.personnel?.pers_en_classe, 1), ratio(c.ressources?.nbr_eleve, c.personnel?.pers_en_classe, 1), ratio(d.ressources?.nbr_eleve, d.personnel?.pers_en_classe, 1)]],
-                      ['% enseignants qualifiés', [pct(Number(z.personnel?.pers_en_classe||0)-Number(z.personnel?.sans_diplome_ped||0), z.personnel?.pers_en_classe), pct(Number(c.personnel?.pers_en_classe||0)-Number(c.personnel?.sans_diplome_ped||0), c.personnel?.pers_en_classe), pct(Number(d.personnel?.pers_en_classe||0)-Number(d.personnel?.sans_diplome_ped||0), d.personnel?.pers_en_classe)]],
+                      ['% sans diplôme péd.', [pctSansDiplome(z.personnel), pctSansDiplome(c.personnel), pctSansDiplome(d.personnel)]],
                       ['Ratio classes péd. / salle', [ratio(z.sections?.nbr_section, z.sections?.nbr_sdc), ratio(c.sections?.nbr_section, c.sections?.nbr_sdc), ratio(d.sections?.nbr_section, d.sections?.nbr_sdc)]],
                       ['Élèves par place assise', [ratio(z.ressources?.nbr_eleve, z.places?.places_assises), ratio(c.ressources?.nbr_eleve, c.places?.places_assises), ratio(d.ressources?.nbr_eleve, d.places?.places_assises)]],
                       ['Élèves par Latrine', [ratio(z.ressources?.nbr_eleve, z.places?.latrines, 1), ratio(c.ressources?.nbr_eleve, c.places?.latrines, 1), ratio(d.ressources?.nbr_eleve, d.places?.latrines, 1)]],
@@ -730,17 +701,20 @@ const TDBZap = () => {
                       ['Élèves par manuel Malagasy', [ratio(z.ressources?.nbr_eleve, z.manuels?.malagasy, 1), ratio(c.ressources?.nbr_eleve, c.manuels?.malagasy, 1), ratio(d.ressources?.nbr_eleve, d.manuels?.malagasy, 1)]],
                       ['Élèves par manuel Maths', [ratio(z.ressources?.nbr_eleve, z.manuels?.maths, 1), ratio(c.ressources?.nbr_eleve, c.manuels?.maths, 1), ratio(d.ressources?.nbr_eleve, d.manuels?.maths, 1)]],
                       ['Élèves par manuel Français', [ratio(z.ressources?.nbr_eleve, z.manuels?.francais, 1), ratio(c.ressources?.nbr_eleve, c.manuels?.francais, 1), ratio(d.ressources?.nbr_eleve, d.manuels?.francais, 1)]],
+                      ['Caisse école par élève', [ratio(z.ressources?.caisse_ecole, z.ressources?.nbr_eleve, 0), ratio(c.ressources?.caisse_ecole, c.ressources?.nbr_eleve, 0), ratio(d.ressources?.caisse_ecole, d.ressources?.nbr_eleve, 0)]],
                     ].map(([label, vals]: any) => (
                       <tr key={label}><td style={s.td}>{label}</td>{vals.map((v: string, i: number) => <td key={i} style={{ ...s.td, textAlign: 'right', ...manq(v) }}>{v}</td>)}</tr>
                     ))}
                   </tbody>
                 </table>
-
-                
               </td>
             </tr>
           </tbody>
         </table>
+
+        {/* GOULOT D'ÉTRANGLEMENT */}
+        <div style={s.titre}>Goulot d'Étranglement</div>
+        <GoulotBars items={buildGoulotItems(z, 'cepe', 't5')} />
 
         {/* EFFICIENCE ET SUIVI LONGITUDINAL */}
         <div style={s.titre}>Efficience et suivi longitudinal des cohortes d'élèves</div>
@@ -753,7 +727,7 @@ const TDBZap = () => {
               niveau="primaire"
               entityLabel="ZAP"
               points={efficienceData}
-              pointsTitle="ZAP comparée à sa CISCO et à sa DREN"
+              parentPoint={{ name: `CISCO ${tdbData.names?.CISCO || ''}`.trim(), ...scoresFrom(aggToSrc(c)) }}
             />
           </div>
 

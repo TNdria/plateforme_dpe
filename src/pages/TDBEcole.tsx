@@ -10,6 +10,8 @@ import { printTdb } from '@/utils/printTdb';
 import { TDBShell } from '@/components/tdb/TDBShell';
 import { TDBImportDialog } from '@/components/tdb/TDBImportDialog';
 import { DisparityIcon } from '@/components/score/DisparityIcon';
+import { EfficienceGrid, efficienceScores } from '@/components/tdb/EfficienceGrid';
+import { GoulotBars, buildGoulotItems, pctSansDiplome } from '@/components/tdb/GoulotBars';
 
 
 
@@ -249,24 +251,11 @@ const TDBEcole = () => {
           </table>
         </div>
 
-        {/* LÉGENDE — bandes pleine largeur style PDF CEG */}
-        <div style={{ marginTop: '4px' }}>
-          {[
-            { color: '#7CB5EC', label: 'Données non disponible' },
-            { color: '#ffff00', label: 'Données à vérifier' },
-            { color: 'rgba(255,0,0,0.75)', label: 'Attention !' },
-          ].map((it) => (
-            <table key={it.label} style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '1px' }}>
-              <tbody>
-                <tr>
-                  <td style={{ width: '14%', border: '1px solid #555', background: it.color, height: '14px' }}></td>
-                  <td style={{ border: '1px solid #555', textAlign: 'center', fontSize: '10px', padding: '2px' }}>{it.label}</td>
-                </tr>
-              </tbody>
-            </table>
+        <div style={{ textAlign: 'center', marginTop: '5px', fontSize: '10px' }}>
+          {[{ c: '#7CB5EC', l: 'Données manquante(s)' }, { c: '#ffff00', l: 'À vérifier' }, { c: 'rgba(255,0,0,0.75)', l: 'Attention' }].map((it) => (
+            <span key={it.l} style={{ display: 'inline-block', marginRight: '12px' }}><span style={{ display: 'inline-block', width: '14px', height: '14px', background: it.c, verticalAlign: 'middle', marginRight: '4px' }} /> {it.l}</span>
           ))}
         </div>
-
 
         {/* RÉSULTATS SCOLAIRES */}
         <div style={s.titre}>RÉSULTATS SCOLAIRES</div>
@@ -565,7 +554,7 @@ const TDBEcole = () => {
                 <tbody>
                   {(selectedNiveau === 'college' ? [
                     ["Nombre d'élèves par enseignant", [ratio(e.ressources?.nbr_eleve, e.personnel?.pers_en_classe), ratio(z.ressources?.nbr_eleve, z.personnel?.pers_en_classe), ratio(c.ressources?.nbr_eleve, c.personnel?.pers_en_classe)]],
-                    ['% enseignants qualifiés', [pct(Number(e.personnel?.pers_en_classe || 0) - Number(e.personnel?.sans_diplome_ped || 0), e.personnel?.pers_en_classe), pct(Number(z.personnel?.pers_en_classe || 0) - Number(z.personnel?.sans_diplome_ped || 0), z.personnel?.pers_en_classe), pct(Number(c.personnel?.pers_en_classe || 0) - Number(c.personnel?.sans_diplome_ped || 0), c.personnel?.pers_en_classe)]],
+                    ['% sans diplôme péd.', [pctSansDiplome(e.personnel), pctSansDiplome(z.personnel), pctSansDiplome(c.personnel)]],
                     ['Ratio section par salle', [ratio(e.sections?.nbr_section, e.sections?.nbr_sdc), ratio(z.sections?.nbr_section, z.sections?.nbr_sdc), ratio(c.sections?.nbr_section, c.sections?.nbr_sdc)]],
                     ["Nombre d'élèves par place assise", [ratio(e.ressources?.nbr_eleve, e.places?.places_assises), ratio(z.ressources?.nbr_eleve, z.places?.places_assises), ratio(c.ressources?.nbr_eleve, c.places?.places_assises)]],
                     ["Nombre d'élèves par Latrine", [ratio(e.ressources?.nbr_eleve, e.places?.latrines), ratio(z.ressources?.nbr_eleve, z.places?.latrines), ratio(c.ressources?.nbr_eleve, c.places?.latrines)]],
@@ -573,7 +562,7 @@ const TDBEcole = () => {
                     ["% Élèves vivants à plus de 5km", [pct(e.ressources?.eleve_5km, e.ressources?.nbr_eleve), pct(z.ressources?.eleve_5km, z.ressources?.nbr_eleve), pct(c.ressources?.eleve_5km, c.ressources?.nbr_eleve)]],
                   ] : [
                     ['Élèves/maître', [ratio(e.ressources?.nbr_eleve, e.personnel?.pers_en_classe), ratio(z.ressources?.nbr_eleve, z.personnel?.pers_en_classe), ratio(c.ressources?.nbr_eleve, c.personnel?.pers_en_classe)]],
-                    ['% enseignants qualifiés', [pct(Number(e.personnel?.pers_en_classe || 0) - Number(e.personnel?.sans_diplome_ped || 0), e.personnel?.pers_en_classe), pct(Number(z.personnel?.pers_en_classe || 0) - Number(z.personnel?.sans_diplome_ped || 0), z.personnel?.pers_en_classe), pct(Number(c.personnel?.pers_en_classe || 0) - Number(c.personnel?.sans_diplome_ped || 0), c.personnel?.pers_en_classe)]],
+                    ['% sans diplôme péd.', [pctSansDiplome(e.personnel), pctSansDiplome(z.personnel), pctSansDiplome(c.personnel)]],
                     ['Classes/salle', [ratio(e.sections?.nbr_section, e.sections?.nbr_sdc), ratio(z.sections?.nbr_section, z.sections?.nbr_sdc), ratio(c.sections?.nbr_section, c.sections?.nbr_sdc)]],
                     ["Nombre d'élèves par place", [ratio(e.ressources?.nbr_eleve, e.places?.places_assises), ratio(z.ressources?.nbr_eleve, z.places?.places_assises), ratio(c.ressources?.nbr_eleve, c.places?.places_assises)]],
                     ["Nombre d'élèves par latrine", [ratio(e.ressources?.nbr_eleve, e.places?.latrines), ratio(z.ressources?.nbr_eleve, z.places?.latrines), ratio(c.ressources?.nbr_eleve, c.places?.latrines)]],
@@ -581,6 +570,7 @@ const TDBEcole = () => {
                     ["Nombre d'élèves par manuel Malagasy", [ratio(e.ressources?.nbr_eleve, e.manuels?.malagasy), ratio(z.ressources?.nbr_eleve, z.manuels?.malagasy), ratio(c.ressources?.nbr_eleve, c.manuels?.malagasy)]],
                     ["Nombre d'élèves par manuel Mathématiques", [ratio(e.ressources?.nbr_eleve, e.manuels?.maths), ratio(z.ressources?.nbr_eleve, z.manuels?.maths), ratio(c.ressources?.nbr_eleve, c.manuels?.maths)]],
                     ["Nombre d'élèves par manuel Français", [ratio(e.ressources?.nbr_eleve, e.manuels?.francais), ratio(z.ressources?.nbr_eleve, z.manuels?.francais), ratio(c.ressources?.nbr_eleve, c.manuels?.francais)]],
+                    ['Caisse école par élève', [ratio(e.ressources?.caisse_ecole, e.ressources?.nbr_eleve), ratio(z.ressources?.caisse_ecole, z.ressources?.nbr_eleve), ratio(c.ressources?.caisse_ecole, c.ressources?.nbr_eleve)]],
                   ]).map(([label, vals]: any) => (
                     <tr key={label}><td style={s.td}>{label}</td>{vals.map((v: string, i: number) => <td key={i} style={{ ...s.td, textAlign: 'right', ...manq(v) }}>{v}</td>)}</tr>
                   ))}
@@ -592,96 +582,18 @@ const TDBEcole = () => {
           </tr></tbody>
         </table>
 
-        {/* === EFFICIENCE — grille smileys 3x3 style PDF CEG === */}
-        {(() => {
-          const etabLbl = selectedNiveau === 'college' ? 'CEG' : selectedNiveau === 'lycee' ? 'Lycée' : 'École';
-          const redEns = pctVal(Number(e.ressources?.red_g || 0) + Number(e.ressources?.red_f || 0), e.ressources?.nbr_eleve);
-          const lastK = selectedNiveau === 'primaire' ? 't5' : selectedNiveau === 'college' ? 't4' : 't3';
-          const retEns = pctVal(e.ressources?.[`eff_${lastK}`], e.ressources?.eff_t1);
-          const examKey = selectedNiveau === 'college' ? 'bepc' : selectedNiveau === 'lycee' ? 'bac' : 'cepe';
-          const admisEns = pctVal(Number(e?.[examKey]?.admis_g || 0) + Number(e?.[examKey]?.admis_f || 0), Number(e?.[examKey]?.nbr_g || 0) + Number(e?.[examKey]?.nbr_f || 0));
-          const scoreY = Math.round((((100 - Math.min(redEns, 100)) + retEns + admisEns) / 3) * 10) / 10;
-          const rem = norm(Number(e.ressources?.nbr_eleve || 0) / Math.max(Number(e.personnel?.pers_en_classe || 1), 1), 45, 60);
-          const eau = e.ressources?.etab_eau ? 100 : 0;
-          const elec = e.ressources?.etab_elec ? 100 : 0;
-          const scoreX = Math.round((((rem + eau + elec) / 3)) * 10) / 10;
-          // Bin scores into 3 buckets (Bon ≥66, Moyen 33–66, Faible <33)
-          const binX = scoreX >= 66 ? 2 : scoreX >= 33 ? 1 : 0; // 0 col = faible ress, 2 = bonne
-          const binY = scoreY >= 66 ? 2 : scoreY >= 33 ? 1 : 0;
-          // grid coord: row 0 = top (good results), row 2 = bottom (low results)
-          const row = 2 - binY;
-          const col = binX; // col 0 left = poor resources
-          const FACES = [
-            // ligne 0 (haut) — bons résultats
-            ['😊', '😊', '😊'],
-            // ligne 1 — moyen
-            ['😐', '😐', '😐'],
-            // ligne 2 (bas) — faibles
-            ['☹️', '☹️', '😢'],
-          ];
-          return (
-            <>
-              <div style={s.titre}>Efficience</div>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <tbody>
-                  {[0, 1, 2].map((r) => (
-                    <tr key={r}>
-                      {[0, 1, 2].map((c) => {
-                        const active = r === row && c === col;
-                        return (
-                          <td key={c} style={{ border: '1px solid #888', width: '33.33%', height: '70px', textAlign: 'center', fontSize: '38px', position: 'relative', background: active ? '#fff8b0' : '#fff' }}>
-                            <span style={{ opacity: active ? 1 : 0.35 }}>{FACES[r][c]}</span>
-                            {active && (
-                              <>
-                                <span style={{ position: 'absolute', top: '4px', right: '6px', fontSize: '9px', fontWeight: 'bold', color: '#2e7d32' }}>{etabLbl}</span>
-                                <span style={{ position: 'absolute', right: '4px', bottom: '2px', lineHeight: 0 }}><MadagascarPin size={22} title="Situation actuelle" /></span>
-                              </>
-                            )}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-
-                </tbody>
-              </table>
-              <table style={{ width: '100%', fontSize: '9px', marginTop: '2px' }}>
-                <tbody>
-                  <tr>
-                    <td style={{ textAlign: 'left' }}>← Ressources faibles</td>
-                    <td style={{ textAlign: 'center' }}>Ressources moyennes</td>
-                    <td style={{ textAlign: 'right' }}>Ressources élevées →</td>
-                  </tr>
-                </tbody>
-              </table>
-
-              {/* === DIAGNOSTIC ET REMARQUES (auto) === */}
-              <div style={{ marginTop: '10px', borderTop: '1px solid #000', paddingTop: '6px' }}>
-                <div style={{ fontSize: '10px', fontWeight: 'bold', fontStyle: 'italic', textDecoration: 'underline', marginBottom: '4px' }}>
-                  Diagnostic et Remarques sur les résultats de votre {etabLbl} :
-                </div>
-                <div style={{ minHeight: '60px', border: '1px solid #888', padding: '6px', background: '#fff', fontSize: '10px', lineHeight: '1.45' }}>
-                  {(() => {
-                    const niveauX = binX === 2 ? 'élevées' : binX === 1 ? 'moyennes' : 'faibles';
-                    const niveauY = binY === 2 ? 'bons' : binY === 1 ? 'moyens' : 'faibles';
-                    const reco = binY < binX
-                      ? `Les ressources sont ${niveauX} mais les résultats restent ${niveauY} : un travail d'accompagnement pédagogique et de suivi des élèves est recommandé.`
-                      : binY > binX
-                        ? `Avec des ressources ${niveauX}, votre ${etabLbl} obtient des résultats ${niveauY} : performance remarquable, à pérenniser.`
-                        : `Vos ressources (${niveauX}) et vos résultats (${niveauY}) sont alignés. Pour progresser, ciblez en priorité ${binX < 2 ? 'le renforcement des ressources' : 'la qualité pédagogique'}.`;
-                    return (
-                      <div>
-                        <div>Ressources <i>{niveauX}</i> · Résultats <i>{niveauY}</i> (score X = {scoreX.toFixed(1)} / Y = {scoreY.toFixed(1)})</div>
-                        <div style={{ marginTop: 4 }}>{reco}</div>
-                        <div style={{ marginTop: 4, color: '#555' }}>Taux d'abandon, redoublement et admission au {examKey.toUpperCase()} doivent être analysés conjointement avec les disparités filles / garçons ci-dessus.</div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              </div>
-            </>
-          );
-        })()}
+        <div style={s.titre}>GOULOT D'ÉTRANGLEMENT</div>
+        <GoulotBars items={buildGoulotItems(e, selectedNiveau === 'college' ? 'bepc' : selectedNiveau === 'lycee' ? 'bac' : 'cepe', selectedNiveau === 'primaire' ? 't5' : selectedNiveau === 'college' ? 't4' : 't3')} />
+        <div style={s.titre}>Efficience</div>
+        <div style={{ border: '1px solid #000', padding: 10 }}>
+          <EfficienceGrid
+            entity={e}
+            niveau={selectedNiveau as any}
+            entityLabel={selectedNiveau === 'college' ? 'CEG' : selectedNiveau === 'lycee' ? 'Lycée' : 'École'}
+            points={[{ name: tdbData.names?.NOM_ETAB || 'Établissement', isCurrent: true, ...efficienceScores(e, selectedNiveau as any) }]}
+            parentPoint={{ name: `ZAP ${tdbData.names?.ZAP || ''}`.trim(), ...efficienceScores(z, selectedNiveau as any) }}
+          />
+        </div>
 
       </div>
 
