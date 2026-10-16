@@ -5,7 +5,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { Client } from "https://deno.land/x/postgres@v0.17.0/mod.ts";
 import { executeDiagnosticDataset } from "./diagnostic.ts";
 
-const VERSION = "v53-20260906-efficience-23-dren";
+const VERSION = "v54-20261016-tdb-import-real-columns";
 
 // PBKDF2-SHA256 password verification for Django auth
 async function verifyDjangoPassword(password: string, encoded: string): Promise<boolean> {
@@ -1045,7 +1045,7 @@ serve(async (req: Request) => {
         const codeZapParam = parseInt(url.searchParams.get("code_zap") || "0");
         const niveau = (url.searchParams.get("niveau") || "primaire").toLowerCase();
         try {
-          const rawData = await executeTdbEcoleData(client, codeEtab, codeZapParam, codeCisco, codeDren, annee, niveau);
+          const rawData: any = await executeTdbEcoleData(client, codeEtab, codeZapParam, codeCisco, codeDren, annee, niveau);
           const [csvEcole, csvZap, csvCisco, candEcole, candZap, candCisco] = await Promise.all([
             getLatestImportedTdbRow('tdb_ecole', { CODE_ETAB: codeEtab, CODE_ZAP: codeZapParam, CODE_CISCO: codeCisco, CODE_DREN: codeDren }),
             getLatestImportedTdbRow('tdb_zap', { CODE_ZAP: codeZapParam, CODE_CISCO: codeCisco, CODE_DREN: codeDren }),
@@ -1760,62 +1760,67 @@ serve(async (req: Request) => {
           if (!sbUrl) {
             return new Response(JSON.stringify({ success: false, error: "SUPABASE_DB_URL non configuré" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
           }
-          // Per-table structural columns to extract from CSV header into typed columns
-          const structuralByTable: Record<string, string[]> = {
-            tdb_mada:  ['CODE_MADA'],
-            tdb_dren:  ['CODE_DREN','DREN'],
-            tdb_cisco: ['CODE_DREN','DREN','CODE_CISCO','CISCO'],
-            tdb_zap:   ['CODE_DREN','DREN','CODE_CISCO','CISCO','CODE_ZAP','ZAP'],
-            tdb_ecole: ['CODE_DREN','DREN','CODE_CISCO','CISCO','CODE_ZAP','ZAP','CODE_ETAB','NOM_ETAB'],
-            tdb_ref:   ['CODE_ETAB'],
-            app_settings: [],
-          };
-          const structural = structuralByTable[tableName] || [];
+          // Insert into the REAL columns of the tdb_* tables: match each CSV header
+          // to an actual table column (case/accent/underscore-insensitive) and coerce
+          // values to the column type. Unknown CSV columns are ignored, not fatal.
           const sb = new Client(sbUrl);
           await sb.connect();
           try {
-            // Build a case-insensitive map header -> CSV index
-            const headerToIdx = new Map<string, number>();
-            (columns as string[]).forEach((c, i) => headerToIdx.set(String(c).toUpperCase(), i));
-            const structuralIdx: Record<string, number> = {};
-            structural.forEach(s => {
-              const i = headerToIdx.get(s.toUpperCase());
-              if (i !== undefined) structuralIdx[s] = i;
+            const colRes = await sb.queryObject<{ column_name: string; data_type: string }>(
+              `SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1`,
+              [tableName],
+            );
+            const tableCols = colRes.rows as { column_name: string; data_type: string }[];
+            const normHdr = (s: string) => String(s ?? '')
+              .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+              .toLowerCase().replace(/[^a-z0-9]+/g, '');
+            const byNorm = new Map<string, { column_name: string; data_type: string }>();
+            tableCols.forEach((c) => {
+              if (c.column_name === 'id' || c.column_name === 'imported_at') return;
+              if (!byNorm.has(normHdr(c.column_name))) byNorm.set(normHdr(c.column_name), c);
             });
+            const keepIdx: number[] = [];
+            const keepCols: { column_name: string; data_type: string }[] = [];
+            const ignoredCols: string[] = [];
+            (columns as string[]).forEach((c, i) => {
+              const m = byNorm.get(normHdr(c));
+              if (m) { keepIdx.push(i); keepCols.push(m); }
+              else ignoredCols.push(c);
+            });
+            if (keepCols.length === 0) {
+              await sb.end();
+              return new Response(JSON.stringify({
+                success: false,
+                error: `Aucune colonne du fichier ne correspond aux colonnes de la table '${tableName}'.`,
+                ignoredColumns: ignoredCols,
+                targetTable: tableName,
+              }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            }
             const batchStartRes = await sb.queryObject<{ now: string }>(`SELECT now() AT TIME ZONE 'UTC' AS now`);
             const batchTs = body.importBatchTs || (batchStartRes.rows[0] as any).now;
             const batchIdInput = body.importBatchId || crypto.randomUUID();
-            const coerce = (v: any) => {
+            const numericTypes = new Set(['numeric', 'double precision', 'real', 'integer', 'bigint', 'smallint']);
+            const intTypes = new Set(['integer', 'bigint', 'smallint']);
+            const coerceVal = (v: any, dt: string) => {
               if (v === null || v === undefined || v === '') return null;
-              if (typeof v === 'number') return v;
-              const s = String(v).trim();
-              if (/^-?\d+(\.\d+)?$/.test(s)) return Number(s);
-              return s;
+              if (numericTypes.has(dt)) {
+                if (typeof v === 'number') return intTypes.has(dt) ? Math.trunc(v) : v;
+                const s = String(v).trim().replace(/\s/g, '').replace(',', '.');
+                const n = Number(s);
+                if (!Number.isFinite(n)) return null;
+                return intTypes.has(dt) ? Math.trunc(n) : n;
+              }
+              return String(v).trim();
             };
-            // Build INSERT once
-            const cols = ['data', 'imported_at', ...structural.map(s => `"${s}"`)];
-            const colList = cols.map(c => c.startsWith('"') ? c : `"${c}"`).join(', ');
-            const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ');
+            const colList = keepCols.map((c) => `"${c.column_name}"`).join(', ');
+            const placeholders = keepCols.map((_, i) => `$${i + 1}`).join(', ');
             const insertSql = `INSERT INTO "${tableName}" (${colList}) VALUES (${placeholders})`;
             let inserted = 0;
             const errors: string[] = [];
             for (let i = 0; i < dataRows.length; i++) {
               try {
                 const row = dataRows[i] as any[];
-                // Build full data jsonb (all CSV columns, original header casing)
-                const dataObj: Record<string, any> = {};
-                (columns as string[]).forEach((c, idx) => { dataObj[c] = coerce(row[idx]); });
-                const structVals = structural.map(s => {
-                  const idx = structuralIdx[s];
-                  if (idx === undefined) return null;
-                  const v = coerce(row[idx]);
-                  // Force CODE_* to integer
-                  if (s.startsWith('CODE_') && v !== null) {
-                    const n = Number(v); return Number.isFinite(n) ? Math.trunc(n) : null;
-                  }
-                  return v;
-                });
-                const vals: any[] = [JSON.stringify(dataObj), batchTs, ...structVals];
+                const vals = keepCols.map((c, k) => coerceVal(row[keepIdx[k]], c.data_type));
                 await sb.queryObject(insertSql, vals);
                 inserted++;
               } catch (e: any) {
@@ -1840,7 +1845,7 @@ serve(async (req: Request) => {
               } catch (_) { /* noop */ }
             }
             await sb.end();
-            return new Response(JSON.stringify({ success: true, inserted, total: dataRows.length, errors, targetTable: tableName, batchId, batchTs }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            return new Response(JSON.stringify({ success: true, inserted, total: dataRows.length, errors, ignoredColumns: ignoredCols, targetTable: tableName, batchId, batchTs }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
           } catch (e: any) {
             try { await sb.end(); } catch (_) { /* noop */ }
             return new Response(JSON.stringify({ success: false, error: `Supabase: ${e.message}` }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });

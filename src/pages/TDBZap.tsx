@@ -10,8 +10,8 @@ import emojiHappy from '@/assets/emoji-happy.jpg';
 import emojiSad from '@/assets/emoji-sad.jpg';
 import { TDBShell } from '@/components/tdb/TDBShell';
 import { TDBImportDialog } from '@/components/tdb/TDBImportDialog';
-import { EfficienceGrid } from '@/components/tdb/EfficienceGrid';
-import { GoulotBars, buildGoulotItems, pctSansDiplome } from '@/components/tdb/GoulotBars';
+import { EfficienceGrid, efficienceScores } from '@/components/tdb/EfficienceGrid';
+import { pctSansDiplome } from '@/components/tdb/GoulotBars';
 import { DisparityIcon } from '@/components/score/DisparityIcon';
 import DataActionsBar from '@/components/admin/DataActionsBar';
 import {
@@ -130,6 +130,8 @@ const TDBZap = () => {
     setLoading(true);
     try {
       const data = await tdbApi.getTdbZapData(Number(selectedZap), Number(selectedCisco), Number(selectedDren), Number(selectedAnnee));
+      try { data.efficience = await tdbApi.getEfficiencePopulation('zap', { code_dren: Number(selectedDren), code_cisco: Number(selectedCisco) }, data.annee); }
+      catch { toast.warning('Les points de comparaison sont indisponibles.'); data.efficience = []; }
       setTdbData(data);
       toast.success('Tableau de bord ZAP chargé');
     } catch (err) { console.error(err); toast.error('Erreur lors du chargement du TDB ZAP'); }
@@ -205,55 +207,12 @@ const TDBZap = () => {
     const z = tdbData.zap, c = tdbData.cisco, d = tdbData.dren;
     const anneeDisplay = `${tdbData.annee - 1}-${tdbData.annee}`;
 
-    // Efficience — mêmes formules que les TDB CISCO / DREN (ressources vs résultats)
-    const scoresFrom = (src: any) => {
-      const nbrEleve = Number(src.nbr_eleve || 0);
-      const persEnClasse = Number(src.pers_en_classe || 0);
-      const rem = nbrEleve > 0 && persEnClasse > 0 ? nbrEleve / persEnClasse : 0;
-      const remScore = rem > 0 ? (rem <= 45 ? 100 : rem >= 60 ? 0 : ((60 - rem) / 15) * 100) : 0;
-      const nbrEtab = Number(src.nbr_etab || 0);
-      const eau = nbrEtab > 0 ? Math.min((Number(src.etab_eau || 0) / nbrEtab) * 100, 100) : 0;
-      const elec = nbrEtab > 0 ? Math.min((Number(src.etab_elec || 0) / nbrEtab) * 100, 100) : 0;
-      const x = (remScore + eau + elec) / 3;
-      const red = nbrEleve > 0 ? ((Number(src.red_g || 0) + Number(src.red_f || 0)) / nbrEleve) * 100 : 0;
-      const retention = Number(src.eff_t1 || 0) > 0 ? (Number(src.eff_t5 || 0) / Number(src.eff_t1)) * 100 : 0;
-      const inscrits = Number(src.inscrits || 0);
-      const txAdmis = inscrits > 0 ? (Number(src.admis || 0) / inscrits) * 100 : 0;
-      const tpa = Number(src.tpa || txAdmis || 0);
-      const parts = [100 - Math.min(red, 100), retention, tpa, txAdmis].filter((v) => isFinite(v));
-      const y = parts.length ? parts.reduce((a, b) => a + b, 0) / parts.length : 0;
-      return { x: Number(x.toFixed(1)), y: Number(y.toFixed(1)) };
-    };
-
-    const aggToSrc = (a: any) => ({
-      nbr_eleve: a?.ressources?.nbr_eleve,
-      pers_en_classe: a?.personnel?.pers_en_classe,
-      nbr_etab: a?.ressources?.nbr_etab,
-      etab_eau: a?.ressources?.etab_eau,
-      etab_elec: a?.ressources?.etab_elec,
-      red_g: a?.ressources?.red_g,
-      red_f: a?.ressources?.red_f,
-      eff_t1: a?.ressources?.eff_t1,
-      eff_t5: a?.ressources?.eff_t5,
-      admis: Number(a?.cepe?.admis_g || 0) + Number(a?.cepe?.admis_f || 0),
-      inscrits: Number(a?.cepe?.nbr_g || 0) + Number(a?.cepe?.nbr_f || 0),
-    });
-
-    const rawEfficience = (tdbData.efficience || []).map((item: any) => ({
+    const efficienceData = (tdbData.efficience || []).map((item: any) => ({
       name: item.ZAP || '',
-      code: item.CODE_ZAP,
       isCurrent: Number(item.CODE_ZAP) === Number(selectedZap),
-      ...scoresFrom({ ...item, inscrits: item.inscrits_cepe }),
-    }));
-
-    // Fallback : comparaison ZAP / CISCO / DREN avec les données déjà affichées
-    const fallbackEfficience = [
-      { name: tdbData.names?.ZAP || 'ZAP', code: selectedZap, isCurrent: true, ...scoresFrom(aggToSrc(z)) },
-    ];
-
-    const hasRawEff = rawEfficience.length > 0 && !rawEfficience.every((p: any) => p.x === 0 && p.y === 0);
-    const efficienceData = hasRawEff ? rawEfficience : fallbackEfficience;
-
+      ...efficienceScores(item, 'primaire', 'zap'),
+    })).filter(p => !p.isCurrent);
+    efficienceData.push({ name: tdbData.names.ZAP, isCurrent: true, ...efficienceScores(z, 'primaire', 'zap') });
 
     // Suivi longitudinal data
     const suiviData = (tdbData.suiviLongitudinal || []).map((item: any) => ({
@@ -712,10 +671,6 @@ const TDBZap = () => {
           </tbody>
         </table>
 
-        {/* GOULOT D'ÉTRANGLEMENT */}
-        <div style={s.titre}>Goulot d'Étranglement</div>
-        <GoulotBars items={buildGoulotItems(z, 'cepe', 't5')} />
-
         {/* EFFICIENCE ET SUIVI LONGITUDINAL */}
         <div style={s.titre}>Efficience et suivi longitudinal des cohortes d'élèves</div>
         <div style={{ border: '1px solid #000', display: 'grid', gridTemplateColumns: '50% 50%', minHeight: '320px' }}>
@@ -724,10 +679,11 @@ const TDBZap = () => {
             <h4 style={{ textAlign: 'center', fontSize: '11px', fontWeight: 'bold', marginBottom: '6px' }}>Efficience — positionnement ressources / résultats de votre ZAP</h4>
             <EfficienceGrid
               entity={z}
+              scope="zap"
               niveau="primaire"
               entityLabel="ZAP"
               points={efficienceData}
-              parentPoint={{ name: `CISCO ${tdbData.names?.CISCO || ''}`.trim(), ...scoresFrom(aggToSrc(c)) }}
+              parentPoint={{ name: `CISCO ${tdbData.names?.CISCO || ''}`.trim(), ...efficienceScores(c, 'primaire', 'cisco') }}
             />
           </div>
 

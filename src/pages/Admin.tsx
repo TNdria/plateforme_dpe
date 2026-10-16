@@ -72,15 +72,34 @@ const HEADERS = {
 };
 
 async function adminFetch(action: string, body: Record<string, any>) {
-  const res = await fetch(
-    `${API_BASE}/functions/v1/db-query?action=${action}`,
-    {
-      method: 'POST',
-      headers: HEADERS,
-      body: JSON.stringify(body),
+  // Retry transient DB outages (503 / DB_UNREACHABLE) with backoff.
+  const delays = [1500, 3000, 6000, 10000];
+  let last: any = null;
+  for (let attempt = 0; attempt <= delays.length; attempt++) {
+    try {
+      const res = await fetch(
+        `${API_BASE}/functions/v1/db-query?action=${action}`,
+        {
+          method: 'POST',
+          headers: HEADERS,
+          body: JSON.stringify(body),
+        }
+      );
+      const json = await res.json().catch(() => ({
+        success: false,
+        error: `Réponse invalide du serveur (${res.status})`,
+      }));
+      const transient =
+        res.status === 503 || json?.code === 'DB_UNREACHABLE' || json?.retryable;
+      if (!transient) return json;
+      last = { success: false, ...json };
+    } catch (e: any) {
+      last = { success: false, error: e?.message || 'Erreur réseau' };
     }
-  );
-  return res.json();
+    if (attempt < delays.length)
+      await new Promise((r) => setTimeout(r, delays[attempt]));
+  }
+  return last;
 }
 
 const asArray = <T,>(value: unknown): T[] =>
@@ -310,7 +329,7 @@ const IMPORT_TARGETS = [
     table: 'tdb_ecole',
     label: 'df_ecole.csv ou df_tdbecoles.csv',
     description: 'Une ligne par établissement (~25 000 écoles)',
-    expectedHeaders: ['CODE_ETAB', 'NOM_ETAB', 'CODE_ZAP'],
+    expectedHeaders: ['CODE_ETAB', 'txAbdGlobal'],
     color: 'bg-rose-500/10 text-rose-700 border-rose-300',
   },
 ] as const;
@@ -778,6 +797,8 @@ const Admin = () => {
       }
 
       setImportData({ headers, rows });
+      // Débloque immédiatement l'étape 3 (le chargement des colonnes DB se fait ensuite)
+      setParsingFile(false);
       toast.success(
         `${totalRows || rows.length} lignes détectées (${headers.length} colonnes)`
       );
@@ -810,7 +831,12 @@ const Admin = () => {
 
       // Auto-detect target if not yet selected
       if (!importTarget) {
-        const detected = IMPORT_TARGETS.find((t) =>
+        // Du plus fin au plus agrégé : un df_tdbecoles contient aussi CODE_ZAP/CISCO/DREN
+        const order = ['examen_cepe_candidates', 'examen_bepc_candidates', 'tdb_ecole', 'tdb_ref', 'tdb_zap', 'tdb_cisco', 'tdb_dren', 'tdb_mada'];
+        const detected = [...IMPORT_TARGETS].sort((a, b) => {
+          const ia = order.indexOf(a.table), ib = order.indexOf(b.table);
+          return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+        }).find((t) =>
           t.expectedHeaders.every((h) => headers.includes(h))
         );
         if (detected) {
@@ -847,10 +873,25 @@ const Admin = () => {
   };
 
   const loadTableColumns = async (tableName: string, headers?: string[]) => {
-    const res = await adminFetch('getTableColumns', {
-      adminUsername: user?.username,
-      tableName,
-    });
+    let res: any = null;
+    try {
+      res = await adminFetch('getTableColumns', {
+        adminUsername: user?.username,
+        tableName,
+      });
+    } catch (err) {
+      console.warn('getTableColumns failed', err);
+    }
+    if (!res?.success || !Array.isArray(res.columns) || res.columns.length === 0) {
+      // Repli : correspondance 1:1 avec les en-têtes du fichier (colonnes inconnues ignorées côté serveur)
+      const hdrs = (headers ?? importData?.headers ?? []).filter(Boolean);
+      setTableColumns(hdrs.map((h) => ({ column_name: h, data_type: 'text', is_nullable: 'YES' })) as any);
+      const mapping: Record<string, string> = {};
+      hdrs.forEach((h) => (mapping[h] = h));
+      setColumnMapping(mapping);
+      toast.warning('Colonnes de la table non chargées : correspondance automatique par nom appliquée.');
+      return;
+    }
     if (res.success) {
       setTableColumns(res.columns);
       const hdrs = headers ?? importData?.headers ?? [];

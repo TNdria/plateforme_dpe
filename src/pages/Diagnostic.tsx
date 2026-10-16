@@ -9,6 +9,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useDiagnosticDataset } from '@/hooks/useDiagnosticDataset';
 import DiagnosticFilters from '@/components/diagnostic/DiagnosticFilters';
 import DiagnosticTextView from '@/components/diagnostic/DiagnosticTextView';
+import { DiagnosticLoading, KpiSkeletonRow } from '@/components/diagnostic/DiagnosticLoading';
+
 import { exportDiagnosticToPDF, exportDiagnosticToDocx } from '@/utils/diagnosticExport';
 import FormulesIndicateurs from '@/components/diagnostic/FormulesIndicateurs';
 import DataActionsBar from '@/components/admin/DataActionsBar';
@@ -105,7 +107,11 @@ const Diagnostic = () => {
   const [genError, setGenError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('monographie');
 
-  const { dataset, loading: statsLoading } = useDiagnosticDataset(Number(selectedDren), Number(selectedCisco));
+  const [reloadKey, setReloadKey] = useState(0);
+  const { dataset, loading: statsLoading, error: statsError } = useDiagnosticDataset(
+    Number(selectedDren), Number(selectedCisco), reloadKey,
+  );
+
 
   useEffect(() => { dashboardApi.getDrens().then(setDrens).catch(() => {}); }, []);
 
@@ -212,7 +218,9 @@ const Diagnostic = () => {
             onExportDocx={() => { if (diagnosticResult) exportDiagnosticToDocx(diagnosticResult); }}
           />
         </div>
-        {cur && (
+        {statsLoading && !dataset ? (
+          <KpiSkeletonRow />
+        ) : cur ? (
           <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-5">
             <Kpi label="Établissements" value={nf(totalLevels(cur?.etablissements))} hint="tous niveaux" />
             <Kpi label="Salles de classe" value={nf(totalLevels(cur?.salles))} hint="tous niveaux" />
@@ -220,11 +228,20 @@ const Diagnostic = () => {
             <Kpi label="Enseignants" value={nf(totalLevels(cur?.enseignants))} hint="tous niveaux" />
             <Kpi label="TBS Primaire" value={pct(ind?.couverture?.tbsPrimaire)} hint="cible 100 %" />
           </div>
-        )}
+        ) : null}
+
       </div>
 
-      <div className="flex-1 overflow-hidden">
+      <div className="relative flex-1 overflow-hidden">
+        <DiagnosticLoading
+          loading={statsLoading}
+          error={dataset ? null : statsError}
+          scope={scopeLabel}
+          annee={annee}
+          onRetry={() => setReloadKey((k) => k + 1)}
+        />
         <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
+
           <div className="border-b border-border bg-card px-4 pt-2">
             <TabsList className="h-auto flex-wrap gap-1 bg-muted/60 p-1">
               {[

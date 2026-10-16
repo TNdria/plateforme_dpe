@@ -10,7 +10,7 @@ import { GenderLabel } from '@/components/score/GenderRow';
 import { TDBShell } from '@/components/tdb/TDBShell';
 import { TDBImportDialog } from '@/components/tdb/TDBImportDialog';
 import { DisparityIcon } from '@/components/score/DisparityIcon';
-import { EfficienceGrid } from '@/components/tdb/EfficienceGrid';
+import { EfficienceGrid, efficienceScores } from '@/components/tdb/EfficienceGrid';
 import { GoulotBars, buildGoulotItems, pctSansDiplome } from '@/components/tdb/GoulotBars';
 import DataActionsBar from '@/components/admin/DataActionsBar';
 import {
@@ -100,6 +100,8 @@ const TDBCisco = () => {
     setLoading(true);
     try {
       const data = await tdbApi.getTdbCiscoData(Number(selectedCisco), Number(selectedDren), Number(selectedAnnee));
+      try { data.efficience = await tdbApi.getEfficiencePopulation('cisco', { code_dren: Number(selectedDren) }, data.annee); }
+      catch { toast.warning('Les points de comparaison sont indisponibles.'); data.efficience = []; }
       setTdbData(data);
       toast.success('Tableau de bord chargé');
     } catch (err) { console.error(err); toast.error('Erreur lors du chargement du TDB'); }
@@ -140,104 +142,12 @@ const TDBCisco = () => {
     const c = tdbData.cisco, d = tdbData.dren, m = tdbData.mada;
     const anneeDisplay = `${tdbData.annee - 1} - ${tdbData.annee}`;
 
-    // Goulot data
-    const goulotData = [
-      {
-        name: "Pourcentage de Fokontany ayant au\nmoins une École",
-        cisco: 100, dren: 100, mada: 100
-      },
-      {
-        name: "Nombre de SdC définitives pour\n1000 enfants d'âge scolaire",
-        cisco: ratioVal(Number(c.sections?.nbr_sdc || 0) * 1000, c.ressources?.nbr_eleve),
-        dren: ratioVal(Number(d.sections?.nbr_sdc || 0) * 1000, d.ressources?.nbr_eleve),
-        mada: ratioVal(Number(m.sections?.nbr_sdc || 0) * 1000, m.ressources?.nbr_eleve),
-      },
-      {
-        name: "Nombre d'enseignants pour\n1000 enfants d'âge scolaire",
-        cisco: ratioVal(Number(c.personnel?.pers_en_classe || 0) * 1000, c.ressources?.nbr_eleve),
-        dren: ratioVal(Number(d.personnel?.pers_en_classe || 0) * 1000, d.ressources?.nbr_eleve),
-        mada: ratioVal(Number(m.personnel?.pers_en_classe || 0) * 1000, m.ressources?.nbr_eleve),
-      },
-      {
-        name: "Nombre de places assises par\nenfants d'âge scolaire",
-        cisco: ratioVal(c.places?.places_assises, c.ressources?.nbr_eleve) * 100,
-        dren: ratioVal(d.places?.places_assises, d.ressources?.nbr_eleve) * 100,
-        mada: ratioVal(m.places?.places_assises, m.ressources?.nbr_eleve) * 100,
-      },
-      {
-        name: "Nombre de lot de\nmanuels(malagasy,maths,frs) par\nenfants d'âge scolaire",
-        cisco: ratioVal((Number(c.manuels?.malagasy||0)+Number(c.manuels?.maths||0)+Number(c.manuels?.francais||0))/3, c.ressources?.nbr_eleve) * 100,
-        dren: ratioVal((Number(d.manuels?.malagasy||0)+Number(d.manuels?.maths||0)+Number(d.manuels?.francais||0))/3, d.ressources?.nbr_eleve) * 100,
-        mada: ratioVal((Number(m.manuels?.malagasy||0)+Number(m.manuels?.maths||0)+Number(m.manuels?.francais||0))/3, m.ressources?.nbr_eleve) * 100,
-      },
-      {
-        name: "Taux de rétention",
-        cisco: pctVal(c.ressources?.ecole_continue, c.ressources?.nbr_etab),
-        dren: pctVal(d.ressources?.ecole_continue, d.ressources?.nbr_etab),
-        mada: pctVal(m.ressources?.ecole_continue, m.ressources?.nbr_etab),
-      },
-      {
-        name: "Pourcentage des admis au CEPE",
-        cisco: pctVal(Number(c.cepe?.admis_g||0)+Number(c.cepe?.admis_f||0), Number(c.cepe?.nbr_g||0)+Number(c.cepe?.nbr_f||0)),
-        dren: pctVal(Number(d.cepe?.admis_g||0)+Number(d.cepe?.admis_f||0), Number(d.cepe?.nbr_g||0)+Number(d.cepe?.nbr_f||0)),
-        mada: pctVal(Number(m.cepe?.admis_g||0)+Number(m.cepe?.admis_f||0), Number(m.cepe?.nbr_g||0)+Number(m.cepe?.nbr_f||0)),
-      },
-    ];
-
-    // Efficience scatter data — calcul commun (mêmes formules que la grille)
-    const scoresFrom = (src: {
-      nbr_eleve?: any; pers_en_classe?: any; nbr_etab?: any; etab_eau?: any; etab_elec?: any;
-      red_g?: any; red_f?: any; eff_t1?: any; eff_t5?: any; admis?: any; inscrits?: any; tpa?: any;
-    }) => {
-      const nbrEleve = Number(src.nbr_eleve || 0);
-      const persEnClasse = Number(src.pers_en_classe || 0);
-      const rem = nbrEleve > 0 && persEnClasse > 0 ? nbrEleve / persEnClasse : 0;
-      const remScore = rem > 0 ? (rem <= 45 ? 100 : rem >= 60 ? 0 : ((60 - rem) / 15) * 100) : 0;
-      const nbrEtab = Number(src.nbr_etab || 0);
-      const eau = nbrEtab > 0 ? Math.min((Number(src.etab_eau || 0) / nbrEtab) * 100, 100) : 0;
-      const elec = nbrEtab > 0 ? Math.min((Number(src.etab_elec || 0) / nbrEtab) * 100, 100) : 0;
-      const x = (remScore + eau + elec) / 3;
-      const red = nbrEleve > 0 ? ((Number(src.red_g || 0) + Number(src.red_f || 0)) / nbrEleve) * 100 : 0;
-      const retention = Number(src.eff_t1 || 0) > 0 ? (Number(src.eff_t5 || 0) / Number(src.eff_t1)) * 100 : 0;
-      const inscrits = Number(src.inscrits || 0);
-      const txAdmis = inscrits > 0 ? (Number(src.admis || 0) / inscrits) * 100 : 0;
-      const tpa = Number(src.tpa || txAdmis || 0);
-      const parts = [100 - Math.min(red, 100), retention, tpa, txAdmis].filter((v) => isFinite(v));
-      const y = parts.length ? parts.reduce((a, b) => a + b, 0) / parts.length : 0;
-      return { x: Number(x.toFixed(1)), y: Number(y.toFixed(1)) };
-    };
-
-    // Agrégat -> source de scores (à partir des données déjà affichées ci-dessus)
-    const aggToSrc = (a: any) => ({
-      nbr_eleve: a?.ressources?.nbr_eleve,
-      pers_en_classe: a?.personnel?.pers_en_classe,
-      nbr_etab: a?.ressources?.nbr_etab,
-      etab_eau: a?.ressources?.etab_eau,
-      etab_elec: a?.ressources?.etab_elec,
-      red_g: a?.ressources?.red_g,
-      red_f: a?.ressources?.red_f,
-      eff_t1: a?.ressources?.eff_t1,
-      eff_t5: a?.ressources?.eff_t5,
-      admis: Number(a?.cepe?.admis_g || 0) + Number(a?.cepe?.admis_f || 0),
-      inscrits: Number(a?.cepe?.nbr_g || 0) + Number(a?.cepe?.nbr_f || 0),
-    });
-
-    const rawEfficience = (tdbData.efficience || []).map((item: any) => ({
+    const efficienceData = (tdbData.efficience || []).map((item: any) => ({
       name: item.CISCO || '',
-      code: item.CODE_CISCO,
       isCurrent: Number(item.CODE_CISCO) === Number(selectedCisco),
-      ...scoresFrom({ ...item, inscrits: item.inscrits_cepe }),
-    }));
-
-    // Fallback : si le backend ne renvoie pas la liste des CISCO, on compare
-    // la CISCO courante à sa DREN et à MADA avec les données déjà affichées.
-    const fallbackEfficience = [
-      { name: tdbData.names?.CISCO || 'CISCO', code: selectedCisco, isCurrent: true, ...scoresFrom(aggToSrc(c)) },
-    ];
-
-    const hasRaw = rawEfficience.length > 0 && !rawEfficience.every((p: any) => p.x === 0 && p.y === 0);
-    const efficienceData = hasRaw ? rawEfficience : fallbackEfficience;
-
+      ...efficienceScores(item, 'primaire', 'cisco'),
+    })).filter(p => !p.isCurrent);
+    efficienceData.push({ name: tdbData.names.CISCO, isCurrent: true, ...efficienceScores(c, 'primaire', 'cisco') });
 
     return (
       <div style={{ width: '100%', maxWidth: '1191px', margin: '0 auto', font: '12px verdana', background: '#fff' }}>
@@ -709,10 +619,11 @@ const TDBCisco = () => {
           <h4 style={{ textAlign: 'center', fontSize: 12, fontWeight: 'bold', marginBottom: 8 }}>Efficience — votre CISCO parmi les CISCO de la DREN</h4>
           <EfficienceGrid
             entity={c}
+            scope="cisco"
             niveau="primaire"
             entityLabel="CISCO"
             points={efficienceData}
-            parentPoint={{ name: `DREN ${tdbData.names?.DREN || ''}`.trim(), ...scoresFrom(aggToSrc(d)) }}
+            parentPoint={{ name: `DREN ${tdbData.names?.DREN || ''}`.trim(), ...efficienceScores(d, 'primaire', 'dren') }}
           />
         </div>
 

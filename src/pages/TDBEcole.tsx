@@ -11,7 +11,7 @@ import { TDBShell } from '@/components/tdb/TDBShell';
 import { TDBImportDialog } from '@/components/tdb/TDBImportDialog';
 import { DisparityIcon } from '@/components/score/DisparityIcon';
 import { EfficienceGrid, efficienceScores } from '@/components/tdb/EfficienceGrid';
-import { GoulotBars, buildGoulotItems, pctSansDiplome } from '@/components/tdb/GoulotBars';
+import { pctSansDiplome } from '@/components/tdb/GoulotBars';
 
 
 
@@ -144,6 +144,10 @@ const TDBEcole = () => {
     setLoading(true);
     try {
       const data = await tdbApi.getTdbEcoleData(Number(selectedEcole), Number(selectedZap), Number(selectedCisco), Number(selectedDren), Number(selectedAnnee), selectedNiveau);
+      if (selectedNiveau === 'primaire') {
+        try { data.efficience = await tdbApi.getEfficiencePopulation('ecole', { code_dren: Number(selectedDren), code_cisco: Number(selectedCisco), code_zap: Number(selectedZap) }, data.annee); }
+        catch { toast.warning('Les points de comparaison sont indisponibles.'); data.efficience = []; }
+      }
       setTdbData(data);
       toast.success('Tableau de bord École chargé');
     } catch (err) { console.error(err); toast.error('Erreur lors du chargement du TDB École'); }
@@ -582,16 +586,17 @@ const TDBEcole = () => {
           </tr></tbody>
         </table>
 
-        <div style={s.titre}>GOULOT D'ÉTRANGLEMENT</div>
-        <GoulotBars items={buildGoulotItems(e, selectedNiveau === 'college' ? 'bepc' : selectedNiveau === 'lycee' ? 'bac' : 'cepe', selectedNiveau === 'primaire' ? 't5' : selectedNiveau === 'college' ? 't4' : 't3')} />
         <div style={s.titre}>Efficience</div>
         <div style={{ border: '1px solid #000', padding: 10 }}>
           <EfficienceGrid
             entity={e}
             niveau={selectedNiveau as any}
             entityLabel={selectedNiveau === 'college' ? 'CEG' : selectedNiveau === 'lycee' ? 'Lycée' : 'École'}
-            points={[{ name: tdbData.names?.NOM_ETAB || 'Établissement', isCurrent: true, ...efficienceScores(e, selectedNiveau as any) }]}
-            parentPoint={{ name: `ZAP ${tdbData.names?.ZAP || ''}`.trim(), ...efficienceScores(z, selectedNiveau as any) }}
+            points={[
+              ...(tdbData.efficience || []).filter((item: any) => Number(item.CODE_ETAB) !== Number(selectedEcole)).map((item: any) => ({ name: item.NOM_ETAB || 'École', ...efficienceScores(item, selectedNiveau, 'ecole') })),
+              { name: tdbData.names?.NOM_ETAB || 'Établissement', isCurrent: true, ...efficienceScores(e, selectedNiveau) },
+            ]}
+            parentPoint={{ name: `ZAP ${tdbData.names?.ZAP || ''}`.trim(), ...efficienceScores(z, selectedNiveau, 'zap') }}
           />
         </div>
 

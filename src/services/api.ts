@@ -386,6 +386,22 @@ export const dashboardApi = {
 
 // TDB API - Uses direct database connection to avoid SSL issues
 export const tdbApi = {
+  getEfficiencePopulation: async (scope: 'ecole' | 'zap' | 'cisco', filters: { code_dren?: number; code_cisco?: number; code_zap?: number }, annee: number) => {
+    const action = { ecole: 'getTdbEcole', zap: 'getTdbZap', cisco: 'getTdbCisco' }[scope];
+    const response = await fetchDB<{ data?: any[] }>(action, filters);
+    const codeKey = { ecole: 'CODE_ETAB', zap: 'CODE_ZAP', cisco: 'CODE_CISCO' }[scope];
+    const rows = (Array.isArray(response.data) ? response.data : []).map(row => ({ ...row, ...(row.data || {}) }))
+      .filter(row => {
+        const year = row.ANNEE_SCOLAIRE ?? row.annee_scolaire ?? row.ANNEE ?? row.annee;
+        return year === undefined || Number(year) === annee;
+      }).sort((a, b) => String(b.imported_at || '').localeCompare(String(a.imported_at || '')));
+    const seen = new Set<string>();
+    return rows.filter(row => {
+      const code = String(row[codeKey] ?? row[codeKey.toLowerCase()] ?? '');
+      if (!code || seen.has(code)) return false;
+      seen.add(code); return true;
+    });
+  },
   getNbrStdDren: async (codeDren: number) => {
     const data = await fetchDB<Array<{ cisco: any[]; zap: any[] }>>('getTdbNbrStdDren', { code_dren: codeDren });
     return data[0] || { cisco: [], zap: [] };
