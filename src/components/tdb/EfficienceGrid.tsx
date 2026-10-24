@@ -15,6 +15,9 @@ interface Props {
   points?: EfficiencePoint[];
   parentPoint?: EfficiencePoint | null;
   pointsTitle?: string;
+  siblingsLabel?: string;
+  showNotes?: boolean;
+  onCurrentLabelClick?: () => void;
 }
 const W = 660, H = 350;
 const plot = { x: 64, y: 18, w: 570, h: 270 };
@@ -22,7 +25,7 @@ const faces = [['😅', '😊', '😐'], ['😊', '😐', '😕'], ['😐', '�
 const zones = [['tdb-zone-good', 'tdb-zone-positive', 'tdb-zone-neutral'], ['tdb-zone-positive', 'tdb-zone-neutral', 'tdb-zone-warning'], ['tdb-zone-neutral', 'tdb-zone-warning', 'tdb-zone-critical']];
 const valid = (p: EfficiencePoint): p is EfficiencePoint & { x: number; y: number } =>
   p.x !== null && p.y !== null && Number.isFinite(p.x) && Number.isFinite(p.y);
-export function EfficienceGrid({ entity, niveau = 'primaire', scope = 'ecole', entityLabel = 'Entité', points = [], parentPoint = null }: Props) {
+export function EfficienceGrid({ entity, niveau = 'primaire', scope = 'ecole', entityLabel = 'Entité', points = [], parentPoint = null, siblingsLabel = 'Autres entités', showNotes = true, onCurrentLabelClick }: Props) {
   if (!entity) return null;
   const calculated = computeEfficience(entity, scope, niveau);
   const current = points.find(p => p.isCurrent) || { name: entityLabel, ...calculated };
@@ -33,7 +36,7 @@ export function EfficienceGrid({ entity, niveau = 'primaire', scope = 'ecole', e
   const label = (p: EfficiencePoint & { x: number; y: number }, kind: string) => {
     const right = p.x > 65;
     const text = p.name.length > 35 ? `${p.name.slice(0, 32)}…` : p.name;
-    return <text className={kind === 'parent' ? 'tdb-point-parent' : 'tdb-point-current'} x={px(p.x) + (right ? -12 : 12)} y={py(p.y) + (kind === 'parent' ? 19 : -10)} textAnchor={right ? 'end' : 'start'} fontSize={11} fontWeight="bold">{text}</text>;
+    return <text className={`${kind === 'parent' ? 'tdb-point-parent' : 'tdb-point-current'}${kind === 'current' && onCurrentLabelClick ? ' cursor-pointer' : ''}`} onClick={kind === 'current' ? onCurrentLabelClick : undefined} x={px(p.x) + (right ? -12 : 12)} y={py(p.y) + (kind === 'parent' ? 19 : -10)} textAnchor={right ? 'end' : 'start'} fontSize={11} fontWeight="bold">{text}</text>;
   };
   const bin = (n: number) => n < 100 / 3 ? 0 : n < 200 / 3 ? 1 : 2;
   const xLevel = valid(current) ? ['faibles', 'moyennes', 'élevées'][bin(current.x)] : '';
@@ -57,9 +60,9 @@ export function EfficienceGrid({ entity, niveau = 'primaire', scope = 'ecole', e
       {parent && valid(parent) && <g><path d={`M ${px(parent.x)} ${py(parent.y) - 7} l 7 7 -7 7 -7 -7 Z`} className="tdb-marker-parent"><title>{parent.name}</title></path>{label(parent, 'parent')}</g>}
       {valid(current) && <g><polygon points={Array.from({ length: 6 }, (_, i) => { const a = i * Math.PI / 3; return `${px(current.x) + 9 * Math.cos(a)},${py(current.y) + 9 * Math.sin(a)}`; }).join(' ')} className="tdb-marker-current"><title>{current.name}</title></polygon>{label(current, 'current')}</g>}
     </svg>
-    <div className="tdb-chart-legend"><span className="tdb-point-current">⬢ {entityLabel}</span>{parent && valid(parent) && <span className="tdb-point-parent">◆ Niveau de comparaison</span>}{siblings.length > 0 && <span>● Autres entités</span>}</div>
-    <p className="tdb-chart-note">{valid(current) ? `Ressources ${xLevel} · Résultats ${yLevel}` : 'Efficience non calculable : certains indicateurs nécessaires sont indisponibles.'}</p>
-    {niveau !== 'primaire' && <p className="tdb-chart-note">Seuils du primaire utilisés à titre indicatif ; normes du secondaire à confirmer.</p>}
+    <div className="tdb-chart-legend"><span className="tdb-point-current">⬢ {entityLabel}</span>{parent && valid(parent) && <span className="tdb-point-parent">◆ Niveau de comparaison</span>}{siblings.length > 0 && <span>● {siblingsLabel}</span>}</div>
+    {showNotes && <p className="tdb-chart-note">{valid(current) ? `Ressources ${xLevel} · Résultats ${yLevel}` : 'Efficience non calculable : certains indicateurs nécessaires sont indisponibles.'}</p>}
+    {showNotes && niveau !== 'primaire' && <p className="tdb-chart-note">Seuils du primaire utilisés à titre indicatif ; normes du secondaire à confirmer.</p>}
   </div>;
 }
 export default EfficienceGrid;

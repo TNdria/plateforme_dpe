@@ -4,8 +4,13 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { Client } from "https://deno.land/x/postgres@v0.17.0/mod.ts";
 import { executeDiagnosticDataset } from "./diagnostic.ts";
-
-const VERSION = "v54-20261016-tdb-import-real-columns";
+import { executeTdbDrenNiveau, type NiveauDren } from "./tdbDrenNiveau.ts";
+import { ensureRefTables, CE_SRC, popSource, importReference } from "./refImport.ts";
+import {
+  importTdbRows, latestTdbRow, ensureTdbTables, isTdbTable, updateTdbRow, insertTdbRow, listTdbRows,
+  type TdbTable,
+} from "./tdbStore.ts";
+const VERSION = "v58-20261022-tdb-imports-db";
 
 // PBKDF2-SHA256 password verification for Django auth
 async function verifyDjangoPassword(password: string, encoded: string): Promise<boolean> {
@@ -254,12 +259,9 @@ function mergeImportedTdbSnapshot(level: any, imported: any): any {
       nbr_eleve: fill(ressources.nbr_eleve, ['nombre_eleves', 'nbr_eleve']),
       nbr_etab: fill(ressources.nbr_etab, ['nbr_etab']),
       tpa: fill(ressources.tpa, ['TPA', 'tpa']),
-      red_g: fill(ressources.red_g, ['red_garcons', 'red_g']),
-      red_f: fill(ressources.red_f, ['red_fille', 'red_f']),
-      eleve_2km: fill(ressources.eleve_2km, ['eleve_2km']),
-      ecole_continue: fill(ressources.ecole_continue, ['ecole_continue']),
-      etab_eau: fill(ressources.etab_eau, ['point_eau', 'etab_eau']),
-      etab_elec: fill(ressources.etab_elec, ['electricite', 'etab_elec']),
+      // Ne remplis jamais un effectif (redoublants, élèves à 2 km, établissements
+      // avec eau/électricité, écoles continues) avec un pourcentage importé :
+      // ces taux restent disponibles dans `indicateurs` et sont lus séparément.
     },
     personnel: {
       ...personnel,
@@ -318,7 +320,29 @@ function mergeCepeWithCounts(csvCepe: any, candCepe: any): any | null {
   };
 }
 
-async function getLatestImportedTdbRow(table: 'tdb_zap' | 'tdb_cisco' | 'tdb_dren' | 'tdb_ecole' | 'tdb_mada', filters: Record<string, number>): Promise<any | null> {
+/**
+ * Dernier snapshot TDB importé. Source de vérité : la base du ministère
+ * (tables tdb_* créées par tdbStore). Repli en lecture seule sur Supabase pour
+ * les imports antérieurs, tant qu'aucune ligne locale n'existe.
+ */
+async function getLatestImportedTdbRow(
+  client: any,
+  table: TdbTable,
+  filters: Record<string, number>,
+): Promise<any | null> {
+  try {
+    const local = await latestTdbRow(client, table, filters);
+    if (local) return local;
+  } catch (e) {
+    console.error('getLatestImportedTdbRow (ministère) error:', table, (e as Error)?.message);
+  }
+  return await getLatestImportedTdbRowSupabase(table, filters);
+}
+
+async function getLatestImportedTdbRowSupabase(
+  table: 'tdb_zap' | 'tdb_cisco' | 'tdb_dren' | 'tdb_ecole' | 'tdb_mada',
+  filters: Record<string, number>,
+): Promise<any | null> {
   const sbUrl = Deno.env.get('SUPABASE_DB_URL');
   if (!sbUrl) return null;
   const sb = new Client(sbUrl);
@@ -609,6 +633,7 @@ serve(async (req: Request) => {
         client.connect(),
         new Promise((_, reject) => setTimeout(() => reject(new Error("DB_CONNECT_TIMEOUT")), 8000)),
       ]);
+      await ensureRefTables(client);
     } catch (connErr: any) {
       console.error("DB connection failed:", connErr?.message || connErr);
       try { await client.end(); } catch (_e) { /* ignore */ }
@@ -925,11 +950,11 @@ serve(async (req: Request) => {
         let annee = parseInt(url.searchParams.get("annee") || "2025");
         annee = await resolveExamenYear(client, annee);
         try {
-          const rawData = await executeTdbCiscoData(client, codeCisco, codeDren, annee);
+          const rawData: any = await executeTdbCiscoData(client, codeCisco, codeDren, annee);
           const [csvCisco, csvDren, csvMada, candCisco, candDren, candMada] = await Promise.all([
-            getLatestImportedTdbRow('tdb_cisco', { CODE_CISCO: codeCisco, CODE_DREN: codeDren }),
-            getLatestImportedTdbRow('tdb_dren', { CODE_DREN: codeDren }),
-            getLatestImportedTdbRow('tdb_mada', {}),
+            getLatestImportedTdbRow(client, 'tdb_cisco', { CODE_CISCO: codeCisco, CODE_DREN: codeDren }),
+            getLatestImportedTdbRow(client, 'tdb_dren', { CODE_DREN: codeDren }),
+            getLatestImportedTdbRow(client, 'tdb_mada', {}),
             aggregateCandidatesCepe(client, annee, { type: 'cisco', codeCisco, codeDren }),
             aggregateCandidatesCepe(client, annee, { type: 'dren', codeDren }),
             aggregateCandidatesCepe(client, annee, { type: 'mada' }),
@@ -963,23 +988,47 @@ serve(async (req: Request) => {
         }
       }
 
+      case "getTdbDrenNiveau": {
+        const annee = parseInt(url.searchParams.get("annee") || "2025");
+        const niv = (url.searchParams.get("niveau") || "college") as NiveauDren;
+        if (!['presco', 'college', 'lycee'].includes(niv)) {
+          await client.end();
+          return new Response(JSON.stringify({ error: "niveau invalide" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        try {
+          const data: any = await executeTdbDrenNiveau(client, codeDren, annee, niv);
+          if (niv === 'college') {
+            const [bd, bm] = await Promise.all([
+              aggregateCandidatesBepc(client, annee, { type: 'dren', codeDren }),
+              aggregateCandidatesBepc(client, annee, { type: 'mada' }),
+            ]);
+            data.bepc_dren = bd || {}; data.bepc_mada = bm || {};
+          }
+          await client.end();
+          return new Response(JSON.stringify(serializeData(data)), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        } catch (e: any) {
+          await client.end();
+          return new Response(JSON.stringify({ error: `TDB DREN ${niv}: ${e.message}`, version: VERSION }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+      }
+
       case "getTdbDrenData": {
-        let annee = parseInt(url.searchParams.get("annee") || "2025");
-        annee = await resolveExamenYear(client, annee);
+        const annee = parseInt(url.searchParams.get("annee") || "2025");
+        const examYear = await resolveExamenYear(client, annee);
         try {
           const rawData = await executeTdbDrenData(client, codeDren, annee);
           const [csvDren, csvMada, candDren, candMada] = await Promise.all([
-            getLatestImportedTdbRow('tdb_dren', { CODE_DREN: codeDren }),
-            getLatestImportedTdbRow('tdb_mada', {}),
-            aggregateCandidatesCepe(client, annee, { type: 'dren', codeDren }),
-            aggregateCandidatesCepe(client, annee, { type: 'mada' }),
+            getLatestImportedTdbRow(client, 'tdb_dren', { CODE_DREN: codeDren }),
+            getLatestImportedTdbRow(client, 'tdb_mada', {}),
+            aggregateCandidatesCepe(client, examYear, { type: 'dren', codeDren }),
+            aggregateCandidatesCepe(client, examYear, { type: 'mada' }),
           ]);
           rawData.dren.cepe = completeCepe(mergeCepeWithCounts(normalizeImportedCepe(csvDren), candDren) ?? rawData.dren.cepe);
           rawData.mada.cepe = completeCepe(mergeCepeWithCounts(normalizeImportedCepe(csvMada), candMada) ?? rawData.mada.cepe);
           rawData.dren = mergeImportedTdbSnapshot(rawData.dren, csvDren);
           rawData.mada = mergeImportedTdbSnapshot(rawData.mada, csvMada);
           await client.end();
-          return new Response(JSON.stringify({ ...serializeData(rawData), examen_annee: annee }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          return new Response(JSON.stringify({ ...serializeData(rawData), examen_annee: examYear }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         } catch (tdbErr: any) {
           console.error("getTdbDrenData error:", tdbErr);
           await client.end();
@@ -994,9 +1043,9 @@ serve(async (req: Request) => {
         try {
           const rawData = await executeTdbZapData(client, codeZap, codeCisco, codeDren, annee);
           const [csvZap, csvCisco, csvDren, candZap, candCisco, candDren] = await Promise.all([
-            getLatestImportedTdbRow('tdb_zap', { CODE_ZAP: codeZap, CODE_CISCO: codeCisco, CODE_DREN: codeDren }),
-            getLatestImportedTdbRow('tdb_cisco', { CODE_CISCO: codeCisco, CODE_DREN: codeDren }),
-            getLatestImportedTdbRow('tdb_dren', { CODE_DREN: codeDren }),
+            getLatestImportedTdbRow(client, 'tdb_zap', { CODE_ZAP: codeZap, CODE_CISCO: codeCisco, CODE_DREN: codeDren }),
+            getLatestImportedTdbRow(client, 'tdb_cisco', { CODE_CISCO: codeCisco, CODE_DREN: codeDren }),
+            getLatestImportedTdbRow(client, 'tdb_dren', { CODE_DREN: codeDren }),
             aggregateCandidatesCepe(client, annee, { type: 'zap', codeZap, codeCisco, codeDren }),
             aggregateCandidatesCepe(client, annee, { type: 'cisco', codeCisco, codeDren }),
             aggregateCandidatesCepe(client, annee, { type: 'dren', codeDren }),
@@ -1047,9 +1096,9 @@ serve(async (req: Request) => {
         try {
           const rawData: any = await executeTdbEcoleData(client, codeEtab, codeZapParam, codeCisco, codeDren, annee, niveau);
           const [csvEcole, csvZap, csvCisco, candEcole, candZap, candCisco] = await Promise.all([
-            getLatestImportedTdbRow('tdb_ecole', { CODE_ETAB: codeEtab, CODE_ZAP: codeZapParam, CODE_CISCO: codeCisco, CODE_DREN: codeDren }),
-            getLatestImportedTdbRow('tdb_zap', { CODE_ZAP: codeZapParam, CODE_CISCO: codeCisco, CODE_DREN: codeDren }),
-            getLatestImportedTdbRow('tdb_cisco', { CODE_CISCO: codeCisco, CODE_DREN: codeDren }),
+            getLatestImportedTdbRow(client, 'tdb_ecole', { CODE_ETAB: codeEtab, CODE_ZAP: codeZapParam, CODE_CISCO: codeCisco, CODE_DREN: codeDren }),
+            getLatestImportedTdbRow(client, 'tdb_zap', { CODE_ZAP: codeZapParam, CODE_CISCO: codeCisco, CODE_DREN: codeDren }),
+            getLatestImportedTdbRow(client, 'tdb_cisco', { CODE_CISCO: codeCisco, CODE_DREN: codeDren }),
             aggregateCandidatesCepe(client, annee, { type: 'ecole', codeEtab }),
             aggregateCandidatesCepe(client, annee, { type: 'zap', codeZap: codeZapParam, codeCisco, codeDren }),
             aggregateCandidatesCepe(client, annee, { type: 'cisco', codeCisco, codeDren }),
@@ -1408,6 +1457,18 @@ serve(async (req: Request) => {
       }
 
       // ============ Admin: Import data (insert rows into a table) ============
+      case "importReference": {
+        const body = await req.json();
+        const chk = await client.queryObject(`SELECT is_superuser FROM login_customuser WHERE username = $1`, [body.adminUsername || '']);
+        if (chk.rows.length === 0 || !(chk.rows[0] as any).is_superuser) {
+          await client.end();
+          return new Response(JSON.stringify({ success: false, error: "Accès refusé" }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 403 });
+        }
+        const out = await importReference(client, body);
+        await client.end();
+        return new Response(JSON.stringify(out), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
       case "importData": {
         const body = await req.json();
         const { adminUsername, tableName, columns, rows: dataRows } = body;
@@ -1644,19 +1705,14 @@ serve(async (req: Request) => {
             const batchIdProbe = body.importBatchId;
             let isFirstChunk = body.isFirstChunk === true || !batchIdProbe;
             if (batchIdProbe) {
-              const sbUrlProbe = Deno.env.get("SUPABASE_DB_URL");
-              if (sbUrlProbe) {
-                const sbp = new Client(sbUrlProbe);
-                try {
-                  await sbp.connect();
-                  const ex = await sbp.queryObject<{ c: number }>(
-                    `SELECT COUNT(*)::int AS c FROM tdb_import_batches WHERE id = $1`,
-                    [batchIdProbe],
-                  );
-                  isFirstChunk = body.isFirstChunk === true || ((ex.rows[0] as any)?.c ?? 0) === 0;
-                  await sbp.end();
-                } catch (_) { try { await sbp.end(); } catch(_2) {} }
-              }
+              try {
+                await ensureTdbTables(client);
+                const ex = await client.queryObject<{ c: number }>(
+                  `SELECT COUNT(*)::int AS c FROM public.tdb_import_batches WHERE id = $1`,
+                  [batchIdProbe],
+                );
+                isFirstChunk = body.isFirstChunk === true || ((ex.rows[0] as any)?.c ?? 0) === 0;
+              } catch (_) { /* non-fatal */ }
             }
             if (isFirstChunk && yr !== null) {
               const delRes = await client.queryObject(
@@ -1721,29 +1777,25 @@ serve(async (req: Request) => {
               }
             }
           }
-          // Track batch in Supabase tdb_import_batches
+          // Track batch dans la base du ministère (tdb_import_batches)
           let batchId: string | null = null;
           if (inserted > 0) {
-            const sbUrl = Deno.env.get("SUPABASE_DB_URL");
-            if (sbUrl) {
-              const sb = new Client(sbUrl);
-              try {
-                await sb.connect();
-                const batchIdInput = body.importBatchId || crypto.randomUUID();
-                const batchRes = await sb.queryObject<{ id: string }>(
-                  `INSERT INTO tdb_import_batches (id, table_name, file_name, row_count, imported_by, batch_ts_start, batch_ts_end, status)
-                   VALUES ($1, $2, $3, $4, $5, $6, $6, 'completed')
-                   ON CONFLICT (id) DO UPDATE SET
-                     row_count = tdb_import_batches.row_count + EXCLUDED.row_count,
-                     batch_ts_end = EXCLUDED.batch_ts_end,
-                     status = 'completed'
-                   RETURNING id`,
-                  [batchIdInput, tableName, body.fileName || null, inserted, adminUsername || 'unknown', batchTs],
-                );
-                batchId = (batchRes.rows[0] as any)?.id ?? null;
-                await sb.end();
-              } catch (_) { try { await sb.end(); } catch(_2) {} }
-            }
+            try {
+              await ensureTdbTables(client);
+              const batchIdInput = body.importBatchId || crypto.randomUUID();
+              const batchRes = await client.queryObject<{ id: string }>(
+                `INSERT INTO public.tdb_import_batches (id, table_name, file_name, row_count, imported_by, batch_ts_start, batch_ts_end, status)
+                 VALUES ($1, $2, $3, $4, $5, $6::timestamptz, $6::timestamptz, 'completed')
+                 ON CONFLICT (id) DO UPDATE SET
+                   row_count = public.tdb_import_batches.row_count + EXCLUDED.row_count,
+                   batch_ts_start = LEAST(public.tdb_import_batches.batch_ts_start, EXCLUDED.batch_ts_start),
+                   batch_ts_end = GREATEST(public.tdb_import_batches.batch_ts_end, EXCLUDED.batch_ts_end),
+                   status = 'completed'
+                 RETURNING id`,
+                [batchIdInput, tableName, body.fileName || null, inserted, adminUsername || 'unknown', batchTs],
+              );
+              batchId = (batchRes.rows[0] as any)?.id ?? null;
+            } catch (_) { /* non-fatal */ }
           }
           await client.end();
           return new Response(JSON.stringify({ success: true, inserted, total: dataRows.length, errors, targetTable: `${tableName} (Django)`, batchId, batchTs, deletedBeforeInsert }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -1751,105 +1803,41 @@ serve(async (req: Request) => {
 
 
 
-        // ---- TDB tables (tdb_*) live in Lovable Cloud (Supabase), not Django DB ----
-        // Schema = structural columns + flexible `data jsonb` for all CSV indicators.
-        const supabaseTables = ['tdb_ecole', 'tdb_zap', 'tdb_cisco', 'tdb_dren', 'tdb_mada', 'tdb_ref', 'app_settings'];
-        if (supabaseTables.includes(tableName)) {
+        // ---- TDB tables (tdb_*) : stockées dans la base du ministère (pas Supabase) ----
+        // Toutes les colonnes du fichier sont conservées dans `data jsonb` ; les colonnes
+        // structurelles (CODE_DREN, CODE_CISCO, CODE_ZAP, CODE_ETAB, CODE_MADA) servent aux filtres.
+        const tdbTargets = ['tdb_ecole', 'tdb_zap', 'tdb_cisco', 'tdb_dren', 'tdb_mada', 'tdb_ref'];
+        if (tdbTargets.includes(tableName)) {
+          if (!isTdbTable(tableName)) {
+            await client.end();
+            return new Response(JSON.stringify({ success: false, error: `Table '${tableName}' non supportée pour l'import` }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          }
+          const imported = await importTdbRows(client, {
+            table: tableName,
+            columns: columns as string[],
+            rows: dataRows as any[][],
+            fileName: body.fileName || null,
+            importedBy: adminUsername || 'unknown',
+            batchId: body.importBatchId || null,
+            batchTs: body.importBatchTs || null,
+          });
           await client.end();
-          const sbUrl = Deno.env.get("SUPABASE_DB_URL");
-          if (!sbUrl) {
-            return new Response(JSON.stringify({ success: false, error: "SUPABASE_DB_URL non configuré" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-          }
-          // Insert into the REAL columns of the tdb_* tables: match each CSV header
-          // to an actual table column (case/accent/underscore-insensitive) and coerce
-          // values to the column type. Unknown CSV columns are ignored, not fatal.
-          const sb = new Client(sbUrl);
-          await sb.connect();
-          try {
-            const colRes = await sb.queryObject<{ column_name: string; data_type: string }>(
-              `SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1`,
-              [tableName],
-            );
-            const tableCols = colRes.rows as { column_name: string; data_type: string }[];
-            const normHdr = (s: string) => String(s ?? '')
-              .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-              .toLowerCase().replace(/[^a-z0-9]+/g, '');
-            const byNorm = new Map<string, { column_name: string; data_type: string }>();
-            tableCols.forEach((c) => {
-              if (c.column_name === 'id' || c.column_name === 'imported_at') return;
-              if (!byNorm.has(normHdr(c.column_name))) byNorm.set(normHdr(c.column_name), c);
+          if (!imported.success) {
+            return new Response(JSON.stringify({ ...imported, targetTable: tableName }), {
+              status: imported.retryable ? 409 : 500,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
             });
-            const keepIdx: number[] = [];
-            const keepCols: { column_name: string; data_type: string }[] = [];
-            const ignoredCols: string[] = [];
-            (columns as string[]).forEach((c, i) => {
-              const m = byNorm.get(normHdr(c));
-              if (m) { keepIdx.push(i); keepCols.push(m); }
-              else ignoredCols.push(c);
-            });
-            if (keepCols.length === 0) {
-              await sb.end();
-              return new Response(JSON.stringify({
-                success: false,
-                error: `Aucune colonne du fichier ne correspond aux colonnes de la table '${tableName}'.`,
-                ignoredColumns: ignoredCols,
-                targetTable: tableName,
-              }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-            }
-            const batchStartRes = await sb.queryObject<{ now: string }>(`SELECT now() AT TIME ZONE 'UTC' AS now`);
-            const batchTs = body.importBatchTs || (batchStartRes.rows[0] as any).now;
-            const batchIdInput = body.importBatchId || crypto.randomUUID();
-            const numericTypes = new Set(['numeric', 'double precision', 'real', 'integer', 'bigint', 'smallint']);
-            const intTypes = new Set(['integer', 'bigint', 'smallint']);
-            const coerceVal = (v: any, dt: string) => {
-              if (v === null || v === undefined || v === '') return null;
-              if (numericTypes.has(dt)) {
-                if (typeof v === 'number') return intTypes.has(dt) ? Math.trunc(v) : v;
-                const s = String(v).trim().replace(/\s/g, '').replace(',', '.');
-                const n = Number(s);
-                if (!Number.isFinite(n)) return null;
-                return intTypes.has(dt) ? Math.trunc(n) : n;
-              }
-              return String(v).trim();
-            };
-            const colList = keepCols.map((c) => `"${c.column_name}"`).join(', ');
-            const placeholders = keepCols.map((_, i) => `$${i + 1}`).join(', ');
-            const insertSql = `INSERT INTO "${tableName}" (${colList}) VALUES (${placeholders})`;
-            let inserted = 0;
-            const errors: string[] = [];
-            for (let i = 0; i < dataRows.length; i++) {
-              try {
-                const row = dataRows[i] as any[];
-                const vals = keepCols.map((c, k) => coerceVal(row[keepIdx[k]], c.data_type));
-                await sb.queryObject(insertSql, vals);
-                inserted++;
-              } catch (e: any) {
-                if (errors.length < 5) errors.push(`Ligne ${i + 1}: ${e.message}`);
-              }
-            }
-            // Record batch
-            let batchId: string | null = null;
-            if (inserted > 0) {
-              try {
-                const batchRes = await sb.queryObject<{ id: string }>(
-                  `INSERT INTO tdb_import_batches (id, table_name, file_name, row_count, imported_by, batch_ts_start, batch_ts_end, status)
-                   VALUES ($1, $2, $3, $4, $5, $6, $6, 'completed')
-                   ON CONFLICT (id) DO UPDATE SET
-                     row_count = tdb_import_batches.row_count + EXCLUDED.row_count,
-                     batch_ts_end = EXCLUDED.batch_ts_end,
-                     status = 'completed'
-                   RETURNING id`,
-                  [batchIdInput, tableName, body.fileName || null, inserted, adminUsername || 'unknown', batchTs],
-                );
-                batchId = (batchRes.rows[0] as any)?.id ?? null;
-              } catch (_) { /* noop */ }
-            }
-            await sb.end();
-            return new Response(JSON.stringify({ success: true, inserted, total: dataRows.length, errors, ignoredColumns: ignoredCols, targetTable: tableName, batchId, batchTs }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-          } catch (e: any) {
-            try { await sb.end(); } catch (_) { /* noop */ }
-            return new Response(JSON.stringify({ success: false, error: `Supabase: ${e.message}` }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
           }
+          return new Response(JSON.stringify({
+            success: true,
+            inserted: imported.inserted,
+            total: dataRows.length,
+            errors: [],
+            targetTable: tableName,
+            batchId: imported.batchId,
+            batchTs: imported.batchTs,
+            replacedOld: imported.replacedOld,
+          }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
 
         // Map TDB views (read-only) to their underlying source tables for INSERT
@@ -1956,10 +1944,10 @@ serve(async (req: Request) => {
           await client.end();
           return new Response(JSON.stringify({ success: false, error: "Accès refusé" }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 403 });
         }
-        // tdb_* tables live in Supabase, not Django DB → use SUPABASE_DB_URL
-        // (examen_cepe_candidates is in Django, handled by the default branch below)
-        const supabaseTablesC = ['tdb_ecole', 'tdb_zap', 'tdb_cisco', 'tdb_dren', 'tdb_mada', 'tdb_ref', 'app_settings'];
-        if (supabaseTablesC.includes(tableName)) {
+        // Les tables tdb_* vivent dans la base du ministère : on les crée au besoin
+        // avant de lire information_schema.
+        if (isTdbTable(tableName)) await ensureTdbTables(client);
+        if (tableName === 'app_settings') {
           await client.end();
           const sbUrl = Deno.env.get("SUPABASE_DB_URL");
           if (!sbUrl) return new Response(JSON.stringify({ success: false, error: "SUPABASE_DB_URL non configuré" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -1974,7 +1962,7 @@ serve(async (req: Request) => {
         return new Response(JSON.stringify({ success: true, columns: cols.rows }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
-      // ============ Admin: CRUD on tdb_* tables (via Supabase REST with service role) ============
+      // ============ Admin: CRUD on tdb_* tables (base du ministère) ============
       case "crudTdb": {
         const body = await req.json();
         const { adminUsername, op, table, id: rowId, data: rowData } = body;
@@ -1983,72 +1971,54 @@ serve(async (req: Request) => {
           await client.end();
           return new Response(JSON.stringify({ success: false, error: "Accès refusé" }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 403 });
         }
-        await client.end();
-        const allowedTdb = ['tdb_mada', 'tdb_dren', 'tdb_cisco', 'tdb_zap', 'tdb_ecole'];
-        if (!allowedTdb.includes(table)) {
+        if (!isTdbTable(table)) {
+          await client.end();
           return new Response(JSON.stringify({ success: false, error: `Table '${table}' non autorisée` }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
-        const supaUrl2 = Deno.env.get("SUPABASE_URL")!;
-        const supaKey2 = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-        const baseUrl = `${supaUrl2}/rest/v1/${table}`;
-        const baseHeaders: Record<string, string> = {
-          apikey: supaKey2,
-          Authorization: `Bearer ${supaKey2}`,
-          "Content-Type": "application/json",
-          Prefer: "return=representation",
-        };
         try {
           if (op === "list") {
-            const limit = parseInt(url.searchParams.get("limit") || "200");
+            const limit = parseInt(url.searchParams.get("limit") || "500");
             const offset = parseInt(url.searchParams.get("offset") || "0");
-            const r = await fetch(`${baseUrl}?order=id.asc&limit=${limit}&offset=${offset}`, { headers: baseHeaders });
-            const d = await r.json();
-            return new Response(JSON.stringify({ success: true, data: d }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            const rows = await listTdbRows(client, table, limit, offset);
+            await client.end();
+            return new Response(JSON.stringify({ success: true, data: serializeData(rows.rows) }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
           }
           if (op === "delete") {
-            const r = await fetch(`${baseUrl}?id=eq.${rowId}`, { method: "DELETE", headers: baseHeaders });
-            if (!r.ok) {
-              const txt = await r.text();
-              return new Response(JSON.stringify({ success: false, error: txt }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-            }
+            await ensureTdbTables(client);
+            await client.queryObject(`DELETE FROM public."${table}" WHERE id = $1`, [rowId]);
+            await client.end();
             return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
           }
           if (op === "update") {
-            const r = await fetch(`${baseUrl}?id=eq.${rowId}`, { method: "PATCH", headers: baseHeaders, body: JSON.stringify(rowData) });
-            const d = await r.json();
-            if (!r.ok) return new Response(JSON.stringify({ success: false, error: JSON.stringify(d) }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-            return new Response(JSON.stringify({ success: true, data: d }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            const res = await updateTdbRow(client, table, rowId, rowData || {});
+            await client.end();
+            return new Response(JSON.stringify(res), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
           }
           if (op === "insert") {
-            const r = await fetch(baseUrl, { method: "POST", headers: baseHeaders, body: JSON.stringify(rowData) });
-            const d = await r.json();
-            if (!r.ok) return new Response(JSON.stringify({ success: false, error: JSON.stringify(d) }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-            return new Response(JSON.stringify({ success: true, data: d }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            const res = await insertTdbRow(client, table, rowData || {});
+            await client.end();
+            return new Response(JSON.stringify(res), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
           }
           if (op === "truncate") {
-            const r = await fetch(`${baseUrl}?id=gt.0`, { method: "DELETE", headers: baseHeaders });
-            if (!r.ok) {
-              const txt = await r.text();
-              return new Response(JSON.stringify({ success: false, error: txt }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-            }
+            await ensureTdbTables(client);
+            await client.queryObject(`DELETE FROM public."${table}"`);
+            await client.end();
             return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
           }
+          await client.end();
           return new Response(JSON.stringify({ success: false, error: `Opération '${op}' inconnue` }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         } catch (e: any) {
+          try { await client.end(); } catch { /* ignore */ }
           return new Response(JSON.stringify({ success: false, error: e.message }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
       }
-
-      // ============ TDB Pre-calculated data (from Supabase tdb_* tables) ============
+      // ============ TDB Pre-calculated data (base du ministère) ============
       case "getTdbMada":
       case "getTdbDren":
       case "getTdbCisco":
       case "getTdbZap":
       case "getTdbEcole": {
-        await client.end();
-        const supaUrl = Deno.env.get("SUPABASE_URL")!;
-        const supaKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-        const tableMap: Record<string, string> = {
+        const tableMap: Record<string, TdbTable> = {
           getTdbMada: 'tdb_mada',
           getTdbDren: 'tdb_dren',
           getTdbCisco: 'tdb_cisco',
@@ -2056,42 +2026,32 @@ serve(async (req: Request) => {
           getTdbEcole: 'tdb_ecole',
         };
         const tbl = tableMap[action];
-        const filters: string[] = [];
-        if (codeDren > 0 && (action === 'getTdbDren' || action === 'getTdbCisco' || action === 'getTdbZap' || action === 'getTdbEcole')) {
-          filters.push(`CODE_DREN=eq.${codeDren}`);
-        }
-        if (codeCisco > 0 && (action === 'getTdbCisco' || action === 'getTdbZap' || action === 'getTdbEcole')) {
-          filters.push(`CODE_CISCO=eq.${codeCisco}`);
-        }
-        if (codeZap > 0 && (action === 'getTdbZap' || action === 'getTdbEcole')) {
-          filters.push(`CODE_ZAP=eq.${codeZap}`);
-        }
+        await ensureTdbTables(client);
+        const conds: string[] = [];
+        const params: any[] = [];
+        const addCond = (col: string, val: number) => {
+          if (val > 0) { params.push(val); conds.push(`"${col}" = $${params.length}`); }
+        };
+        if (action === 'getTdbDren' || action === 'getTdbCisco' || action === 'getTdbZap' || action === 'getTdbEcole') addCond('CODE_DREN', codeDren);
+        if (action === 'getTdbCisco' || action === 'getTdbZap' || action === 'getTdbEcole') addCond('CODE_CISCO', codeCisco);
+        if (action === 'getTdbZap' || action === 'getTdbEcole') addCond('CODE_ZAP', codeZap);
         const codeEtabParam = url.searchParams.get('code_etab');
-        if (codeEtabParam && action === 'getTdbEcole') {
-          filters.push(`CODE_ETAB=eq.${parseInt(codeEtabParam)}`);
-        }
-        const qs = filters.length ? `?${filters.join('&')}` : '';
-        const tdbRes = await fetch(`${supaUrl}/rest/v1/${tbl}${qs}`, {
-          headers: { apikey: supaKey, Authorization: `Bearer ${supaKey}` },
-        });
-        const tdbData = await tdbRes.json();
-        return new Response(JSON.stringify({ success: true, data: tdbData, version: VERSION }), {
+        if (codeEtabParam && action === 'getTdbEcole') addCond('CODE_ETAB', parseInt(codeEtabParam));
+        const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+        const rows = await client.queryObject(`SELECT * FROM public."${tbl}" ${where} ORDER BY id ASC`, params);
+        await client.end();
+        return new Response(JSON.stringify({ success: true, data: serializeData(rows.rows), version: VERSION }), {
           headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "public, max-age=300" },
         });
       }
 
-      // ============ TDB Snapshot (latest imported row, flattened from data jsonb) ============
+      // ============ TDB Snapshot (dernière ligne importée, data aplati) ============
       case "getTdbMadaSnapshot":
       case "getTdbDrenSnapshot":
       case "getTdbCiscoSnapshot":
       case "getTdbZapSnapshot":
       case "getTdbEcoleSnapshot": {
-        await client.end();
-        const sbUrl = Deno.env.get("SUPABASE_DB_URL");
-        if (!sbUrl) {
-          return new Response(JSON.stringify({ success: false, error: "SUPABASE_DB_URL non configuré" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        }
-        const tableMap: Record<string, string> = {
+        const tableMap: Record<string, TdbTable> = {
           getTdbMadaSnapshot: 'tdb_mada',
           getTdbDrenSnapshot: 'tdb_dren',
           getTdbCiscoSnapshot: 'tdb_cisco',
@@ -2100,41 +2060,23 @@ serve(async (req: Request) => {
         };
         const tbl = tableMap[action];
         const codeEtab = parseInt(url.searchParams.get('code_etab') || '0');
-        const conds: string[] = [];
-        const params: any[] = [];
-        const addCond = (col: string, val: number) => {
-          if (val > 0) { params.push(val); conds.push(`"${col}" = $${params.length}`); }
-        };
-        if (tbl === 'tdb_dren' || tbl === 'tdb_cisco' || tbl === 'tdb_zap' || tbl === 'tdb_ecole') addCond('CODE_DREN', codeDren);
-        if (tbl === 'tdb_cisco' || tbl === 'tdb_zap' || tbl === 'tdb_ecole') addCond('CODE_CISCO', codeCisco);
-        if (tbl === 'tdb_zap' || tbl === 'tdb_ecole') addCond('CODE_ZAP', codeZap);
-        if (tbl === 'tdb_ecole') addCond('CODE_ETAB', codeEtab);
-        const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
-        const sb = new Client(sbUrl); await sb.connect();
+        const filters: Record<string, number> = {};
+        if (tbl === 'tdb_dren' || tbl === 'tdb_cisco' || tbl === 'tdb_zap' || tbl === 'tdb_ecole') filters.CODE_DREN = codeDren;
+        if (tbl === 'tdb_cisco' || tbl === 'tdb_zap' || tbl === 'tdb_ecole') filters.CODE_CISCO = codeCisco;
+        if (tbl === 'tdb_zap' || tbl === 'tdb_ecole') filters.CODE_ZAP = codeZap;
+        if (tbl === 'tdb_ecole') filters.CODE_ETAB = codeEtab;
         try {
-          const r = await sb.queryObject(
-            `SELECT * FROM ${tbl} ${where} ORDER BY imported_at DESC, id DESC LIMIT 1`,
-            params,
-          );
-          await sb.end();
-          if (r.rows.length === 0) {
+          const row = await latestTdbRow(client, tbl, filters);
+          await client.end();
+          if (!row) {
             return new Response(JSON.stringify({ success: true, found: false, data: null, version: VERSION }), { headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "public, max-age=120" } });
           }
-          const row: any = r.rows[0];
-          const data = (row.data && typeof row.data === 'object') ? row.data : {};
-          // Flatten: structural cols + every key of data jsonb
-          const flat: Record<string, any> = { ...data };
-          for (const k of Object.keys(row)) {
-            if (k === 'data' || k === 'id') continue;
-            if (flat[k] === undefined || flat[k] === null) flat[k] = row[k];
-          }
-          return new Response(JSON.stringify({ success: true, found: true, data: flat, imported_at: row.imported_at, version: VERSION }), { headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "public, max-age=120" } });
+          return new Response(JSON.stringify({ success: true, found: true, data: row, imported_at: row.imported_at, version: VERSION }), { headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "public, max-age=120" } });
         } catch (e: any) {
-          try { await sb.end(); } catch (_) {}
+          try { await client.end(); } catch (_) { /* ignore */ }
           return new Response(JSON.stringify({ success: false, error: e.message }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
       }
-
       // ============ Batch action - multiple queries in one connection ============
       case "batch": {
         const body = await req.json();
@@ -2236,7 +2178,7 @@ serve(async (req: Request) => {
         return new Response(JSON.stringify(batchResults), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
-      // ============ Admin: List CSV import batches (Supabase) ============
+      // ============ Admin: List CSV import batches (base du ministère) ============
       case "listImportBatches": {
         const body = await req.json().catch(() => ({}));
         const { adminUsername } = body;
@@ -2245,23 +2187,21 @@ serve(async (req: Request) => {
           await client.end();
           return new Response(JSON.stringify({ success: false, error: "Accès refusé" }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 403 });
         }
-        await client.end();
-        const sbUrl = Deno.env.get("SUPABASE_DB_URL");
-        const sb = new Client(sbUrl!); await sb.connect();
         try {
-          const r = await sb.queryObject(
+          await ensureTdbTables(client);
+          const r = await client.queryObject(
             `SELECT id, table_name, file_name, row_count, imported_by, status, batch_ts_start, batch_ts_end, created_at, notes
-             FROM tdb_import_batches WHERE status = 'completed' ORDER BY created_at DESC LIMIT 200`
+             FROM public.tdb_import_batches WHERE status = 'completed' ORDER BY created_at DESC LIMIT 200`,
           );
-          await sb.end();
-          return new Response(JSON.stringify({ success: true, batches: r.rows }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          await client.end();
+          return new Response(JSON.stringify({ success: true, batches: serializeData(r.rows) }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         } catch (e: any) {
-          try { await sb.end(); } catch (_) {}
+          try { await client.end(); } catch (_) { /* ignore */ }
           return new Response(JSON.stringify({ success: false, error: e.message }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
       }
 
-      // ============ Admin: Preview rows of an import batch (Supabase) ============
+      // ============ Admin: Preview rows of an import batch (base du ministère) ============
       case "getImportBatchRows": {
         const body = await req.json();
         const { adminUsername, batchId, limit = 100, offset = 0 } = body;
@@ -2270,67 +2210,48 @@ serve(async (req: Request) => {
           await client.end();
           return new Response(JSON.stringify({ success: false, error: "Accès refusé" }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 403 });
         }
-        await client.end();
         const allowedTablesGR = new Set(['tdb_ecole','tdb_zap','tdb_cisco','tdb_dren','tdb_mada','tdb_ref','examen_cepe_candidates','examen_bepc_candidates']);
-        const sbUrl = Deno.env.get("SUPABASE_DB_URL");
-        const sb = new Client(sbUrl!); await sb.connect();
         try {
-          const b = await sb.queryObject<{ table_name: string; batch_ts_start: string; batch_ts_end: string }>(
-            `SELECT table_name, batch_ts_start::text AS batch_ts_start, batch_ts_end::text AS batch_ts_end FROM tdb_import_batches WHERE id = $1`,
+          await ensureTdbTables(client);
+          const b = await client.queryObject<{ table_name: string; batch_ts_start: string; batch_ts_end: string }>(
+            `SELECT table_name, batch_ts_start::text AS batch_ts_start, batch_ts_end::text AS batch_ts_end FROM public.tdb_import_batches WHERE id = $1`,
             [batchId],
           );
           if (b.rows.length === 0) {
-            await sb.end();
+            await client.end();
             return new Response(JSON.stringify({ success: false, error: "Batch introuvable" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
           }
           const { table_name, batch_ts_start, batch_ts_end } = b.rows[0] as any;
           if (!allowedTablesGR.has(table_name)) {
-            await sb.end();
+            await client.end();
             return new Response(JSON.stringify({ success: false, error: `Table '${table_name}' non supportée` }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
           }
           const safeLimit = Math.min(Math.max(parseInt(String(limit)) || 100, 1), 500);
           const safeOffset = Math.max(parseInt(String(offset)) || 0, 0);
-          // Exam tables live in the Django DB, not Supabase
-          const isExamTbl = table_name === 'examen_cepe_candidates' || table_name === 'examen_bepc_candidates';
-          const dbc = isExamTbl ? new Client(dbConfig) : sb;
-          if (isExamTbl) { await sb.end(); await dbc.connect(); }
-          try {
-            const cnt = await dbc.queryObject<{ c: number }>(
-              `SELECT COUNT(*)::int AS c FROM public.${table_name} WHERE imported_at BETWEEN $1::timestamptz AND $2::timestamptz`,
-              [batch_ts_start, batch_ts_end],
-            );
-            const rows = await dbc.queryObject(
-              `SELECT * FROM public.${table_name} WHERE imported_at BETWEEN $1::timestamptz AND $2::timestamptz ORDER BY id LIMIT ${safeLimit} OFFSET ${safeOffset}`,
-              [batch_ts_start, batch_ts_end],
-            );
-            await dbc.end();
-            const safeRows = (rows.rows as any[]).map(r => {
-              const o: any = {};
-              for (const k of Object.keys(r)) {
-                const v = (r as any)[k];
-                o[k] = typeof v === "bigint" ? Number(v) : v;
-              }
-              return o;
-            });
-            return new Response(JSON.stringify({
-              success: true,
-              table: table_name,
-              total: (cnt.rows[0] as any)?.c ?? 0,
-              limit: safeLimit,
-              offset: safeOffset,
-              rows: safeRows,
-            }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-          } catch (e: any) {
-            try { await dbc.end(); } catch (_) {}
-            return new Response(JSON.stringify({ success: false, error: e.message }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-          }
+          const cnt = await client.queryObject<{ c: number }>(
+            `SELECT COUNT(*)::int AS c FROM public."${table_name}" WHERE imported_at BETWEEN $1::timestamptz AND $2::timestamptz`,
+            [batch_ts_start, batch_ts_end],
+          );
+          const rows = await client.queryObject(
+            `SELECT * FROM public."${table_name}" WHERE imported_at BETWEEN $1::timestamptz AND $2::timestamptz ORDER BY id LIMIT ${safeLimit} OFFSET ${safeOffset}`,
+            [batch_ts_start, batch_ts_end],
+          );
+          await client.end();
+          return new Response(JSON.stringify({
+            success: true,
+            table: table_name,
+            total: (cnt.rows[0] as any)?.c ?? 0,
+            limit: safeLimit,
+            offset: safeOffset,
+            rows: serializeData(rows.rows),
+          }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         } catch (e: any) {
-          try { await sb.end(); } catch (_) {}
+          try { await client.end(); } catch (_) { /* ignore */ }
           return new Response(JSON.stringify({ success: false, error: e.message }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
       }
 
-      // ============ Admin: Undo a CSV import batch ============
+      // ============ Admin: Undo a CSV import batch (base du ministère) ============
       case "deleteImportBatch": {
         const body = await req.json();
         const { adminUsername, batchId } = body;
@@ -2339,56 +2260,38 @@ serve(async (req: Request) => {
           await client.end();
           return new Response(JSON.stringify({ success: false, error: "Accès refusé" }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 403 });
         }
-        await client.end();
-        const allowedTables = new Set(['tdb_ecole','tdb_zap','tdb_cisco','tdb_dren','tdb_mada','tdb_ref','app_settings','examen_cepe_candidates','examen_bepc_candidates']);
-        const sbUrl = Deno.env.get("SUPABASE_DB_URL");
-        const sb = new Client(sbUrl!); await sb.connect();
+        const allowedTables = new Set(['tdb_ecole','tdb_zap','tdb_cisco','tdb_dren','tdb_mada','tdb_ref','examen_cepe_candidates','examen_bepc_candidates']);
         try {
-          const b = await sb.queryObject<{ table_name: string; batch_ts_start: string; batch_ts_end: string }>(
-            `SELECT table_name, batch_ts_start::text AS batch_ts_start, batch_ts_end::text AS batch_ts_end FROM tdb_import_batches WHERE id = $1`,
+          await ensureTdbTables(client);
+          const b = await client.queryObject<{ table_name: string; batch_ts_start: string; batch_ts_end: string }>(
+            `SELECT table_name, batch_ts_start::text AS batch_ts_start, batch_ts_end::text AS batch_ts_end FROM public.tdb_import_batches WHERE id = $1`,
             [batchId],
           );
           if (b.rows.length === 0) {
-            await sb.end();
+            await client.end();
             return new Response(JSON.stringify({ success: false, error: "Batch introuvable" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
           }
           const { table_name, batch_ts_start, batch_ts_end } = b.rows[0] as any;
           if (!allowedTables.has(table_name)) {
-            await sb.end();
+            await client.end();
             return new Response(JSON.stringify({ success: false, error: `Table '${table_name}' non supportée pour l'annulation` }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
           }
-          // Exam tables live in the Django DB
-          const isExamTbl = table_name === 'examen_cepe_candidates' || table_name === 'examen_bepc_candidates';
-          let deletedCount = 0;
-          if (isExamTbl) {
-            const dbc = new Client(dbConfig);
-            await dbc.connect();
-            try {
-              const del = await dbc.queryObject(
-                `DELETE FROM public.${table_name} WHERE imported_at BETWEEN $1::timestamptz AND $2::timestamptz`,
-                [batch_ts_start, batch_ts_end],
-              );
-              deletedCount = (del as any).rowCount ?? 0;
-            } finally { try { await dbc.end(); } catch(_) {} }
-          } else {
-            const del = await sb.queryObject(
-              `DELETE FROM ${table_name} WHERE imported_at BETWEEN $1::timestamptz AND $2::timestamptz`,
-              [batch_ts_start, batch_ts_end],
-            );
-            deletedCount = (del as any).rowCount ?? 0;
-          }
-          await sb.queryObject(
-            `UPDATE tdb_import_batches SET status = 'reverted', notes = COALESCE(notes,'') || ' | reverted at ' || now() WHERE id = $1`,
+          const del = await client.queryObject(
+            `DELETE FROM public."${table_name}" WHERE imported_at BETWEEN $1::timestamptz AND $2::timestamptz`,
+            [batch_ts_start, batch_ts_end],
+          );
+          const deletedCount = (del as any).rowCount ?? 0;
+          await client.queryObject(
+            `UPDATE public.tdb_import_batches SET status = 'reverted', notes = COALESCE(notes,'') || ' | reverted at ' || now() WHERE id = $1`,
             [batchId],
           );
-          await sb.end();
+          await client.end();
           return new Response(JSON.stringify({ success: true, deleted: deletedCount, table: table_name }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         } catch (e: any) {
-          try { await sb.end(); } catch (_) {}
+          try { await client.end(); } catch (_) { /* ignore */ }
           return new Response(JSON.stringify({ success: false, error: e.message }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
       }
-
       // ============ Admin: Generic CRUD on whitelisted PostgreSQL tables ============
       case "crudAny": {
         const body = await req.json();
@@ -2413,6 +2316,7 @@ serve(async (req: Request) => {
           await client.end();
           return new Response(JSON.stringify({ success: false, error: `Table '${table}' non autorisée` }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
+        if (isTdbTable(table)) await ensureTdbTables(client);
 
         // Resolve PK column (default id), validate it exists
         const colRes = await client.queryObject(`SELECT column_name, data_type FROM information_schema.columns WHERE table_schema='public' AND table_name='${table}' ORDER BY ordinal_position`);
@@ -2426,6 +2330,9 @@ serve(async (req: Request) => {
           if (v === null || v === undefined || v === '') return 'NULL';
           if (typeof v === 'number') return String(v);
           if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE';
+          // Les colonnes `data` des tables tdb_* sont du JSONB : sérialiser les objets
+          // au lieu d'écrire « [object Object] ».
+          if (typeof v === 'object') return `'${JSON.stringify(v).replace(/'/g, "''")}'::jsonb`;
           return `'${String(v).replace(/'/g, "''")}'`;
         };
 
@@ -2817,10 +2724,16 @@ async function executeTdb111(client: Client, codeDren: number) {
 async function executeTdbDrenData(client: Client, codeDren: number, annee: number) {
   const whereDren = `AND a1."CODE_DREN" = ${codeDren}`;
   const whereMada = '';
+  // TNS / TNA : effectifs par âge officiel (colonnes T*_G/F_<âge>ANS de fpe_e1).
+  // Le croisement « nouveau entrant × âge » n'existe pas : le TNA utilise donc
+  // les élèves de CP1 âgés de 6 ans (redoublants de 6 ans compris).
+  const AGE_6_10 = [1, 2, 3, 4, 5].flatMap((grade) => [6, 7, 8, 9, 10].flatMap((age) => [`T${grade}_G_${age}ANS`, `T${grade}_F_${age}ANS`]));
+  const elevesAges = (alias: string) => AGE_6_10.map((col) => si(`${alias}."${col}"`)).join('+');
 
   // Reuse same helpers as CISCO but with DREN vs MADA
-  async function getRessources(where: string) {
+  async function getRessources(where: string, year = annee) {
     const q = `SELECT COUNT(DISTINCT CASE WHEN a1."EXISTE_PRIMAIRE"=1 THEN a1."CODE_ETAB" END) AS nbr_etab,
+      COUNT(DISTINCT CASE WHEN a1."EXISTE_PRIMAIRE"=1 AND a1."EXISTE_PRESCO"=1 THEN a1."CODE_ETAB" END) AS etab_avec_cap,
       SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T1_G"')}+${si('e1."T1_F"')}+${si('e1."T2_G"')}+${si('e1."T2_F"')}+${si('e1."T3_G"')}+${si('e1."T3_F"')}+${si('e1."T4_G"')}+${si('e1."T4_F"')}+${si('e1."T5_G"')}+${si('e1."T5_F"')} ELSE 0 END) AS nbr_eleve,
       SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T1_G"')}+${si('e1."T2_G"')}+${si('e1."T3_G"')}+${si('e1."T4_G"')}+${si('e1."T5_G"')} ELSE 0 END) AS nbr_eleve_g,
       SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T1_F"')}+${si('e1."T2_F"')}+${si('e1."T3_F"')}+${si('e1."T4_F"')}+${si('e1."T5_F"')} ELSE 0 END) AS nbr_eleve_f,
@@ -2843,9 +2756,9 @@ async function executeTdbDrenData(client: Client, codeDren: number, annee: numbe
       COUNT(DISTINCT CASE WHEN a1."EXISTE_PRIMAIRE"=1 AND a1."EST_ALIMENTE_EAU"='1' THEN a1."CODE_ETAB" END) AS etab_eau,
       COUNT(DISTINCT CASE WHEN a1."EXISTE_PRIMAIRE"=1 AND a1."EST_ELECTRIFIE"='1' THEN a1."CODE_ETAB" END) AS etab_elec,
       SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T1_G_2KM"')}+${si('e1."T1_F_2KM"')}+${si('e1."T2_G_2KM"')}+${si('e1."T2_F_2KM"')}+${si('e1."T3_G_2KM"')}+${si('e1."T3_F_2KM"')}+${si('e1."T4_G_2KM"')}+${si('e1."T4_F_2KM"')}+${si('e1."T5_G_2KM"')}+${si('e1."T5_F_2KM"')} ELSE 0 END) AS eleve_2km,
-      SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 AND (${si('e1."T5_G"')}+${si('e1."T5_F"')}) > 0 THEN 1 ELSE 0 END) AS ecole_continue
+      SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 AND (${si('e1."T4_G"')}+${si('e1."T4_F"')}) > 0 AND (${si('e1."T5_G"')}+${si('e1."T5_F"')}) > 0 THEN 1 ELSE 0 END) AS ecole_continue
     FROM fpe_a1 a1 LEFT JOIN fpe_e1 e1 ON e1."CODE_ETAB"=a1."CODE_ETAB" AND e1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND e1."SECTEUR"=a1."SECTEUR"
-    WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."SECTEUR"=0 AND a1."EXISTE_PRIMAIRE"=1 ${where}`;
+    WHERE a1."ANNEE_SCOLAIRE"=${year} AND a1."SECTEUR"=0 AND a1."EXISTE_PRIMAIRE"=1 ${where}`;
     return (await client.queryObject(q)).rows[0] || {};
   }
   async function getPersonnel(where: string) {
@@ -2869,7 +2782,7 @@ async function executeTdbDrenData(client: Client, codeDren: number, annee: numbe
     try { const q = `SELECT SUM(COALESCE(c."Nbre",0)) AS total_candidats, SUM(COALESCE(c."nbrG",0)) AS nbr_g, SUM(COALESCE(c."nbrF",0)) AS nbr_f, SUM(COALESCE(c."admisG",0)) AS admis_g, SUM(COALESCE(c."admisF",0)) AS admis_f, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."mlg"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."ml_fahazoana_lahatsoratra"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg_fahazoana, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."ml_fitsipika"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg_fitsipika, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."ml_fanazarana_hanoratra"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg_fanazarana, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."frs"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."fr_comprehension"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs_comprehension, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."fr_grammaire"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs_grammaire, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."fr_expression_ecrite"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs_expression, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."operation"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mths_operation, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."probleme"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mths_probleme, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM((COALESCE(c."operation",0)+COALESCE(c."probleme",0))/2.0*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mths, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."moyenne"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_total, SUM(COALESCE(c."malagasy_sup_10",0)) AS mlg_sup10, SUM(COALESCE(c."malagasy_compo_sup_10",0)) AS mlg_compo_sup10, SUM(COALESCE(c."malagasy_gram_sup_10",0)) AS mlg_gram_sup10, SUM(COALESCE(c."malagasy_exp_10",0)) AS mlg_exp_sup10, SUM(COALESCE(c."francais_sup_10",0)) AS frs_sup10, SUM(COALESCE(c."francais_compo_sup_10",0)) AS frs_compo_sup10, SUM(COALESCE(c."francais_gram_sup_10",0)) AS frs_gram_sup10, SUM(COALESCE(c."francais_exp_10",0)) AS frs_exp_sup10, SUM(COALESCE(c."math_sup_10",0)) AS mths_sup10, SUM(COALESCE(c."op_sup_10",0)) AS op_sup10, SUM(COALESCE(c."probleme_sup_10",0)) AS prob_sup10, SUM(COALESCE(c."autres_sup_10",0)) AS autres_sup10 FROM examen_cepe c INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=c."code_etab" AND a1."ANNEE_SCOLAIRE"=c."id_annee_scolaire" WHERE c."id_annee_scolaire"=${annee} AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
   }
   async function getCaisseEcole(where: string) {
-    try { const q = `SELECT SUM(COALESCE(ce."FCE",0)) AS total_fce FROM caisse_ecole ce INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=ce."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=${annee} WHERE ce."ANNEE_SCOLAIRE"=(SELECT MAX("ANNEE_SCOLAIRE") FROM caisse_ecole WHERE "ANNEE_SCOLAIRE"<=${annee}) AND a1."EXISTE_PRIMAIRE"=1 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
+    try { const q = `SELECT SUM(COALESCE(ce."FCE",0)) AS total_fce FROM ${CE_SRC} ce INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=ce."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=${annee} WHERE ce."ANNEE_SCOLAIRE"=(SELECT MAX("ANNEE_SCOLAIRE") FROM ${CE_SRC} cx WHERE "ANNEE_SCOLAIRE"<=${annee}) AND a1."EXISTE_PRIMAIRE"=1 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
   }
   async function getManuels(where: string) {
     try { const q = `SELECT SUM(${si('l1."MALAGASY_T1"')}+${si('l1."MALAGASY_T2"')}+${si('l1."MALAGASY_T3"')}+${si('l1."MALAGASY_T4"')}+${si('l1."MALAGASY_T5"')}) AS malagasy, SUM(${si('l1."MATHS_T1"')}+${si('l1."MATHS_T2"')}+${si('l1."MATHS_T3"')}+${si('l1."MATHS_T4"')}+${si('l1."MATHS_T5"')}) AS maths, SUM(${si('l1."FRANCAIS_T1"')}+${si('l1."FRANCAIS_T2"')}+${si('l1."FRANCAIS_T3"')}+${si('l1."FRANCAIS_T4"')}+${si('l1."FRANCAIS_T5"')}) AS francais FROM fpe_l1 l1 INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=l1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=l1."ANNEE_SCOLAIRE" WHERE l1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
@@ -2936,6 +2849,39 @@ async function executeTdbDrenData(client: Client, codeDren: number, annee: numbe
     getEfficience(), getEfficienceDrens(),
   ]);
 
+  async function getPopulation(code?: number) {
+    // Do not apply the 2025 projection to other survey years.
+    const imported = await popSource(client, annee);
+    if (annee !== 2025 && !imported) return {};
+    const POP = imported || 'population_2025';
+    try {
+      const ages = [6, 7, 8, 9, 10];
+      const cast = (age: number) => `NULLIF(pop_${age}_ans::text, '')::numeric`;
+      const q = `SELECT ${ages.map(age => `SUM(${cast(age)}) AS pop_${age}ans`).join(',')},
+        SUM(${ages.map(cast).join('+')}) AS pop_6_10
+        FROM ${POP} px WHERE ${code ? `code_dren=${code}` : 'TRUE'}`;
+      return (await client.queryObject(q)).rows[0] || {};
+    } catch (e) { console.error('DREN population unavailable', e); return {}; }
+  }
+  async function getNextYear(where: string) {
+    try { return { ressources: await getRessources(where, annee + 1) }; }
+    catch (e) { console.error('DREN next-year flows unavailable', e); return {}; }
+  }
+  async function getAllSectorPupils(where: string) {
+    try {
+      const pupils = [1,2,3,4,5].flatMap(k => ['G','F'].map(g => si(`e1."T${k}_${g}"`))).join('+');
+      // TNS/TNA portent sur l'ensemble des secteurs, comme le TBS : les effectifs
+      // par âge sont donc lus sans filtre de secteur.
+      return (await client.queryObject(`SELECT SUM(${pupils}) AS nombre_eleves_tous_secteurs,
+        NULLIF(SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${elevesAges('e1')} ELSE 0 END), 0) AS eleves_6_10ans,
+        NULLIF(SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T1_G_6ANS"')}+${si('e1."T1_F_6ANS"')}-${si('e1."T1_G_RED_6ANS"')}-${si('e1."T1_F_RED_6ANS"')} ELSE 0 END), 0) AS nouveaux_cp1_6ans
+        FROM fpe_a1 a1 JOIN fpe_e1 e1 ON e1."CODE_ETAB"=a1."CODE_ETAB" AND e1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND e1."SECTEUR"=a1."SECTEUR" WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND e1."EXISTE_PRIMAIRE"=1 ${where}`)).rows[0] || {};
+    } catch (e) { console.error('DREN all-sector enrolment unavailable', e); return {}; }
+  }
+  const [popDren, popMada, nextDren, nextMada, allDren, allMada] = await Promise.all([
+    getPopulation(codeDren), getPopulation(), getNextYear(whereDren), getNextYear(whereMada), getAllSectorPupils(whereDren), getAllSectorPupils(whereMada)
+  ]);
+
   const [namesResult, adminCountsResult] = await Promise.all([
     client.queryObject(`SELECT "DREN" FROM v_dren WHERE "CODE_DREN"=${codeDren}`),
     client.queryObject(`SELECT
@@ -2949,8 +2895,8 @@ async function executeTdbDrenData(client: Client, codeDren: number, annee: numbe
 
   return {
     version: VERSION, names, annee,
-    dren: { ressources: { ...resDren, ...adminCounts }, personnel: persDren, sections: secDren, places: plDren, cepe: cepeDren, caisse: ceDren, manuels: manDren },
-    mada: { ressources: resMada, personnel: persMada, sections: secMada, places: plMada, cepe: cepeMada, caisse: ceMada, manuels: manMada },
+    dren: { population: popDren, annee_suivante: nextDren, ...allDren, ressources: { ...resDren, ...adminCounts }, personnel: persDren, sections: secDren, places: plDren, cepe: cepeDren, caisse: ceDren, manuels: manDren },
+    mada: { population: popMada, annee_suivante: nextMada, ...allMada, ressources: resMada, personnel: persMada, sections: secMada, places: plMada, cepe: cepeMada, caisse: ceMada, manuels: manMada },
     efficience,
     efficienceDrens,
   };
@@ -3116,9 +3062,9 @@ async function executeTdbCiscoData(client: Client, codeCisco: number, codeDren: 
         SELECT 
           SUM(COALESCE(ce."FCE",0)) AS total_fce,
           SUM(COALESCE(ce."TOTAL_A_DOTER",0)) AS total_a_doter
-        FROM caisse_ecole ce
+        FROM ${CE_SRC} ce
         INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB" = ce."CODE_ETAB" AND a1."ANNEE_SCOLAIRE" = ${annee}
-        WHERE ce."ANNEE_SCOLAIRE" = (SELECT MAX("ANNEE_SCOLAIRE") FROM caisse_ecole WHERE "ANNEE_SCOLAIRE"<=${annee}) AND a1."EXISTE_PRIMAIRE" = 1 ${where}
+        WHERE ce."ANNEE_SCOLAIRE" = (SELECT MAX("ANNEE_SCOLAIRE") FROM ${CE_SRC} cx WHERE "ANNEE_SCOLAIRE"<=${annee}) AND a1."EXISTE_PRIMAIRE" = 1 ${where}
       `;
       return (await client.queryObject(q)).rows[0] || {};
     } catch(e) { console.error('getCaisseEcole error:', e); return {}; }
@@ -3148,9 +3094,9 @@ async function executeTdbCiscoData(client: Client, codeCisco: number, codeDren: 
           0 AS autres,
           SUM(COALESCE(ce."FCE",0)) AS total,
           SUM(COALESCE(ce."TOTAL_A_DOTER",0)) AS total_a_doter
-        FROM caisse_ecole ce
+        FROM ${CE_SRC} ce
         INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=ce."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=${annee}
-        WHERE ce."ANNEE_SCOLAIRE"=(SELECT MAX("ANNEE_SCOLAIRE") FROM caisse_ecole WHERE "ANNEE_SCOLAIRE"<=${annee}) AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 ${where}
+        WHERE ce."ANNEE_SCOLAIRE"=(SELECT MAX("ANNEE_SCOLAIRE") FROM ${CE_SRC} cx WHERE "ANNEE_SCOLAIRE"<=${annee}) AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 ${where}
       `;
 
       return (await client.queryObject(q)).rows[0] || {};
@@ -3352,9 +3298,9 @@ async function executeTdbZapData(client: Client, codeZap: number, codeCisco: num
         SELECT 
           SUM(COALESCE(ce."FCE",0)) AS total_fce,
           SUM(COALESCE(ce."TOTAL_A_DOTER",0)) AS total_a_doter
-        FROM caisse_ecole ce
+        FROM ${CE_SRC} ce
         INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB" = ce."CODE_ETAB" AND a1."ANNEE_SCOLAIRE" = ${annee}
-        WHERE ce."ANNEE_SCOLAIRE" = (SELECT MAX("ANNEE_SCOLAIRE") FROM caisse_ecole WHERE "ANNEE_SCOLAIRE"<=${annee}) AND a1."EXISTE_PRIMAIRE" = 1 ${where}
+        WHERE ce."ANNEE_SCOLAIRE" = (SELECT MAX("ANNEE_SCOLAIRE") FROM ${CE_SRC} cx WHERE "ANNEE_SCOLAIRE"<=${annee}) AND a1."EXISTE_PRIMAIRE" = 1 ${where}
       `;
       return (await client.queryObject(q)).rows[0] || {};
     } catch(e) { console.error('getCaisseEcole error:', e); return {}; }
@@ -3384,9 +3330,9 @@ async function executeTdbZapData(client: Client, codeZap: number, codeCisco: num
           0 AS autres,
           SUM(COALESCE(ce."FCE",0)) AS total,
           SUM(COALESCE(ce."TOTAL_A_DOTER",0)) AS total_a_doter
-        FROM caisse_ecole ce
+        FROM ${CE_SRC} ce
         INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=ce."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=${annee}
-        WHERE ce."ANNEE_SCOLAIRE"=(SELECT MAX("ANNEE_SCOLAIRE") FROM caisse_ecole WHERE "ANNEE_SCOLAIRE"<=${annee}) AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 ${where}
+        WHERE ce."ANNEE_SCOLAIRE"=(SELECT MAX("ANNEE_SCOLAIRE") FROM ${CE_SRC} cx WHERE "ANNEE_SCOLAIRE"<=${annee}) AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 ${where}
       `;
 
       return (await client.queryObject(q)).rows[0] || {};
@@ -3449,7 +3395,7 @@ async function executeTdbZapData(client: Client, codeZap: number, codeCisco: num
     ceZap, ceCisco, ceDren,
     manZap, manCisco, manDren,
     rfZap, rfCisco, rfDren,
-    efficience, suiviLongitudinal
+    efficience
   ] = await Promise.all([
     getRessources(whereZap), getRessources(whereCisco), getRessources(whereDren),
     getPersonnel(whereZap), getPersonnel(whereCisco), getPersonnel(whereDren),
@@ -3459,7 +3405,7 @@ async function executeTdbZapData(client: Client, codeZap: number, codeCisco: num
     getCaisseEcole(whereZap), getCaisseEcole(whereCisco), getCaisseEcole(whereDren),
     getManuels(whereZap), getManuels(whereCisco), getManuels(whereDren),
     getRessourcesFin(whereZap), getRessourcesFin(whereCisco), getRessourcesFin(whereDren),
-    getEfficience(), getSuiviLongitudinal(),
+    getEfficience(),
   ]);
 
   const namesResult = await client.queryObject(`
@@ -3478,8 +3424,7 @@ async function executeTdbZapData(client: Client, codeZap: number, codeCisco: num
     zap: { ressources: resZap, personnel: persZap, sections: secZap, places: plZap, cepe: cepeZap, caisse: ceZap, manuels: manZap, finances: rfZap },
     cisco: { ressources: resCisco, personnel: persCisco, sections: secCisco, places: plCisco, cepe: cepeCisco, caisse: ceCisco, manuels: manCisco, finances: rfCisco },
     dren: { ressources: resDren, personnel: persDren, sections: secDren, places: plDren, cepe: cepeDren, caisse: ceDren, manuels: manDren, finances: rfDren },
-    efficience,
-    suiviLongitudinal,
+    efficience
   };
 }
 
@@ -3536,7 +3481,7 @@ async function executeTdbEcoleCollegeData(client: Client, codeEtab: number, code
     try { const q = `SELECT SUM((${si('k1."COLLEGE_TABLES_BANCS_1PL_BON_ETAT"')}+${si('k1."COLLEGE_TABLES_BANCS_1PL_MAUVAIS_ETAT"')})+(${si('k1."COLLEGE_TABLES_BANCS_2PL_BON_ETAT"')}+${si('k1."COLLEGE_TABLES_BANCS_2PL_MAUVAIS_ETAT"')})*2+(${si('k1."COLLEGE_TABLES_BANCS_3PL_BON_ETAT"')}+${si('k1."COLLEGE_TABLES_BANCS_3PL_MAUVAIS_ETAT"')})*3+(${si('k1."COLLEGE_TABLES_BANCS_4PL_BON_ETAT"')}+${si('k1."COLLEGE_TABLES_BANCS_4PL_MAUVAIS_ETAT"')})*4+(${si('k1."COLLEGE_TABLES_BANCS_5PL_PLUS_BON_ETAT"')}+${si('k1."COLLEGE_TABLES_BANCS_5PL_PLUS_MAUVAIS_ETAT"')})*5) AS places_assises, SUM(${si('j2."WC_LATRINES_COMMUNES_BON_ETAT"')}+${si('j2."WC_LATRINES_COMMUNES_MAUVAIS_ETAT"')}+${si('j2."WC_LATRINES_FILLES_BON_ETAT"')}+${si('j2."WC_LATRINES_FILLES_MAUVAIS_ETAT"')}+${si('j2."WC_LATRINES_GARCONS_BON_ETAT"')}+${si('j2."WC_LATRINES_GARCONS_MAUVAIS_ETAT"')}) AS latrines, SUM(${si('j2."WC_LATRINES_FILLES_BON_ETAT"')}+${si('j2."WC_LATRINES_FILLES_MAUVAIS_ETAT"')}) AS latrines_fille FROM fpe_a1 a1 LEFT JOIN fpe_k1 k1 ON k1."CODE_ETAB"=a1."CODE_ETAB" AND k1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" LEFT JOIN fpe_j2 j2 ON j2."CODE_ETAB"=a1."CODE_ETAB" AND j2."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_COLLEGE"=1 AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
   }
   async function getCaisse(where: string) {
-    try { const q = `SELECT SUM(COALESCE(ce."FCE",0)) AS total_fce, SUM(COALESCE(ce."TOTAL_A_DOTER",0)) AS total_a_doter, 0 AS autres FROM caisse_ecole ce INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=ce."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=${annee} WHERE ce."ANNEE_SCOLAIRE"=(SELECT MAX("ANNEE_SCOLAIRE") FROM caisse_ecole WHERE "ANNEE_SCOLAIRE"<=${annee}) AND a1."EXISTE_COLLEGE"=1 AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { console.error('college getCaisse error', e); return {}; }
+    try { const q = `SELECT SUM(COALESCE(ce."FCE",0)) AS total_fce, SUM(COALESCE(ce."TOTAL_A_DOTER",0)) AS total_a_doter, 0 AS autres FROM ${CE_SRC} ce INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=ce."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=${annee} WHERE ce."ANNEE_SCOLAIRE"=(SELECT MAX("ANNEE_SCOLAIRE") FROM ${CE_SRC} cx WHERE "ANNEE_SCOLAIRE"<=${annee}) AND a1."EXISTE_COLLEGE"=1 AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { console.error('college getCaisse error', e); return {}; }
   }
 
 
@@ -3610,13 +3555,13 @@ async function executeTdbEcoleData(client: Client, codeEtab: number, codeZap: nu
     try { const q = `SELECT SUM(COALESCE(c."Nbre",0)) AS total_candidats, SUM(COALESCE(c."nbrG",0)) AS nbr_g, SUM(COALESCE(c."nbrF",0)) AS nbr_f, SUM(COALESCE(c."admisG",0)) AS admis_g, SUM(COALESCE(c."admisF",0)) AS admis_f, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."mlg"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."ml_fahazoana_lahatsoratra"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg_fahazoana, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."ml_fitsipika"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg_fitsipika, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."ml_fanazarana_hanoratra"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg_fanazarana, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."frs"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."fr_comprehension"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs_comprehension, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."fr_grammaire"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs_grammaire, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."fr_expression_ecrite"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs_expression, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."operation"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mths_operation, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."probleme"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mths_probleme, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM((COALESCE(c."operation",0)+COALESCE(c."probleme",0))/2.0*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mths, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."moyenne"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_total, SUM(COALESCE(c."malagasy_sup_10",0)) AS mlg_sup10, SUM(COALESCE(c."malagasy_compo_sup_10",0)) AS mlg_compo_sup10, SUM(COALESCE(c."malagasy_gram_sup_10",0)) AS mlg_gram_sup10, SUM(COALESCE(c."malagasy_exp_10",0)) AS mlg_exp_sup10, SUM(COALESCE(c."francais_sup_10",0)) AS frs_sup10, SUM(COALESCE(c."francais_compo_sup_10",0)) AS frs_compo_sup10, SUM(COALESCE(c."francais_gram_sup_10",0)) AS frs_gram_sup10, SUM(COALESCE(c."francais_exp_10",0)) AS frs_exp_sup10, SUM(COALESCE(c."math_sup_10",0)) AS mths_sup10, SUM(COALESCE(c."op_sup_10",0)) AS op_sup10, SUM(COALESCE(c."probleme_sup_10",0)) AS prob_sup10, SUM(COALESCE(c."autres_sup_10",0)) AS autres_sup10 FROM examen_cepe c INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=c."code_etab" AND a1."ANNEE_SCOLAIRE"=c."id_annee_scolaire" WHERE c."id_annee_scolaire"=${annee} AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
   }
   async function getCaisseEcole(where: string) {
-    try { const q = `SELECT SUM(COALESCE(ce."FCE",0)) AS total_fce, SUM(COALESCE(ce."TOTAL_A_DOTER",0)) AS total_a_doter FROM caisse_ecole ce INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=ce."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=${annee} WHERE ce."ANNEE_SCOLAIRE"=(SELECT MAX("ANNEE_SCOLAIRE") FROM caisse_ecole WHERE "ANNEE_SCOLAIRE"<=${annee}) AND a1."EXISTE_PRIMAIRE"=1 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
+    try { const q = `SELECT SUM(COALESCE(ce."FCE",0)) AS total_fce, SUM(COALESCE(ce."TOTAL_A_DOTER",0)) AS total_a_doter FROM ${CE_SRC} ce INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=ce."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=${annee} WHERE ce."ANNEE_SCOLAIRE"=(SELECT MAX("ANNEE_SCOLAIRE") FROM ${CE_SRC} cx WHERE "ANNEE_SCOLAIRE"<=${annee}) AND a1."EXISTE_PRIMAIRE"=1 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
   }
   async function getManuels(where: string) {
     try { const q = `SELECT SUM(${si('l1."MALAGASY_T1"')}+${si('l1."MALAGASY_T2"')}+${si('l1."MALAGASY_T3"')}+${si('l1."MALAGASY_T4"')}+${si('l1."MALAGASY_T5"')}) AS malagasy, SUM(${si('l1."MATHS_T1"')}+${si('l1."MATHS_T2"')}+${si('l1."MATHS_T3"')}+${si('l1."MATHS_T4"')}+${si('l1."MATHS_T5"')}) AS maths, SUM(${si('l1."FRANCAIS_T1"')}+${si('l1."FRANCAIS_T2"')}+${si('l1."FRANCAIS_T3"')}+${si('l1."FRANCAIS_T4"')}+${si('l1."FRANCAIS_T5"')}) AS francais FROM fpe_l1 l1 INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=l1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=l1."ANNEE_SCOLAIRE" WHERE l1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
   }
   async function getRessourcesFin(where: string) {
-    try { const q = `SELECT 0 AS fram, SUM(COALESCE(ce."FCE",0)) AS subvention, 0 AS autres, SUM(COALESCE(ce."FCE",0)) AS total, SUM(COALESCE(ce."FCE",0)) AS total_fce, SUM(COALESCE(ce."TOTAL_A_DOTER",0)) AS total_a_doter FROM caisse_ecole ce INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=ce."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=${annee} WHERE ce."ANNEE_SCOLAIRE"=(SELECT MAX("ANNEE_SCOLAIRE") FROM caisse_ecole WHERE "ANNEE_SCOLAIRE"<=${annee}) AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { console.error('ecole getCaisseEcole error', e); return {}; }
+    try { const q = `SELECT 0 AS fram, SUM(COALESCE(ce."FCE",0)) AS subvention, 0 AS autres, SUM(COALESCE(ce."FCE",0)) AS total, SUM(COALESCE(ce."FCE",0)) AS total_fce, SUM(COALESCE(ce."TOTAL_A_DOTER",0)) AS total_a_doter FROM ${CE_SRC} ce INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=ce."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=${annee} WHERE ce."ANNEE_SCOLAIRE"=(SELECT MAX("ANNEE_SCOLAIRE") FROM ${CE_SRC} cx WHERE "ANNEE_SCOLAIRE"<=${annee}) AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { console.error('ecole getCaisseEcole error', e); return {}; }
   }
 
   const [

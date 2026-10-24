@@ -417,6 +417,8 @@ export const tdbApi = {
     fetchDB<any>('getTdbCiscoData', { code_cisco: codeCisco, code_dren: codeDren, annee }),
   getTdbDrenData: (codeDren: number, annee: number = 2025) =>
     fetchDB<any>('getTdbDrenData', { code_dren: codeDren, annee }),
+  getTdbDrenNiveau: (codeDren: number, annee: number, niveau: 'presco' | 'college' | 'lycee') =>
+    fetchDB<any>('getTdbDrenNiveau', { code_dren: codeDren, annee, niveau }),
  getEcolesByZap: (codeZap: number, annee: number = 2025, niveau: 'primaire' | 'college' | 'lycee' = 'primaire') =>
    fetchDB<Array<{ CODE_ETAB: number; NOM_ETAB: string; SECTEUR: number }>>('getEcolesByZap', { code_zap: codeZap, annee, niveau }),
   getTdbEcoleData: (codeEtab: number, codeZap: number, codeCisco: number, codeDren: number, annee: number = 2025, niveau: 'primaire' | 'college' | 'lycee' = 'primaire') =>

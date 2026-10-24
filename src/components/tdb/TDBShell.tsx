@@ -19,7 +19,7 @@ interface TDBShellProps {
   /** Niveau du TDB: DREN | CISCO | ZAP | ÉCOLE */
   level: 'DREN' | 'CISCO' | 'ZAP' | 'ÉCOLE';
   /** Cycle pour le titre: PRIMAIRE | COLLÈGE | LYCÉE */
-  cycle?: 'PRIMAIRE' | 'COLLÈGE' | 'LYCÉE';
+  cycle?: 'PRÉSCOLAIRE' | 'PRIMAIRE' | 'COLLÈGE' | 'LYCÉE';
   /** Titre principal personnalisé (sinon généré automatiquement) */
   title?: string;
   /** Identifiant (ex: nom DREN, code) */
@@ -117,7 +117,7 @@ export function TDBShell({
                         <span className="hidden sm:inline">Télécharger PDF</span>
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>Export A3 portrait fidèle au format ministériel</TooltipContent>
+                    <TooltipContent>Export PDF fidèle au format ministériel</TooltipContent>
                   </Tooltip>
                 )}
                 {onPrint && !isAdmin && (

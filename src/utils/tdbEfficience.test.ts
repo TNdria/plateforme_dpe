@@ -12,7 +12,7 @@ describe('TDB specification scoring', () => {
   });
   it('reads imported indicators before aggregate fields', () => {
     expect(tdbIndicators({ indicateurs: row, ressources: { nbr_eleve: 0 } }, 'cisco').rem).toBe(60);
-    expect(computeEfficience({ indicateurs: row }, 'cisco')).toEqual({ x: 35.1, y: 80 });
+    expect(computeEfficience({ indicateurs: row }, 'cisco')).toEqual({ x: 55.6, y: 80 });
   });
   it('includes TPA only for school results and respects zero values', () => {
     expect(computeEfficience({ ...row, point_eau: 'OUI', electricite: 'NON' }, 'ecole').y).toBe(80);
@@ -22,6 +22,10 @@ describe('TDB specification scoring', () => {
   it('does not invent a score when data is unavailable', () => {
     expect(computeEfficience({})).toEqual({ x: null, y: null });
     expect(tdbIndicators({ ressources: { eff_t1: 100, eff_t5: 60 } }).retention).toBeNull();
+  });
+  it('convertit un effectif à moins de 2 km en pourcentage', () => {
+    expect(tdbIndicators({ ressources: { nbr_eleve: 1000, eleve_2km: 790 } }, 'dren').distance).toBe(79);
+    expect(tdbIndicators({ indicateurs: { eleve_2km: 21.5 } }, 'dren').distance).toBe(21.5);
   });
   it('makes cash and manual scores increase with resources', () => {
     const low = computeEfficience(row, 'cisco').x;

@@ -57,6 +57,7 @@ import {
   MapPin,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import ReferenceImportDialog, { type RefKind } from '@/components/tdb/ReferenceImportDialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Navigate } from 'react-router-dom';
 import UniversalCrud from '@/components/admin/UniversalCrud';
@@ -281,6 +282,12 @@ const CEPE_ALIASES: Record<string, string> = {
   cepe: 'CEPE',
 };
 
+// Tables TDB flexibles : toutes les colonnes du fichier sont conservées
+// (colonnes structurelles + `data jsonb`). Aucun mapping manuel n'est nécessaire.
+const FLEXIBLE_TDB_TABLES = new Set([
+  'tdb_ecole', 'tdb_zap', 'tdb_cisco', 'tdb_dren', 'tdb_mada', 'tdb_ref',
+]);
+
 const IMPORT_TARGETS = [
   {
     table: 'examen_cepe_candidates',
@@ -288,49 +295,49 @@ const IMPORT_TARGETS = [
     description:
       'Résultats CEPE par candidat (notes par matière, genre, admis)',
     expectedHeaders: ['CODE_ETAB', 'GENRE', 'MOYENNE'],
-    color: 'bg-indigo-500/10 text-indigo-700 border-indigo-300',
+    color: 'bg-accent text-accent-foreground border-border',
   },
   {
     table: 'examen_bepc_candidates',
     label: 'anonymat_BEPC_*.xlsx',
     description: "Résultats BEPC par candidat (année à définir à l'import)",
     expectedHeaders: ['MATRICULE', 'MALAGASY', 'MATHEMATIQUE'],
-    color: 'bg-fuchsia-500/10 text-fuchsia-700 border-fuchsia-300',
+    color: 'bg-accent text-accent-foreground border-border',
   },
   {
     table: 'tdb_mada',
     label: 'df_mada.csv',
     description: 'Données nationales agrégées (1 ligne)',
     expectedHeaders: ['code_mada', 'txAbdGlobal', 'tx_admis'],
-    color: 'bg-purple-500/10 text-purple-700 border-purple-300',
+    color: 'bg-accent text-accent-foreground border-border',
   },
   {
     table: 'tdb_dren',
     label: 'df_dren.csv',
     description: 'Une ligne par DREN (23 régions)',
     expectedHeaders: ['CODE_DREN', 'DREN', 'txAbdGlobal'],
-    color: 'bg-blue-500/10 text-blue-700 border-blue-300',
+    color: 'bg-accent text-accent-foreground border-border',
   },
   {
     table: 'tdb_cisco',
     label: 'df_cisco.csv',
     description: 'Une ligne par CISCO (114 circonscriptions)',
     expectedHeaders: ['CODE_CISCO', 'CISCO', 'CODE_DREN'],
-    color: 'bg-emerald-500/10 text-emerald-700 border-emerald-300',
+    color: 'bg-accent text-accent-foreground border-border',
   },
   {
     table: 'tdb_zap',
     label: 'df_zap.csv',
     description: 'Une ligne par ZAP (~1700 zones)',
     expectedHeaders: ['CODE_ZAP', 'ZAP', 'CODE_CISCO'],
-    color: 'bg-amber-500/10 text-amber-700 border-amber-300',
+    color: 'bg-accent text-accent-foreground border-border',
   },
   {
     table: 'tdb_ecole',
     label: 'df_ecole.csv ou df_tdbecoles.csv',
     description: 'Une ligne par établissement (~25 000 écoles)',
     expectedHeaders: ['CODE_ETAB', 'txAbdGlobal'],
-    color: 'bg-rose-500/10 text-rose-700 border-rose-300',
+    color: 'bg-accent text-accent-foreground border-border',
   },
 ] as const;
 
@@ -360,6 +367,7 @@ type ImportWorkerResponse = {
 
 const Admin = () => {
   const { user } = useAuth();
+  const [refKind, setRefKind] = useState<RefKind | null>(null);
   const isAdmin = user?.is_superuser === true;
 
   // ─── Users ───
@@ -873,6 +881,13 @@ const Admin = () => {
   };
 
   const loadTableColumns = async (tableName: string, headers?: string[]) => {
+    // TDB flexible : conserver toutes les colonnes de l'en-tête telles quelles.
+    if (FLEXIBLE_TDB_TABLES.has(tableName)) {
+      const hdrs = (headers ?? importData?.headers ?? []).filter(Boolean);
+      setTableColumns(hdrs.map((h) => ({ column_name: h, data_type: 'text', is_nullable: 'YES' })) as any);
+      setColumnMapping(Object.fromEntries(hdrs.map((h) => [h, h])));
+      return;
+    }
     let res: any = null;
     try {
       res = await adminFetch('getTableColumns', {
@@ -1321,15 +1336,15 @@ const Admin = () => {
   const crudRowsList = asArray<any>(crudRows);
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="px-4 sm:px-6 py-4 bg-gradient-to-r from-primary/8 via-background to-info/8 border-b border-border/60 backdrop-blur-sm">
+    <div className="admin-page min-h-full min-w-0 flex flex-col gap-5">
+      <div className="px-0 py-3 border-b border-border">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-info flex items-center justify-center shadow-md ring-2 ring-background">
-              <ShieldCheck className="w-5 h-5 text-primary-foreground" />
+            <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
+              <ShieldCheck className="w-6 h-6 text-primary" />
             </div>
             <div>
-              <h1 className="text-lg font-bold tracking-tight flex items-center gap-2">
+              <h1 className="text-xl sm:text-2xl font-semibold flex flex-wrap items-center gap-2">
                 Console d'administration
                 <Badge
                   variant="outline"
@@ -1346,51 +1361,51 @@ const Admin = () => {
             </div>
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-success/10 border border-success/30 text-success-foreground">
-              <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-success/10 border border-success/30 text-success">
+              <span className="w-1.5 h-1.5 rounded-full bg-success" />
               <span className="font-medium">Système opérationnel</span>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-4">
+      <div className="flex-1 min-w-0">
         <Tabs defaultValue="import" className="space-y-4">
-          <TabsList className="flex flex-wrap w-full max-w-6xl h-auto p-1 bg-muted/60 gap-1">
+          <TabsList className="flex flex-wrap justify-start w-full h-auto p-1.5 bg-card border border-border rounded-lg gap-1 shadow-sm">
             <TabsTrigger
               value="import"
-              className="flex items-center gap-2 px-3 py-2 whitespace-nowrap data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-md transition"
+              className="flex items-center gap-2 px-3 py-2.5 whitespace-nowrap text-muted-foreground data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none rounded-md transition-colors"
             >
               <Upload className="w-4 h-4" />
-              <span className="hidden sm:inline">Import</span>
+              <span className="inline">Import</span>
             </TabsTrigger>
             <TabsTrigger
               value="history"
-              className="flex items-center gap-2 px-3 py-2 whitespace-nowrap data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-md transition"
+              className="flex items-center gap-2 px-3 py-2.5 whitespace-nowrap text-muted-foreground data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none rounded-md transition-colors"
             >
               <History className="w-4 h-4" />
-              <span className="hidden sm:inline">Historique</span>
+              <span className="inline">Historique</span>
             </TabsTrigger>
             <TabsTrigger
               value="crud-all"
-              className="flex items-center gap-2 px-3 py-2 whitespace-nowrap data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-md transition"
+              className="flex items-center gap-2 px-3 py-2.5 whitespace-nowrap text-muted-foreground data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none rounded-md transition-colors"
             >
               <Database className="w-4 h-4" />
-              <span className="hidden sm:inline">CRUD Universel</span>
+              <span className="inline">CRUD Universel</span>
             </TabsTrigger>
             <TabsTrigger
               value="crud"
-              className="flex items-center gap-2 px-3 py-2 whitespace-nowrap data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-md transition"
+              className="flex items-center gap-2 px-3 py-2.5 whitespace-nowrap text-muted-foreground data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none rounded-md transition-colors"
             >
               <FileSpreadsheet className="w-4 h-4" />
-              <span className="hidden sm:inline">Données TDB</span>
+              <span className="inline">Données TDB</span>
             </TabsTrigger>
             <TabsTrigger
               value="users"
-              className="flex items-center gap-2 px-3 py-2 whitespace-nowrap data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-md transition"
+              className="flex items-center gap-2 px-3 py-2.5 whitespace-nowrap text-muted-foreground data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none rounded-md transition-colors"
             >
               <Users className="w-4 h-4" />
-              <span className="hidden sm:inline">Utilisateurs</span>
+              <span className="inline">Utilisateurs</span>
               <Badge
                 variant="secondary"
                 className="h-4 px-1.5 text-[10px] ml-1"
@@ -1400,10 +1415,10 @@ const Admin = () => {
             </TabsTrigger>
             <TabsTrigger
               value="sig"
-              className="flex items-center gap-2 px-3 py-2 whitespace-nowrap data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-md transition"
+              className="flex items-center gap-2 px-3 py-2.5 whitespace-nowrap text-muted-foreground data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:shadow-none rounded-md transition-colors"
             >
               <MapPin className="w-4 h-4" />
-              <span className="hidden sm:inline">SIG</span>
+              <span className="inline">SIG</span>
             </TabsTrigger>
           </TabsList>
 
@@ -1439,29 +1454,44 @@ const Admin = () => {
               </AlertDescription>
             </Alert>
 
+            {/* Données de référence TDB */}
+            <div className="rounded-lg border border-primary/40 bg-primary/5 p-4 space-y-3">
+              <div>
+                <h3 className="text-sm font-semibold">Données de référence du TDB</h3>
+                <p className="text-xs text-muted-foreground">Caisse école (feuilles PRIMAIRE / COLLEGE / LYCEE) et population par DREN et par âge.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={() => setRefKind('caisse')}><FileSpreadsheet className="w-4 h-4 mr-1" />Importer la Caisse école</Button>
+                <Button variant="secondary" onClick={() => setRefKind('population')}><FileSpreadsheet className="w-4 h-4 mr-1" />Importer la population DREN</Button>
+              </div>
+              <ReferenceImportDialog kind={refKind ?? 'caisse'} open={!!refKind} adminUsername={user?.username || ''}
+                onOpenChange={(o) => { if (!o) setRefKind(null); }} />
+            </div>
+
             {/* Choix de la cible */}
             <div>
               <Label className="text-sm font-semibold mb-2 block">
                 Étape 1 — Choisir la table cible
               </Label>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
                 {IMPORT_TARGETS.map((t) => {
                   const active = importTarget?.table === t.table;
                   const count = crudCounts[t.table] ?? 0;
                   return (
-                    <button
+                    <Button
+                      variant="outline"
                       key={t.table}
                       onClick={() => selectImportTarget(t)}
-                      className={`text-left p-3 rounded-lg border-2 transition-all ${
+                      className={`flex flex-col items-stretch justify-start h-auto whitespace-normal text-left p-4 rounded-lg border transition-colors ${
                         active
                           ? 'border-primary ring-2 ring-primary/20 bg-primary/5'
                           : 'border-border hover:border-primary/40 bg-card'
                       }`}
                     >
-                      <div className="flex items-start justify-between mb-1">
+                      <div className="flex items-start justify-between gap-2 mb-1">
                         <Badge
                           variant="outline"
-                          className={`text-xs ${t.color}`}
+                          className="text-xs bg-accent text-accent-foreground border-border whitespace-normal break-words max-w-full"
                         >
                           {t.label}
                         </Badge>
@@ -1476,7 +1506,7 @@ const Admin = () => {
                       <p className="text-xs mt-2 font-medium">
                         {count} ligne{count > 1 ? 's' : ''} actuellement
                       </p>
-                    </button>
+                    </Button>
                   );
                 })}
               </div>
@@ -1536,14 +1566,14 @@ const Admin = () => {
                     </div>
                   )}
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-3">
                     <Input
                       ref={fileRef}
                       type="file"
                       accept=".csv,.xlsx,.xls,.txt"
                       onChange={handleFileSelect}
                       disabled={parsingFile || importing}
-                      className="flex-1"
+                      className="flex-1 min-w-48"
                     />
                     <Button
                       variant="outline"
@@ -1770,7 +1800,7 @@ const Admin = () => {
 
           {/* ============ USERS TAB ============ */}
           <TabsContent value="users" className="space-y-3">
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <div className="relative flex-1 max-w-sm">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
@@ -1931,7 +1961,7 @@ const Admin = () => {
               </CardHeader>
               <CardContent className="space-y-6">
                 {/* Pointage */}
-                <div className="flex items-center justify-between p-6 border rounded-xl bg-card">
+                <div className="flex flex-wrap items-center justify-between gap-4 py-5 border-b border-border">
                   <div className="space-y-2">
                     <h3 className="font-semibold text-lg">
                       Pointage des établissements
@@ -1949,14 +1979,14 @@ const Admin = () => {
                         updateSigConfig('pointage', value)
                       }
                       disabled={loadingConfig}
-                      className="scale-125"
+                      
                     />
 
                     <span
                       className={`text-sm font-medium px-3 py-1 rounded-full ${
                         sigConfig?.pointage
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-gray-100 text-gray-600'
+                          ? 'bg-success/10 text-success'
+                          : 'bg-muted text-muted-foreground'
                       }`}
                     >
                       {sigConfig?.pointage ? '✅ Activé' : '❌ Désactivé'}
@@ -1965,7 +1995,7 @@ const Admin = () => {
                 </div>
 
                 {/* Déplacement */}
-                <div className="flex items-center justify-between p-6 border rounded-xl bg-card">
+                <div className="flex flex-wrap items-center justify-between gap-4 py-5 border-b border-border">
                   <div className="space-y-2">
                     <h3 className="font-semibold text-lg">
                       Déplacement des établissements et villages
@@ -1988,8 +2018,8 @@ const Admin = () => {
                     <span
                       className={`text-sm font-medium px-3 py-1 rounded-full ${
                         sigConfig?.deplacement
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-gray-100 text-gray-600'
+                          ? 'bg-success/10 text-success'
+                          : 'bg-muted text-muted-foreground'
                       }`}
                     >
                       {sigConfig?.deplacement ? '✅ Activé' : '❌ Désactivé'}
@@ -1998,7 +2028,7 @@ const Admin = () => {
                 </div>
 
                 {/* Validation déplacement */}
-                <div className="flex items-center justify-between p-6 border rounded-xl bg-card">
+                <div className="flex flex-wrap items-center justify-between gap-4 py-5 border-b border-border">
                   <div className="space-y-2">
                     <h3 className="font-semibold text-lg">
                       Validation des déplacements
@@ -2021,8 +2051,8 @@ const Admin = () => {
                     <span
                       className={`text-sm font-medium px-3 py-1 rounded-full ${
                         sigConfig?.validation_deplacement
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-gray-100 text-gray-600'
+                          ? 'bg-success/10 text-success'
+                          : 'bg-muted text-muted-foreground'
                       }`}
                     >
                       {sigConfig?.validation_deplacement
@@ -2118,7 +2148,7 @@ const Admin = () => {
                 />
               </div>
             </div>
-            <div className="flex items-center gap-6">
+            <div className="flex flex-wrap items-center gap-6">
               <div className="flex items-center gap-2">
                 <Switch
                   checked={formData.is_active}
@@ -2227,7 +2257,7 @@ const Admin = () => {
                 }
               />
             </div>
-            <div className="flex items-center gap-6">
+            <div className="flex flex-wrap items-center gap-6">
               <div className="flex items-center gap-2">
                 <Switch
                   checked={editForm.is_active}

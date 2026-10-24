@@ -11,6 +11,7 @@
  * page et la répétition des en-têtes de tableaux fonctionnent.
  */
 export type HtmlPdfMode = 'print' | 'preview';
+export type HtmlPdfOptions = { format?: 'A4' | 'A3'; onePage?: boolean };
 
 const MARGIN_MM = 5;
 
@@ -18,6 +19,7 @@ export const openHtmlPdf = (
   contentElement: HTMLElement,
   title: string,
   mode: HtmlPdfMode = 'print',
+  options: HtmlPdfOptions = {},
 ) => {
   const win = window.open('', '_blank', 'width=1400,height=900');
   if (!win) {
@@ -127,12 +129,14 @@ export const openHtmlPdf = (
       var ori = document.getElementById('__ori');
       var one = document.getElementById('__one');
       var info = document.getElementById('__info');
+      var FORCED_FORMAT = ${JSON.stringify(options.format ?? null)};
+      var FORCED_ONE = ${options.onePage === undefined ? 'null' : String(options.onePage)};
       try {
         var saved = JSON.parse(localStorage.getItem('tdb_pdf_opts') || '{}');
-        fmt.value = saved.fmt || 'A3';
+        fmt.value = FORCED_FORMAT || saved.fmt || 'A3';
         ori.value = saved.ori || 'portrait';
-         one.checked = true;
-      } catch (e) { fmt.value = 'A3'; ori.value = 'portrait'; one.checked = true; }
+        one.checked = FORCED_ONE === null ? true : FORCED_ONE;
+      } catch (e) { fmt.value = FORCED_FORMAT || 'A3'; ori.value = 'portrait'; one.checked = FORCED_ONE === null ? true : FORCED_ONE; }
 
       function fit() {
         var s = SIZES[fmt.value] || SIZES.A3;

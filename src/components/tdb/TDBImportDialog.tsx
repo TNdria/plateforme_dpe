@@ -22,6 +22,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { FileSpreadsheet, Database, Users, Building2, GraduationCap, Award } from 'lucide-react';
 import QuickImportDialog from '@/components/admin/QuickImportDialog';
 import { useAuth } from '@/contexts/AuthContext';
+import ReferenceImportDialog, { type RefKind } from '@/components/tdb/ReferenceImportDialog';
 
 interface TableDef {
   table: string;
@@ -29,6 +30,7 @@ interface TableDef {
   description: string;
   icon: React.ReactNode;
   category: string;
+  ref?: RefKind;
 }
 
 // Tables documentées dans docs/python-reference/create_df_all.py
@@ -40,6 +42,10 @@ const TDB_TABLES: TableDef[] = [
   { table: 'tdb_dren', label: 'df_dren.csv → tdb_dren', description: 'Indicateurs agrégés par DREN', category: 'Indicateurs calculés (df_*.csv)', icon: <FileSpreadsheet className="w-4 h-4" /> },
   { table: 'tdb_mada', label: 'df_mada.csv → tdb_mada', description: 'Indicateurs nationaux (Madagascar)', category: 'Indicateurs calculés (df_*.csv)', icon: <FileSpreadsheet className="w-4 h-4" /> },
   { table: 'tdb_ref', label: 'df_ref.csv → tdb_ref', description: 'Référentiel établissements (CODE_ETAB, géolocalisation, milieu, secteur)', category: 'Indicateurs calculés (df_*.csv)', icon: <FileSpreadsheet className="w-4 h-4" /> },
+
+  // === Données de référence (import spécifique) ===
+  { table: 'tdb_caisse_ecole_import', ref: 'caisse', label: 'Caisse école (PRIMAIRE / COLLEGE / LYCEE)', description: 'Classeur Excel avec une feuille par niveau : Code, Total (Annee facultative).', category: 'Données de référence', icon: <Database className="w-4 h-4" /> },
+  { table: 'tdb_population_dren', ref: 'population', label: 'Population par DREN et par âge', description: 'Feuille pop_dren_par_age : annee, code_dren, dren, G/F/T de 3 à 17 ans (.xlsx ou .xlsb).', category: 'Données de référence', icon: <Users className="w-4 h-4" /> },
 
   // === Résultats CEPE par candidat ===
   {
@@ -71,7 +77,7 @@ const TDB_TABLES: TableDef[] = [
   { table: 'tdb_v_ce', label: 'CE — Caisse école', description: 'Ressources financières (Ariary)', category: 'Finances', icon: <Database className="w-4 h-4" /> },
 ];
 
-const CATEGORIES = ['Indicateurs calculés (df_*.csv)', 'Examens — résultats par candidat', 'Identification', 'Effectifs', 'Ressources humaines', 'Infrastructures', 'Finances'];
+const CATEGORIES = ['Données de référence', 'Indicateurs calculés (df_*.csv)', 'Examens — résultats par candidat', 'Identification', 'Effectifs', 'Ressources humaines', 'Infrastructures', 'Finances'];
 
 interface Props {
   open: boolean;
@@ -154,7 +160,9 @@ export function TDBImportDialog({ open, onOpenChange }: Props) {
       </Dialog>
 
       {/* Délègue l'upload au composant existant */}
-      {selected && (
+      <ReferenceImportDialog kind={selected?.ref ?? 'caisse'} open={!!selected?.ref} adminUsername={adminUsername}
+        onOpenChange={(o) => { if (!o) { setSelected(null); onOpenChange(false); } }} />
+      {selected && !selected.ref && (
         <QuickImportDialog
           open={!!selected}
           onOpenChange={(o) => {

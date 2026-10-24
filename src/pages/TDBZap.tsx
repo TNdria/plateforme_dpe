@@ -36,7 +36,6 @@ interface TdbZapData {
   cisco: any;
   dren: any;
   efficience: any[];
-  suiviLongitudinal: any[];
 }
 
 // Helper: render a data cell with auto manquant background
@@ -206,6 +205,7 @@ const TDBZap = () => {
     if (!tdbData) return null;
     const z = tdbData.zap, c = tdbData.cisco, d = tdbData.dren;
     const anneeDisplay = `${tdbData.annee - 1}-${tdbData.annee}`;
+    const diagnosticLines = getDiagnostic(z, c);
 
     const efficienceData = (tdbData.efficience || []).map((item: any) => ({
       name: item.ZAP || '',
@@ -213,16 +213,6 @@ const TDBZap = () => {
       ...efficienceScores(item, 'primaire', 'zap'),
     })).filter(p => !p.isCurrent);
     efficienceData.push({ name: tdbData.names.ZAP, isCurrent: true, ...efficienceScores(z, 'primaire', 'zap') });
-
-    // Suivi longitudinal data
-    const suiviData = (tdbData.suiviLongitudinal || []).map((item: any) => ({
-      name: item.label || `T1-${item.annee}`,
-      Ensemble: Number(item.t1_ensemble || 0),
-      Garçons: Number(item.t1_g || 0),
-      Filles: Number(item.t1_f || 0),
-    }));
-
-    const diagnosticLines = getDiagnostic(z, c);
 
     // Disparité smiley helpers
     const abAvg = (lvl: any) => {
@@ -671,9 +661,9 @@ const TDBZap = () => {
           </tbody>
         </table>
 
-        {/* EFFICIENCE ET SUIVI LONGITUDINAL */}
-        <div style={s.titre}>Efficience et suivi longitudinal des cohortes d'élèves</div>
-        <div style={{ border: '1px solid #000', display: 'grid', gridTemplateColumns: '50% 50%', minHeight: '320px' }}>
+
+        
+        
           {/* Efficience — bloc unique (pictogrammes + points de comparaison précis) */}
           <div style={{ padding: '8px', borderRight: '1px solid #ccc' }}>
             <h4 style={{ textAlign: 'center', fontSize: '11px', fontWeight: 'bold', marginBottom: '6px' }}>Efficience — positionnement ressources / résultats de votre ZAP</h4>
@@ -686,25 +676,6 @@ const TDBZap = () => {
               parentPoint={{ name: `CISCO ${tdbData.names?.CISCO || ''}`.trim(), ...efficienceScores(c, 'primaire', 'cisco') }}
             />
           </div>
-
-          {/* Suivi longitudinal des cohortes */}
-          <div style={{ padding: '8px' }}>
-
-            <h4 style={{ textAlign: 'center', fontSize: '11px', fontWeight: 'bold', marginBottom: '6px' }}>Suivi longitudinal des cohortes (4 ans)</h4>
-            <ResponsiveContainer width="100%" height={290}>
-              <LineChart data={suiviData} margin={{ top: 10, right: 20, left: 10, bottom: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" tick={{ fontSize: 9 }} />
-                <YAxis tick={{ fontSize: 9 }} label={{ value: 'Effectif', angle: -90, position: 'insideLeft', fontSize: 9 }} />
-                <Tooltip />
-                <Legend wrapperStyle={{ fontSize: '10px' }} />
-                <Line type="monotone" dataKey="Ensemble" stroke="#337ab7" strokeWidth={2} dot={{ r: 4 }} />
-                <Line type="monotone" dataKey="Garçons" stroke="#5cb85c" strokeWidth={2} dot={{ r: 4 }} />
-                <Line type="monotone" dataKey="Filles" stroke="#e74c3c" strokeWidth={2} dot={{ r: 4 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
 
         {/* DIAGNOSTIC ET REMARQUES */}
         <div style={{ border: '1px solid #000', borderTop: 'none', padding: '10px', fontSize: '10px' }}>

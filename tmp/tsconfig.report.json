@@ -1,0 +1,13 @@
+{
+  "extends": "../tsconfig.app.json",
+  "compilerOptions": { "noEmit": true },
+  "include": [
+    "../src/vite-env.d.ts",
+    "../src/utils/tdbDrenReportModel.ts",
+    "../src/utils/tdbDrenPresentation.ts",
+    "../src/utils/htmlToPdf.ts",
+    "../src/components/tdb/TableauDeBord.tsx",
+    "../src/pages/TDBDren.tsx",
+    "../src/components/tdb/TDBShell.tsx"
+  ]
+}

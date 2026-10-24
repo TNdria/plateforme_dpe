@@ -47,12 +47,23 @@ export function tdbIndicators(entity: any, scope: TdbScope = 'ecole', cycle: Sch
   };
   const pupils = read('nombre_eleves') ?? numberOrNull(r.nbr_eleve);
   const teachers = read('ens_classe') ?? numberOrNull(p.pers_en_classe);
+  // `eleve_2km` est un pourcentage dans le snapshot importé mais un effectif dans
+  // les ressources SQL : ne jamais l'utiliser brut comme un score de 0 à 100.
+  const distanceFromImport = (() => {
+    for (const source of [entity?.indicateurs, entity?.indicators]) {
+      if (!source) continue;
+      const k = Object.keys(source).find(k => k.toLowerCase() === 'eleve_2km');
+      if (k !== undefined) { const n = numberOrNull(source[k]); if (n !== null) return bounded(n); }
+    }
+    return null;
+  })();
+  const distance = distanceFromImport ?? divide(numberOrNull(r.eleve_moins_2km ?? r.eleve_2km), pupils, 100);
   const qualified = read('ratio_eq') ?? (teachers && numberOrNull(p.sans_diplome_ped) !== null
     ? bounded(100 - Number(p.sans_diplome_ped) / teachers * 100) : null);
   return {
     rem: read('ratio_em') ?? divide(pupils, teachers),
     qualified,
-    distance: read('eleve_2km') ?? divide(r.eleve_moins_2km, pupils, 100),
+    distance,
     water: context('point_eau', 'etab_eau'),
     electricity: context('electricite', 'etab_elec'),
     cash: read('ratio_ece') ?? divide(r.caisse_ecole, pupils),
@@ -72,7 +83,10 @@ export function computeEfficience(entity: any, scope: TdbScope = 'ecole', cycle:
   // Spec §8.2: X = mean of 12 components, each with fallback 50 when missing.
   const xParts = [normaliser(i.rem, 45, 60), i.qualified, i.distance, i.water, i.electricity,
     // Cash: the spec flags its documented 1/x formula as probably reversed — an increasing score is used instead.
-    i.cash === null ? null : bounded(i.cash / 20000 * 100), ...i.manuals.map(n => normaliser(n, 1, 2))];
+    i.cash === null ? null : bounded(i.cash / 20000 * 100),
+    // Spec §10#6: mlg_sc*/fr_sc*/maths_sc* are manuals per 100 pupils (already %),
+    // so they are used directly — normaliser(…,1,2) would crush them near zero.
+    ...i.manuals.map(n => n === null ? null : bounded(n))];
   const yParts = [i.repeat === null ? null : 100 - bounded(Math.trunc(i.repeat)), i.retention, i.admission,
     ...(scope === 'ecole' ? [i.promotion] : [])];
   // Spec §8.2: « repli 50 » — a missing component counts as 50, but an entity with no data at all has no score.
