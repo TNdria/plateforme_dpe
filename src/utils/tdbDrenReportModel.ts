@@ -44,7 +44,7 @@ import {
   val,
   type Secteur,
 } from './tdbDrenNiveaux';
-import { computeEfficience, type SchoolCycle } from './tdbEfficience';
+import { computeEfficience, tdbEntityName, type SchoolCycle } from './tdbEfficience';
 
 export type ReportLevel = 'presco' | 'primaire' | 'college' | 'lycee';
 export type IndicatorSection = 'generales' | 'resultats' | 'ressources' | 'goulots' | 'efficience';
@@ -116,12 +116,15 @@ export interface EfficiencyPoint {
   x: number | null;
   y: number | null;
   isCurrent?: boolean;
+  isParent?: boolean;
 }
 
 export interface EfficiencyReport {
   x: number | null;
   y: number | null;
   points: EfficiencyPoint[];
+  /** Population comparée (DREN, CISCO…) affichée dans la légende du nuage. */
+  siblingsLabel: string;
   remarks: string[];
 }
 
@@ -1754,39 +1757,55 @@ function buildEfficiency(
     },
   }, 'dren', cycle);
 
-  const rawPoints: any[] = level === 'primaire' ? raw.efficience || [] : raw.ciscos || [];
-  const points: EfficiencyPoint[] = rawPoints.map((row: any) => {
-    const name = row.CISCO || row.name || '';
-    if (level === 'primaire') {
-      const entity = {
-        ressources: {
-          nbr_eleve: num(row.nbr_eleve),
-          pers_en_classe: num(row.pers_en_classe),
-          admis: num(row.admis),
-          inscrits_cepe: num(row.inscrits_cepe),
+  // Population comparée : les autres entités du même niveau.
+  // Primaire : les DREN de Madagascar (import `tdb_dren`, sinon agrégat SQL
+  // `efficienceDrens`). Collège / lycée : les CISCO de la DREN.
+  const drenPopulation: any[] = level === 'primaire'
+    ? (raw.efficiencePopulation || raw.efficienceDrens || [])
+    : [];
+  const currentCode = num(raw.code_dren);
+  const points: EfficiencyPoint[] = drenPopulation
+    .filter((row: any) => currentCode === null || num(row.CODE_DREN ?? row.code_dren) !== currentCode)
+    .map((row: any) => ({
+      name: tdbEntityName(row, 'dren') || 'DREN',
+      ...computeEfficience(row, 'dren', cycle),
+    }));
+  if (level !== 'primaire') {
+    for (const row of raw.ciscos || []) {
+      const entity = normalizeSectorEntity(
+        {
+          '0': {
+            eleves: num(row.eleves),
+            redoublants: num(row.redoublants),
+            ens_classe: num(row.ens_classe),
+            etab: num(row.etab),
+            qualifies: num(row.qualifies),
+            eau: num(row.eau),
+            elec: num(row.elec),
+            eleve_proche: num(row.eleve_proche),
+          },
+          '1': {},
         },
-        indicateurs: {
-          ratio_em: ratio(num(row.nbr_eleve), num(row.pers_en_classe)),
-          tx_admis: ratio(num(row.admis), num(row.inscrits_cepe), 100),
-        },
-      };
-      return { name, ...computeEfficience(entity, 'cisco', cycle) };
+        level,
+        '0',
+      );
+      points.push({ name: tdbEntityName(row, 'cisco') || tdbEntityName(entity, 'cisco') || 'CISCO', ...computeEfficience(entity, 'cisco', cycle) });
     }
-    const entity = normalizeSectorEntity(
-      {
-        '0': {
-          eleves: num(row.eleves),
-          redoublants: num(row.redoublants),
-          ens_classe: num(row.ens_classe),
-        },
-        '1': {},
-      },
-      level,
-      '0',
-    );
-    return { name, ...computeEfficience(entity, 'cisco', cycle) };
-  });
-  points.push({ name: raw.names?.DREN || 'DREN', isCurrent: true, x: current.x, y: current.y });
+  }
+  // Niveau national : point de comparaison fixe du nuage.
+  const madaEntity = level === 'primaire' ? mergePrimary(mada) : normalizeSectorEntity(mada, level, '0');
+  const madaScores = computeEfficience({
+    ...madaEntity,
+    indicateurs: {
+      ...madaEntity.indicateurs,
+      txRetentionTotal: madaRetentionValue,
+      tx_admis: madaAdmissionValue,
+    },
+  }, 'dren', cycle);
+  if (madaScores.x !== null && madaScores.y !== null) {
+    points.push({ name: 'MADAGASCAR', isParent: true, x: madaScores.x, y: madaScores.y });
+  }
+  points.push({ name: raw.names?.DREN || tdbEntityName(dren, 'dren') || 'DREN', isCurrent: true, x: current.x, y: current.y });
 
   const remarks = efficienceDiagnosis(current.x, current.y);
   if (level === 'primaire') {
@@ -1804,15 +1823,24 @@ function buildEfficiency(
       remarks.push(`Le taux de réussite au BEPC (${formatDrenValue(num(raw.bepc_dren.tx_admis), '%')}) est inférieur à la moyenne nationale (${formatDrenValue(num(raw.bepc_mada.tx_admis), '%')}).`);
     }
   }
-  return { x: current.x, y: current.y, points, remarks };
+  return {
+    x: current.x,
+    y: current.y,
+    points,
+    siblingsLabel: level === 'primaire' ? 'DREN' : 'CISCO',
+    remarks,
+  };
 }
 
 function normalizeSectorEntity(source: any, level: ReportLevel, sector: Secteur) {
   const grades = GRADES[level].length;
-  const pupils = effectif(source, sector, grades);
+  // Les populations agrégées (CISCO du nuage d'efficience) n'ont pas le détail par
+  // niveau : on retombe alors sur les totaux fournis, sinon le point n'a aucun score.
+  const pupils = effectif(source, sector, grades) ?? val(source, 'eleves', sector);
   const girls = effectif(source, sector, grades, 'f');
   const teachers = val(source, 'ens_classe', sector);
-  const red = redoublants(source, sector, grades);
+  const red = redoublants(source, sector, grades) ?? val(source, 'redoublants', sector);
+  const qualifies = val(source, 'qualifies', sector);
   return {
     ressources: {
       nbr_eleve: pupils,
@@ -1829,7 +1857,7 @@ function normalizeSectorEntity(source: any, level: ReportLevel, sector: Secteur)
       eleve_moins_2km: val(source, 'eleve_proche', sector),
       caisse_ecole: val(source, 'total_fce', sector),
       ratio_ece: null,
-      qualifies: val(source, 'qualifies', sector),
+      qualifies,
       eleve_proche: val(source, 'eleve_proche', sector),
     },
     personnel: {
@@ -1839,9 +1867,7 @@ function normalizeSectorEntity(source: any, level: ReportLevel, sector: Secteur)
     },
     indicateurs: {
       ratio_em: ratio(pupils, teachers),
-      ratio_eq: teachers !== null && val(source, 'qualifies', sector) !== null
-        ? (val(source, 'qualifies', sector)! / teachers) * 100
-        : null,
+      ratio_eq: teachers !== null && qualifies !== null ? (qualifies / teachers) * 100 : null,
       red_ensemble: red !== null && pupils !== null && pupils > 0 ? (red / pupils) * 100 : null,
       txRetentionTotal: null,
       tx_admis: null,

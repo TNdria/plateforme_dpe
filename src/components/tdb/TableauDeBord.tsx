@@ -272,7 +272,7 @@ function EfficienceMatrix({ model, onMeta }: { model: DrenReportModel; onMeta: (
         scope="dren"
         entityLabel="Votre DREN"
         points={effort.points}
-        siblingsLabel="CISCO"
+        siblingsLabel={effort.siblingsLabel}
         showNotes={false}
         onCurrentLabelClick={() => onMeta(model.bottlenecks[0]?.meta)}
       />

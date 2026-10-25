@@ -7,6 +7,48 @@ export function numberOrNull(value: unknown): number | null {
   const n = Number(typeof value === 'string' ? value.replace(',', '.').replace('%', '').trim() : value);
   return Number.isFinite(n) ? n : null;
 }
+
+export function tdbEntityCode(entity: any, scope: TdbScope = 'ecole'): number | null {
+  const candidates = {
+    ecole: ['CODE_ETAB', 'code_etab', 'CODE_ECOLE', 'code_ecole', 'ETAB', 'etab'],
+    zap: ['CODE_ZAP', 'code_zap', 'ZAP', 'zap'],
+    cisco: ['CODE_CISCO', 'code_cisco', 'CISCO', 'cisco'],
+    dren: ['CODE_DREN', 'code_dren', 'DREN', 'dren'],
+  }[scope] ?? [];
+  const flat = { ...(entity?.data || {}), ...(entity?.indicateurs || {}), ...(entity?.ressources || {}), ...(entity?.personnel || {}), ...entity };
+  for (const key of candidates) {
+    const value = flat[key];
+    const num = numberOrNull(value);
+    if (num !== null) return num;
+  }
+  return null;
+}
+
+export function tdbEntityName(entity: any, scope: TdbScope = 'ecole'): string {
+  const flat = { ...(entity?.data || {}), ...(entity?.indicateurs || {}), ...(entity?.ressources || {}), ...(entity?.personnel || {}), ...entity };
+  const keys = {
+    ecole: ['NOM_ETAB', 'nom_etab', 'NOM_ECOLE', 'nom_ecole', 'NAME', 'name', 'ETAB', 'etab'],
+    zap: ['ZAP', 'zap', 'NOM_ZAP', 'nom_zap', 'NAME', 'name'],
+    cisco: ['CISCO', 'cisco', 'NOM_CISCO', 'nom_cisco', 'NAME', 'name'],
+    dren: ['DREN', 'dren', 'NOM_DREN', 'nom_dren', 'NAME', 'name'],
+  }[scope] ?? ['NAME', 'name'];
+
+  for (const key of keys) {
+    const value = flat[key];
+    if (value === null || value === undefined || value === '') continue;
+    const text = String(value).trim();
+    if (text) return text;
+  }
+
+  const code = tdbEntityCode(entity, scope);
+  if (code !== null) {
+    const prefix = { ecole: 'École', zap: 'ZAP', cisco: 'CISCO', dren: 'DREN' }[scope] ?? 'Entité';
+    return `${prefix} ${code}`;
+  }
+
+  return '';
+}
+
 export const bounded = (n: number) => Math.max(0, Math.min(100, n));
 export function normaliser(value: number | null, min: number, max: number): number | null {
   if (value === null) return null;
@@ -57,7 +99,16 @@ export function tdbIndicators(entity: any, scope: TdbScope = 'ecole', cycle: Sch
     }
     return null;
   })();
-  const distance = distanceFromImport ?? divide(numberOrNull(r.eleve_moins_2km ?? r.eleve_2km), pupils, 100);
+  // Dans un agrégat SQL, `eleve_2km` est un effectif ; dans une ligne importée
+  // (df_*.csv) c'est déjà un pourcentage. Une valeur ≤ 100 sans bloc `ressources`
+  // vient donc du fichier et ne doit pas être redivisée par l'effectif.
+  const distance = distanceFromImport ?? (() => {
+    const fromResources = numberOrNull(r.eleve_moins_2km ?? r.eleve_2km);
+    if (entity?.ressources) return divide(fromResources, pupils, 100);
+    const flat = numberOrNull(entity?.eleve_moins_2km ?? entity?.eleve_2km);
+    if (flat === null) return null;
+    return flat <= 100 ? bounded(flat) : divide(flat, pupils, 100);
+  })();
   const qualified = read('ratio_eq') ?? (teachers && numberOrNull(p.sans_diplome_ped) !== null
     ? bounded(100 - Number(p.sans_diplome_ped) / teachers * 100) : null);
   return {

@@ -39,6 +39,13 @@ describe('getTdbDrenNiveau — colonnes sources', () => {
     expect(college.sql).toContain('AS eff_cycle_precedent');
   });
 
+  it('alimente le nuage d’efficience des CISCO avec leurs ressources', async () => {
+    const college = await captureSql('college');
+    // Sans ces composantes, tous les CISCO tombent sur le repli 50 et se superposent.
+    ['AS etab', 'AS eau', 'AS elec', 'AS eleve_proche', 'AS qualifies', 'AS redoublants']
+      .forEach((col) => expect(college.sql).toContain(col));
+  });
+
   it('fournit le nombre total d’EPP pour le taux d’EPP ayant de CAP', async () => {
     const presco = await captureSql('presco');
     expect(presco.sql).toContain('AS nbr_epp');

@@ -68,6 +68,11 @@ const TDBDren = () => {
         return;
       }
       const data = await tdbApi.getTdbDrenData(Number(selectedDren), Number(selectedAnnee));
+      // Nuage d'efficience : toutes les DREN (import df_dren.csv quand il existe).
+      try {
+        const population = await tdbApi.getEfficiencePopulation('dren', {}, data.annee);
+        if (population.length > 0) data.efficiencePopulation = population;
+      } catch { /* le repli SQL `efficienceDrens` reste utilisé */ }
       setTdbData(data); setNiveauData(null);
       toast.success('Tableau de bord DREN chargé');
     } catch (err) { console.error(err); toast.error('Erreur lors du chargement du TDB DREN'); }

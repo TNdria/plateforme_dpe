@@ -176,6 +176,58 @@ describe('rapport primaire', () => {
   });
 });
 
+describe('nuage d’efficience DREN', () => {
+  const population = [
+    { DREN: 'ATSINANANA', CODE_DREN: 12, nombre_eleves: 289239, ens_classe: 6436, ratio_em: 45, ratio_eq: 22, eleve_2km: 79, point_eau: 12, electricite: 1, ratio_ece: 3665, mlg_sc1: 80, mlg_sc2: 70, fr_sc1: 40, fr_sc2: 35, maths_sc1: 50, maths_sc2: 45, red_ensemble: 10, txRetentionTotal: 65, tx_admis: 43, ratio_epa: 1.8 },
+    { DREN: 'ANALAMANGA', CODE_DREN: 11, nombre_eleves: 500000, ens_classe: 9000, ratio_em: 55, ratio_eq: 40, eleve_2km: 60, point_eau: 30, electricite: 10, ratio_ece: 8000, mlg_sc1: 90, mlg_sc2: 85, fr_sc1: 60, fr_sc2: 55, maths_sc1: 70, maths_sc2: 65, red_ensemble: 18, txRetentionTotal: 50, tx_admis: 35, ratio_epa: 2.5 },
+  ];
+  it('trace les autres DREN importées et exclut la DREN courante', () => {
+    const model = buildDrenReport({ ...primaryRaw, efficiencePopulation: population }, 'primaire');
+    const siblings = model.efficiency!.points.filter((p) => !p.isCurrent && !p.isParent);
+    expect(siblings.map((p) => p.name)).toEqual(['ANALAMANGA']);
+    expect(siblings[0].x).not.toBeNull();
+    expect(siblings[0].y).not.toBeNull();
+    expect(model.efficiency!.siblingsLabel).toBe('DREN');
+  });
+  it('ajoute MADAGASCAR comme point de comparaison', () => {
+    const model = buildDrenReport({ ...primaryRaw, efficiencePopulation: population }, 'primaire');
+    const parent = model.efficiency!.points.find((p) => p.isParent);
+    expect(parent?.name).toBe('MADAGASCAR');
+    expect(parent?.x).not.toBeNull();
+  });
+  it('utilise les agrégats SQL quand aucun import n’est disponible', () => {
+    const report = buildDrenReport({
+      ...primaryRaw,
+      efficienceDrens: [
+        { DREN: 'ATSINANANA', CODE_DREN: 12, nbr_eleve: 289239, pers_en_classe: 6436, nbr_etab: 1780, etab_eau: 217, etab_elec: 12, red_g: 12000, red_f: 11000, eff_t1: 62000, eff_t5: 44000 },
+        { DREN: 'ANALAMANGA', CODE_DREN: 11, nbr_eleve: 500000, pers_en_classe: 9000, nbr_etab: 3000, etab_eau: 900, etab_elec: 300, red_g: 40000, red_f: 38000, eff_t1: 110000, eff_t5: 90000 },
+      ],
+    }, 'primaire');
+    expect(report.efficiency!.points.filter((p) => !p.isCurrent && !p.isParent).map((p) => p.name)).toEqual(['ANALAMANGA']);
+  });
+  it('garde les CISCO comme population des rapports collège et lycée', () => {
+    const report = buildDrenReport(collegeRaw, 'college');
+    expect(report.efficiency!.siblingsLabel).toBe('CISCO');
+    expect(report.efficiency!.points.filter((p) => !p.isCurrent && !p.isParent).map((p) => p.name)).toEqual(['TOAMASINA I', 'BRICKAVILLE']);
+  });
+  it('donne un score aux CISCO agrégés et les différencie par leurs ressources', () => {
+    const report = buildDrenReport({
+      ...collegeRaw,
+      ciscos: [
+        { CISCO: 'FAVORISE', CODE_CISCO: 1, etab: 30, eleves: 9000, redoublants: 400, ens_classe: 300, qualifies: 250, eau: 27, elec: 12, eleve_proche: 7000 },
+        { CISCO: 'DEFAVORISE', CODE_CISCO: 2, etab: 40, eleves: 5000, redoublants: 900, ens_classe: 250, qualifies: 80, eau: 8, elec: 1, eleve_proche: 1500 },
+      ],
+    }, 'college');
+    const [good, weak] = report.efficiency!.points.filter((p) => !p.isCurrent && !p.isParent);
+    // Les lignes CISCO ne portent que des totaux : sans repli sur `eleves` /
+    // `redoublants`, `effectif()` reste null et le point n'est pas tracé.
+    expect(good.x).not.toBeNull();
+    expect(good.y).not.toBeNull();
+    expect(good.x!).toBeGreaterThan(weak.x!);
+    expect(good.y!).toBeGreaterThan(weak.y!);
+  });
+});
+
 describe('rapport collège', () => {
   const model = buildDrenReport(collegeRaw, 'college');
   it('calcule les effectifs par secteur et non depuis un champ absent', () => {

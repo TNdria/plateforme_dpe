@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normaliser, computeEfficience, tdbIndicators, bottleneckStatus } from './tdbEfficience';
+import { normaliser, computeEfficience, tdbIndicators, bottleneckStatus, tdbEntityName } from './tdbEfficience';
 const row = { ratio_em: 60, ratio_eq: 80, eleve_2km: 90, point_eau: 60, electricite: 30,
   ratio_ece: 10000, mlg_sc1: 70, mlg_sc2: 60, fr_sc1: 50, fr_sc2: 40, maths_sc1: 30,
   maths_sc2: 20, red_ensemble: 10, txRetentionTotal: 60, TPA: 80, tx_admis: 90 };
@@ -27,6 +27,11 @@ describe('TDB specification scoring', () => {
     expect(tdbIndicators({ ressources: { nbr_eleve: 1000, eleve_2km: 790 } }, 'dren').distance).toBe(79);
     expect(tdbIndicators({ indicateurs: { eleve_2km: 21.5 } }, 'dren').distance).toBe(21.5);
   });
+  it('ne redivise pas un pourcentage eleve_2km venu d’un import', () => {
+    // Ligne importée : pas de bloc `ressources`, la valeur est déjà un taux.
+    expect(tdbIndicators({ nombre_eleves: 900, eleve_2km: 80 }, 'dren').distance).toBe(80);
+    expect(tdbIndicators({ ressources: { nbr_eleve: 900, eleve_2km: 720 } }, 'dren').distance).toBe(80);
+  });
   it('makes cash and manual scores increase with resources', () => {
     const low = computeEfficience(row, 'cisco').x;
     const high = computeEfficience({ ...row, ratio_ece: 20000, mlg_sc1: 100 }, 'cisco').x;
@@ -34,5 +39,11 @@ describe('TDB specification scoring', () => {
   });
   it('handles exact bottleneck thresholds', () => {
     expect([null, 49.9, 50, 75, 75.1].map(bottleneckStatus)).toEqual(['missing', 'critical', 'warning', 'warning', 'good']);
+  });
+  it('normalizes sibling entity names across imported and SQL shapes', () => {
+    expect(tdbEntityName({ nom_zap: 'ZAP A' }, 'zap')).toBe('ZAP A');
+    expect(tdbEntityName({ nom_cisco: 'CISCO 15' }, 'cisco')).toBe('CISCO 15');
+    expect(tdbEntityName({ nom_etab: 'ECOLE EXAMPLE' }, 'ecole')).toBe('ECOLE EXAMPLE');
+    expect(tdbEntityName({ code_dren: 12 }, 'dren')).toBe('DREN 12');
   });
 });

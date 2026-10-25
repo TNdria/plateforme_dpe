@@ -160,17 +160,39 @@ export async function executeTdbDrenNiveau(client: any, codeDren: number, annee:
     return rows[0] ? Object.fromEntries(Object.entries(rows[0]).map(([k, v]) => [k, Number(v) || 0])) : {};
   }
 
+  // Population de comparaison du nuage d'efficience : les CISCO de la DREN.
+  // Fournit les composantes « ressources » du score (accès à l'eau, électricité,
+  // enseignants qualifiés, distance) et pas seulement l'effectif, sinon tous les
+  // points retombent sur le repli 50 et se superposent.
   async function ciscos() {
     const red = c.red ? `, SUM(${c.grades.map((g) => `${sum(g, 'e', '_G_REDOUBLANT')}+${sum(g, 'e', '_F_REDOUBLANT')}`).join('+')}) AS redoublants` : '';
     const eff = c.grades.map((g) => `${sum(g, 'e', '_G')}+${sum(g, 'e', '_F')}`).join('+');
     const [r1, r2, r3] = await Promise.all([
-      safe('cisco eff', `SELECT a."CODE_CISCO" AS code, SUM(${eff}) AS eleves${red} ${join('e', c.eff, annee)} AND ${n('a."SECTEUR"')}=0 AND ${n('e."SECTEUR"')}=0 AND a."CODE_DREN"=${codeDren} GROUP BY 1`),
-      safe('cisco pers', `SELECT a."CODE_CISCO" AS code, SUM(CASE WHEN ${n('p."EN_SALLE"')}=1 THEN 1 ELSE 0 END) AS ens_classe ${join('p', 'fpe_p1', annee)} AND ${n('a."SECTEUR"')}=0 AND p."NIVEAU_TENU_${c.tenu}"::text='1' AND a."CODE_DREN"=${codeDren} GROUP BY 1`),
+      safe('cisco eff', `SELECT a."CODE_CISCO" AS code,
+        COUNT(DISTINCT a."CODE_ETAB") AS etab,
+        SUM(${eff}) AS eleves${red},
+        COUNT(DISTINCT CASE WHEN upper(COALESCE(a."EST_ELECTRIFIE"::text,'')) IN ('1','OUI','TRUE') THEN a."CODE_ETAB" END) AS elec,
+        COUNT(DISTINCT CASE WHEN upper(COALESCE(a."EST_ALIMENTE_EAU"::text,'')) IN ('1','OUI','TRUE') THEN a."CODE_ETAB" END) AS eau${kmCols}
+        ${join('e', c.eff, annee)} AND ${n('a."SECTEUR"')}=0 AND ${n('e."SECTEUR"')}=0 AND a."CODE_DREN"=${codeDren} GROUP BY 1`),
+      safe('cisco pers', `SELECT a."CODE_CISCO" AS code,
+        SUM(CASE WHEN ${n('p."EN_SALLE"')}=1 THEN 1 ELSE 0 END) AS ens_classe,
+        SUM(CASE WHEN COALESCE(p."DIPLOME_PEDAGOGIQUE",'')<>'' AND upper(p."DIPLOME_PEDAGOGIQUE")<>'AUTRES' THEN 1 ELSE 0 END) AS qualifies
+        ${join('p', 'fpe_p1', annee)} AND ${n('a."SECTEUR"')}=0 AND p."NIVEAU_TENU_${c.tenu}"::text='1' AND a."CODE_DREN"=${codeDren} GROUP BY 1`),
       safe('cisco noms', `SELECT "CODE_CISCO" AS code, "CISCO" AS nom FROM v_cisco WHERE "CODE_DREN"=${codeDren} ORDER BY "CISCO"`),
     ]);
     const by = (rows: any[]) => Object.fromEntries(rows.map((r) => [String(r.code), r]));
     const e = by(r1), p = by(r2);
-    return r3.map((x) => ({ CISCO: x.nom, CODE_CISCO: x.code, eleves: Number(e[String(x.code)]?.eleves || 0), redoublants: Number(e[String(x.code)]?.redoublants || 0), ens_classe: Number(p[String(x.code)]?.ens_classe || 0) }))
+    return r3.map((x) => ({
+      CISCO: x.nom, CODE_CISCO: x.code,
+      etab: Number(e[String(x.code)]?.etab || 0),
+      eleves: Number(e[String(x.code)]?.eleves || 0),
+      redoublants: Number(e[String(x.code)]?.redoublants || 0),
+      ens_classe: Number(p[String(x.code)]?.ens_classe || 0),
+      qualifies: Number(p[String(x.code)]?.qualifies || 0),
+      eau: Number(e[String(x.code)]?.eau || 0),
+      elec: Number(e[String(x.code)]?.elec || 0),
+      eleve_proche: Number(e[String(x.code)]?.eleve_proche || 0),
+    }))
       .filter((x) => x.eleves > 0);
   }
 

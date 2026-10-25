@@ -3103,6 +3103,44 @@ async function executeTdbCiscoData(client: Client, codeCisco: number, codeDren: 
     } catch(e) { console.error('getRessourcesFin error:', e); return {}; }
   }
 
+  // Population du nuage d'efficience : les CISCO de la DREN.
+  async function getEfficience() {
+    try {
+      const eleves = ['T1', 'T2', 'T3', 'T4', 'T5']
+        .flatMap((t) => ['G', 'F'].map((g) => si(`e1."${t}_${g}"`)))
+        .join('+');
+      const redG = ['T1', 'T2', 'T3', 'T4', 'T5'].map((t) => si(`e1."${t}_G_REDOUBLANT"`)).join('+');
+      const redF = ['T1', 'T2', 'T3', 'T4', 'T5'].map((t) => si(`e1."${t}_F_REDOUBLANT"`)).join('+');
+      const schoolWhere = `a1."CODE_CISCO"=z."CODE_CISCO" AND a1."ANNEE_SCOLAIRE"=${annee} AND a1."SECTEUR"=0 AND a1."EXISTE_PRIMAIRE"=1`;
+      const q = `
+        SELECT z."CISCO", z."CODE_CISCO",
+          (SELECT COUNT(DISTINCT a1."CODE_ETAB") FROM fpe_a1 a1 WHERE ${schoolWhere}) AS nbr_etab,
+          (SELECT SUM(${eleves}) FROM fpe_e1 e1 JOIN fpe_a1 a1 ON a1."CODE_ETAB"=e1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=e1."ANNEE_SCOLAIRE" AND a1."SECTEUR"=e1."SECTEUR"
+            WHERE ${schoolWhere}) AS nbr_eleve,
+          (SELECT SUM(${redG}) FROM fpe_e1 e1 JOIN fpe_a1 a1 ON a1."CODE_ETAB"=e1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=e1."ANNEE_SCOLAIRE" AND a1."SECTEUR"=e1."SECTEUR"
+            WHERE ${schoolWhere}) AS red_g,
+          (SELECT SUM(${redF}) FROM fpe_e1 e1 JOIN fpe_a1 a1 ON a1."CODE_ETAB"=e1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=e1."ANNEE_SCOLAIRE" AND a1."SECTEUR"=e1."SECTEUR"
+            WHERE ${schoolWhere}) AS red_f,
+          (SELECT SUM(${si('e1."T1_G"')}+${si('e1."T1_F"')}) FROM fpe_e1 e1 JOIN fpe_a1 a1 ON a1."CODE_ETAB"=e1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=e1."ANNEE_SCOLAIRE" AND a1."SECTEUR"=e1."SECTEUR"
+            WHERE ${schoolWhere}) AS eff_t1,
+          (SELECT SUM(${si('e1."T5_G"')}+${si('e1."T5_F"')}) FROM fpe_e1 e1 JOIN fpe_a1 a1 ON a1."CODE_ETAB"=e1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=e1."ANNEE_SCOLAIRE" AND a1."SECTEUR"=e1."SECTEUR"
+            WHERE ${schoolWhere}) AS eff_t5,
+          (SELECT COUNT(*) FROM fpe_p1 p1 JOIN fpe_a1 a1 ON a1."CODE_ETAB"=p1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=p1."ANNEE_SCOLAIRE"
+            WHERE ${schoolWhere} AND p1."NIVEAU_TENU_PRIMAIRE"='1' AND p1."CODE_STATUT" IN ('1','2','3','4') AND ${si('p1."EN_SALLE"')}=1) AS pers_en_classe,
+          (SELECT COUNT(DISTINCT a1."CODE_ETAB") FROM fpe_a1 a1 WHERE ${schoolWhere} AND a1."EST_ALIMENTE_EAU"='1') AS etab_eau,
+          (SELECT COUNT(DISTINCT a1."CODE_ETAB") FROM fpe_a1 a1 WHERE ${schoolWhere} AND a1."EST_ELECTRIFIE"='1') AS etab_elec,
+          (SELECT SUM(COALESCE(c."admisG",0)+COALESCE(c."admisF",0)) FROM examen_cepe c JOIN fpe_a1 a1 ON a1."CODE_ETAB"=c."code_etab" AND a1."ANNEE_SCOLAIRE"=c."id_annee_scolaire"
+            WHERE ${schoolWhere}) AS admis,
+          (SELECT SUM(COALESCE(c."Nbre",0)) FROM examen_cepe c JOIN fpe_a1 a1 ON a1."CODE_ETAB"=c."code_etab" AND a1."ANNEE_SCOLAIRE"=c."id_annee_scolaire"
+            WHERE ${schoolWhere}) AS inscrits_cepe
+        FROM v_cisco z
+        WHERE z."CODE_DREN" = ${codeDren}
+        ORDER BY z."CISCO"
+      `;
+      return (await client.queryObject(q)).rows || [];
+    } catch(e) { console.error('cisco getEfficience error:', e); return []; }
+  }
+
   const [
     resCisco, resDren, resMada,
     persCisco, persDren, persMada,
@@ -3111,7 +3149,7 @@ async function executeTdbCiscoData(client: Client, codeCisco: number, codeDren: 
     cepeCisco, cepeDren, cepeMada,
     ceCisco, ceDren, ceMada,
     manCisco, manDren, manMada,
-    rfCisco, rfDren, rfMada
+    rfCisco, rfDren, rfMada, efficience
   ] = await Promise.all([
     getRessources(whereCisco), getRessources(whereDren), getRessources(whereMada),
     getPersonnel(whereCisco), getPersonnel(whereDren), getPersonnel(whereMada),
@@ -3121,6 +3159,7 @@ async function executeTdbCiscoData(client: Client, codeCisco: number, codeDren: 
     getCaisseEcole(whereCisco), getCaisseEcole(whereDren), getCaisseEcole(whereMada),
     getManuels(whereCisco), getManuels(whereDren), getManuels(whereMada),
     getRessourcesFin(whereCisco), getRessourcesFin(whereDren), getRessourcesFin(whereMada),
+    getEfficience(),
   ]);
 
   const namesResult = await client.queryObject(`
@@ -3138,6 +3177,7 @@ async function executeTdbCiscoData(client: Client, codeCisco: number, codeDren: 
     cisco: { ressources: resCisco, personnel: persCisco, sections: secCisco, places: plCisco, cepe: cepeCisco, caisse: ceCisco, manuels: manCisco, finances: rfCisco },
     dren: { ressources: resDren, personnel: persDren, sections: secDren, places: plDren, cepe: cepeDren, caisse: ceDren, manuels: manDren, finances: rfDren },
     mada: { ressources: resMada, personnel: persMada, sections: secMada, places: plMada, cepe: cepeMada, caisse: ceMada, manuels: manMada, finances: rfMada },
+    efficience,
   };
 }
 
@@ -3339,25 +3379,40 @@ async function executeTdbZapData(client: Client, codeZap: number, codeCisco: num
     } catch(e) { console.error('getRessourcesFin error:', e); return {}; }
   }
 
-  // Efficience: get all ZAPs in the same CISCO for scatter plot
+  // Efficience: get all ZAPs in the same CISCO for scatter plot.
+  // Chaque agrégat passe par une sous-requête : les jointures directes
+  // multiplieraient les effectifs par le nombre d'enseignants / candidats.
   async function getEfficience() {
     try {
+      const eleves = ['T1', 'T2', 'T3', 'T4', 'T5']
+        .flatMap((t) => ['G', 'F'].map((g) => si(`e1."${t}_${g}"`)))
+        .join('+');
+      const redG = ['T1', 'T2', 'T3', 'T4', 'T5'].map((t) => si(`e1."${t}_G_REDOUBLANT"`)).join('+');
+      const redF = ['T1', 'T2', 'T3', 'T4', 'T5'].map((t) => si(`e1."${t}_F_REDOUBLANT"`)).join('+');
+      const schoolWhere = `a1."CODE_ZAP"=z."CODE_ZAP" AND a1."ANNEE_SCOLAIRE"=${annee} AND a1."SECTEUR"=0 AND a1."EXISTE_PRIMAIRE"=1`;
       const q = `
         SELECT z."ZAP", z."CODE_ZAP",
-          SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN 
-            ${si('e1."T1_G"')}+${si('e1."T1_F"')}+${si('e1."T2_G"')}+${si('e1."T2_F"')}+
-            ${si('e1."T3_G"')}+${si('e1."T3_F"')}+${si('e1."T4_G"')}+${si('e1."T4_F"')}+
-            ${si('e1."T5_G"')}+${si('e1."T5_F"')} ELSE 0 END) AS nbr_eleve,
-          SUM(CASE WHEN p1."CODE_STATUT" IN ('1','2','3','4') AND ${si('p1."EN_SALLE"')}=1 THEN 1 ELSE 0 END) AS pers_en_classe,
-          SUM(COALESCE(c."admisG",0)+COALESCE(c."admisF",0)) AS admis,
-          SUM(COALESCE(c."Nbre",0)) AS inscrits_cepe
+          (SELECT COUNT(DISTINCT a1."CODE_ETAB") FROM fpe_a1 a1 WHERE ${schoolWhere}) AS nbr_etab,
+          (SELECT SUM(${eleves}) FROM fpe_e1 e1 JOIN fpe_a1 a1 ON a1."CODE_ETAB"=e1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=e1."ANNEE_SCOLAIRE" AND a1."SECTEUR"=e1."SECTEUR"
+            WHERE ${schoolWhere}) AS nbr_eleve,
+          (SELECT SUM(${redG}) FROM fpe_e1 e1 JOIN fpe_a1 a1 ON a1."CODE_ETAB"=e1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=e1."ANNEE_SCOLAIRE" AND a1."SECTEUR"=e1."SECTEUR"
+            WHERE ${schoolWhere}) AS red_g,
+          (SELECT SUM(${redF}) FROM fpe_e1 e1 JOIN fpe_a1 a1 ON a1."CODE_ETAB"=e1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=e1."ANNEE_SCOLAIRE" AND a1."SECTEUR"=e1."SECTEUR"
+            WHERE ${schoolWhere}) AS red_f,
+          (SELECT SUM(${si('e1."T1_G"')}+${si('e1."T1_F"')}) FROM fpe_e1 e1 JOIN fpe_a1 a1 ON a1."CODE_ETAB"=e1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=e1."ANNEE_SCOLAIRE" AND a1."SECTEUR"=e1."SECTEUR"
+            WHERE ${schoolWhere}) AS eff_t1,
+          (SELECT SUM(${si('e1."T5_G"')}+${si('e1."T5_F"')}) FROM fpe_e1 e1 JOIN fpe_a1 a1 ON a1."CODE_ETAB"=e1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=e1."ANNEE_SCOLAIRE" AND a1."SECTEUR"=e1."SECTEUR"
+            WHERE ${schoolWhere}) AS eff_t5,
+          (SELECT COUNT(*) FROM fpe_p1 p1 JOIN fpe_a1 a1 ON a1."CODE_ETAB"=p1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=p1."ANNEE_SCOLAIRE"
+            WHERE ${schoolWhere} AND p1."NIVEAU_TENU_PRIMAIRE"='1' AND p1."CODE_STATUT" IN ('1','2','3','4') AND ${si('p1."EN_SALLE"')}=1) AS pers_en_classe,
+          (SELECT COUNT(DISTINCT a1."CODE_ETAB") FROM fpe_a1 a1 WHERE ${schoolWhere} AND a1."EST_ALIMENTE_EAU"='1') AS etab_eau,
+          (SELECT COUNT(DISTINCT a1."CODE_ETAB") FROM fpe_a1 a1 WHERE ${schoolWhere} AND a1."EST_ELECTRIFIE"='1') AS etab_elec,
+          (SELECT SUM(COALESCE(c."admisG",0)+COALESCE(c."admisF",0)) FROM examen_cepe c JOIN fpe_a1 a1 ON a1."CODE_ETAB"=c."code_etab" AND a1."ANNEE_SCOLAIRE"=c."id_annee_scolaire"
+            WHERE ${schoolWhere}) AS admis,
+          (SELECT SUM(COALESCE(c."Nbre",0)) FROM examen_cepe c JOIN fpe_a1 a1 ON a1."CODE_ETAB"=c."code_etab" AND a1."ANNEE_SCOLAIRE"=c."id_annee_scolaire"
+            WHERE ${schoolWhere}) AS inscrits_cepe
         FROM v_zap z
-        LEFT JOIN fpe_a1 a1 ON a1."CODE_ZAP" = z."CODE_ZAP" AND a1."ANNEE_SCOLAIRE" = ${annee} AND a1."SECTEUR" = 0 AND a1."EXISTE_PRIMAIRE" = 1
-        LEFT JOIN fpe_e1 e1 ON e1."CODE_ETAB" = a1."CODE_ETAB" AND e1."ANNEE_SCOLAIRE" = a1."ANNEE_SCOLAIRE" AND e1."SECTEUR" = a1."SECTEUR"
-        LEFT JOIN fpe_p1 p1 ON p1."CODE_ETAB" = a1."CODE_ETAB" AND p1."ANNEE_SCOLAIRE" = a1."ANNEE_SCOLAIRE" AND p1."NIVEAU_TENU_PRIMAIRE"='1'
-        LEFT JOIN examen_cepe c ON c."code_etab" = a1."CODE_ETAB" AND c."id_annee_scolaire" = a1."ANNEE_SCOLAIRE"
         WHERE z."CODE_CISCO" = ${codeCisco}
-        GROUP BY z."ZAP", z."CODE_ZAP"
         ORDER BY z."ZAP"
       `;
       return (await client.queryObject(q)).rows || [];
@@ -3564,6 +3619,45 @@ async function executeTdbEcoleData(client: Client, codeEtab: number, codeZap: nu
     try { const q = `SELECT 0 AS fram, SUM(COALESCE(ce."FCE",0)) AS subvention, 0 AS autres, SUM(COALESCE(ce."FCE",0)) AS total, SUM(COALESCE(ce."FCE",0)) AS total_fce, SUM(COALESCE(ce."TOTAL_A_DOTER",0)) AS total_a_doter FROM ${CE_SRC} ce INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=ce."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=${annee} WHERE ce."ANNEE_SCOLAIRE"=(SELECT MAX("ANNEE_SCOLAIRE") FROM ${CE_SRC} cx WHERE "ANNEE_SCOLAIRE"<=${annee}) AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { console.error('ecole getCaisseEcole error', e); return {}; }
   }
 
+  // Population du nuage d'efficience : toutes les écoles de la ZAP, une ligne
+  // par établissement. Les sous-requêtes évitent la multiplication des effectifs
+  // par le nombre d'enseignants ou de candidats.
+  async function getEfficience() {
+    try {
+      const eleves = ['T1', 'T2', 'T3', 'T4', 'T5']
+        .flatMap((t) => ['G', 'F'].map((g) => si(`e1."${t}_${g}"`)))
+        .join('+');
+      const redG = ['T1', 'T2', 'T3', 'T4', 'T5'].map((t) => si(`e1."${t}_G_REDOUBLANT"`)).join('+');
+      const redF = ['T1', 'T2', 'T3', 'T4', 'T5'].map((t) => si(`e1."${t}_F_REDOUBLANT"`)).join('+');
+      const q = `SELECT a1."CODE_ETAB", MIN(a1."NOM_ETAB") AS "NOM_ETAB",
+         1 AS nbr_etab,
+         (SELECT SUM(${eleves}) FROM fpe_e1 e1
+           WHERE e1."CODE_ETAB"=a1."CODE_ETAB" AND e1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND e1."SECTEUR"=a1."SECTEUR") AS nbr_eleve,
+         (SELECT COUNT(*) FROM fpe_p1 p1
+           WHERE p1."CODE_ETAB"=a1."CODE_ETAB" AND p1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE"
+             AND p1."NIVEAU_TENU_PRIMAIRE"='1' AND p1."CODE_STATUT" IN ('1','2','3','4') AND ${si('p1."EN_SALLE"')}=1) AS pers_en_classe,
+         (SELECT SUM(COALESCE(c."admisG",0)+COALESCE(c."admisF",0)) FROM examen_cepe c
+           WHERE c."code_etab"=a1."CODE_ETAB" AND c."id_annee_scolaire"=a1."ANNEE_SCOLAIRE") AS admis,
+         (SELECT SUM(COALESCE(c."Nbre",0)) FROM examen_cepe c
+           WHERE c."code_etab"=a1."CODE_ETAB" AND c."id_annee_scolaire"=a1."ANNEE_SCOLAIRE") AS inscrits_cepe,
+         CASE WHEN a1."EST_ALIMENTE_EAU"='1' THEN 1 ELSE 0 END AS etab_eau,
+         CASE WHEN a1."EST_ELECTRIFIE"='1' THEN 1 ELSE 0 END AS etab_elec,
+         (SELECT SUM(${redG}) FROM fpe_e1 e1
+           WHERE e1."CODE_ETAB"=a1."CODE_ETAB" AND e1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND e1."SECTEUR"=a1."SECTEUR") AS red_g,
+         (SELECT SUM(${redF}) FROM fpe_e1 e1
+           WHERE e1."CODE_ETAB"=a1."CODE_ETAB" AND e1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND e1."SECTEUR"=a1."SECTEUR") AS red_f,
+         (SELECT SUM(${si('e1."T1_G"')}+${si('e1."T1_F"')}) FROM fpe_e1 e1
+           WHERE e1."CODE_ETAB"=a1."CODE_ETAB" AND e1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND e1."SECTEUR"=a1."SECTEUR") AS eff_t1,
+         (SELECT SUM(${si('e1."T5_G"')}+${si('e1."T5_F"')}) FROM fpe_e1 e1
+           WHERE e1."CODE_ETAB"=a1."CODE_ETAB" AND e1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND e1."SECTEUR"=a1."SECTEUR") AS eff_t5
+         FROM fpe_a1 a1
+         WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."SECTEUR"=0 AND a1."EXISTE_PRIMAIRE"=1 ${whereZap}
+         GROUP BY a1."CODE_ETAB", a1."EST_ALIMENTE_EAU", a1."EST_ELECTRIFIE", a1."ANNEE_SCOLAIRE", a1."SECTEUR"
+         ORDER BY MIN(a1."NOM_ETAB")`;
+      return (await client.queryObject(q)).rows || [];
+    } catch(e) { console.error('ecole getEfficience error:', e); return []; }
+  }
+
   const [
     resEcole, resZap, resCisco,
     persEcole, persZap, persCisco,
@@ -3572,7 +3666,7 @@ async function executeTdbEcoleData(client: Client, codeEtab: number, codeZap: nu
     cepeEcole, cepeZap, cepeCisco,
     ceEcole, ceZap, ceCisco,
     manEcole, manZap, manCisco,
-    rfEcole, rfZap, rfCisco
+    rfEcole, rfZap, rfCisco, efficience
   ] = await Promise.all([
     getRessources(whereEcole), getRessources(whereZap), getRessources(whereCisco),
     getPersonnel(whereEcole), getPersonnel(whereZap), getPersonnel(whereCisco),
@@ -3582,6 +3676,7 @@ async function executeTdbEcoleData(client: Client, codeEtab: number, codeZap: nu
     getCaisseEcole(whereEcole), getCaisseEcole(whereZap), getCaisseEcole(whereCisco),
     getManuels(whereEcole), getManuels(whereZap), getManuels(whereCisco),
     getRessourcesFin(whereEcole), getRessourcesFin(whereZap), getRessourcesFin(whereCisco),
+    getEfficience(),
   ]);
 
   const namesResult = await client.queryObject(`
@@ -3602,6 +3697,8 @@ async function executeTdbEcoleData(client: Client, codeEtab: number, codeZap: nu
     ecole: { ressources: resEcole, personnel: persEcole, sections: secEcole, places: plEcole, cepe: cepeEcole, caisse: ceEcole, manuels: manEcole, finances: rfEcole },
     zap: { ressources: resZap, personnel: persZap, sections: secZap, places: plZap, cepe: cepeZap, caisse: ceZap, manuels: manZap, finances: rfZap },
     cisco: { ressources: resCisco, personnel: persCisco, sections: secCisco, places: plCisco, cepe: cepeCisco, caisse: ceCisco, manuels: manCisco, finances: rfCisco },
+    // Population du nuage : les écoles primaires de la ZAP (niveau primaire seulement).
+    efficience: niveau === 'primaire' ? efficience : [],
   };
 }
 

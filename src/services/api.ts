@@ -386,10 +386,10 @@ export const dashboardApi = {
 
 // TDB API - Uses direct database connection to avoid SSL issues
 export const tdbApi = {
-  getEfficiencePopulation: async (scope: 'ecole' | 'zap' | 'cisco', filters: { code_dren?: number; code_cisco?: number; code_zap?: number }, annee: number) => {
-    const action = { ecole: 'getTdbEcole', zap: 'getTdbZap', cisco: 'getTdbCisco' }[scope];
+  getEfficiencePopulation: async (scope: 'ecole' | 'zap' | 'cisco' | 'dren', filters: { code_dren?: number; code_cisco?: number; code_zap?: number }, annee: number) => {
+    const action = { ecole: 'getTdbEcole', zap: 'getTdbZap', cisco: 'getTdbCisco', dren: 'getTdbDren' }[scope];
     const response = await fetchDB<{ data?: any[] }>(action, filters);
-    const codeKey = { ecole: 'CODE_ETAB', zap: 'CODE_ZAP', cisco: 'CODE_CISCO' }[scope];
+    const codeKey = { ecole: 'CODE_ETAB', zap: 'CODE_ZAP', cisco: 'CODE_CISCO', dren: 'CODE_DREN' }[scope];
     const rows = (Array.isArray(response.data) ? response.data : []).map(row => ({ ...row, ...(row.data || {}) }))
       .filter(row => {
         const year = row.ANNEE_SCOLAIRE ?? row.annee_scolaire ?? row.ANNEE ?? row.annee;

@@ -11,6 +11,7 @@ import emojiSad from '@/assets/emoji-sad.jpg';
 import { TDBShell } from '@/components/tdb/TDBShell';
 import { TDBImportDialog } from '@/components/tdb/TDBImportDialog';
 import { EfficienceGrid, efficienceScores } from '@/components/tdb/EfficienceGrid';
+import { tdbEntityName } from '@/utils/tdbEfficience';
 import { pctSansDiplome } from '@/components/tdb/GoulotBars';
 import { DisparityIcon } from '@/components/score/DisparityIcon';
 import DataActionsBar from '@/components/admin/DataActionsBar';
@@ -129,8 +130,13 @@ const TDBZap = () => {
     setLoading(true);
     try {
       const data = await tdbApi.getTdbZapData(Number(selectedZap), Number(selectedCisco), Number(selectedDren), Number(selectedAnnee));
-      try { data.efficience = await tdbApi.getEfficiencePopulation('zap', { code_dren: Number(selectedDren), code_cisco: Number(selectedCisco) }, data.annee); }
-      catch { toast.warning('Les points de comparaison sont indisponibles.'); data.efficience = []; }
+      // Les ZAP importées (df_zap.csv) sont plus riches ; sinon on garde la
+      // population calculée en SQL par getTdbZapData.
+      try {
+        const population = await tdbApi.getEfficiencePopulation('zap', { code_dren: Number(selectedDren), code_cisco: Number(selectedCisco) }, data.annee);
+        if (population.length > 0) data.efficience = population;
+      } catch { toast.warning('Les points de comparaison sont indisponibles.'); }
+      if (!Array.isArray(data.efficience)) data.efficience = [];
       setTdbData(data);
       toast.success('Tableau de bord ZAP chargé');
     } catch (err) { console.error(err); toast.error('Erreur lors du chargement du TDB ZAP'); }
@@ -208,11 +214,11 @@ const TDBZap = () => {
     const diagnosticLines = getDiagnostic(z, c);
 
     const efficienceData = (tdbData.efficience || []).map((item: any) => ({
-      name: item.ZAP || '',
-      isCurrent: Number(item.CODE_ZAP) === Number(selectedZap),
+      name: tdbEntityName(item, 'zap') || `ZAP ${item.CODE_ZAP ?? item.code_zap ?? ''}`.trim(),
+      isCurrent: Number(item.CODE_ZAP ?? item.code_zap ?? 0) === Number(selectedZap),
       ...efficienceScores(item, 'primaire', 'zap'),
     })).filter(p => !p.isCurrent);
-    efficienceData.push({ name: tdbData.names.ZAP, isCurrent: true, ...efficienceScores(z, 'primaire', 'zap') });
+    efficienceData.push({ name: tdbEntityName(z, 'zap') || tdbData.names.ZAP, isCurrent: true, ...efficienceScores(z, 'primaire', 'zap') });
 
     // Disparité smiley helpers
     const abAvg = (lvl: any) => {

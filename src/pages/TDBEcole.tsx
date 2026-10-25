@@ -11,6 +11,7 @@ import { TDBShell } from '@/components/tdb/TDBShell';
 import { TDBImportDialog } from '@/components/tdb/TDBImportDialog';
 import { DisparityIcon } from '@/components/score/DisparityIcon';
 import { EfficienceGrid, efficienceScores } from '@/components/tdb/EfficienceGrid';
+import { tdbEntityName } from '@/utils/tdbEfficience';
 import { pctSansDiplome } from '@/components/tdb/GoulotBars';
 
 
@@ -145,8 +146,16 @@ const TDBEcole = () => {
     try {
       const data = await tdbApi.getTdbEcoleData(Number(selectedEcole), Number(selectedZap), Number(selectedCisco), Number(selectedDren), Number(selectedAnnee), selectedNiveau);
       if (selectedNiveau === 'primaire') {
-        try { data.efficience = await tdbApi.getEfficiencePopulation('ecole', { code_dren: Number(selectedDren), code_cisco: Number(selectedCisco), code_zap: Number(selectedZap) }, data.annee); }
-        catch { toast.warning('Les points de comparaison sont indisponibles.'); data.efficience = []; }
+        // Les écoles importées (df_ecole.csv) sont plus riches ; sinon on garde la
+        // population calculée en SQL par getTdbEcoleData.
+        try {
+          const population = await tdbApi.getEfficiencePopulation('ecole', { code_dren: Number(selectedDren), code_cisco: Number(selectedCisco), code_zap: Number(selectedZap) }, data.annee);
+          if (population.length > 0) data.efficience = population;
+        } catch { toast.warning('Les points de comparaison sont indisponibles.'); }
+        if (!Array.isArray(data.efficience)) data.efficience = [];
+      } else {
+        // La population SQL est calculée pour le primaire uniquement.
+        data.efficience = [];
       }
       setTdbData(data);
       toast.success('Tableau de bord École chargé');
@@ -593,8 +602,8 @@ const TDBEcole = () => {
             niveau={selectedNiveau as any}
             entityLabel={selectedNiveau === 'college' ? 'CEG' : selectedNiveau === 'lycee' ? 'Lycée' : 'École'}
             points={[
-              ...(tdbData.efficience || []).filter((item: any) => Number(item.CODE_ETAB) !== Number(selectedEcole)).map((item: any) => ({ name: item.NOM_ETAB || 'École', ...efficienceScores(item, selectedNiveau, 'ecole') })),
-              { name: tdbData.names?.NOM_ETAB || 'Établissement', isCurrent: true, ...efficienceScores(e, selectedNiveau) },
+              ...(tdbData.efficience || []).filter((item: any) => Number(item.CODE_ETAB ?? item.code_etab ?? 0) !== Number(selectedEcole)).map((item: any) => ({ name: tdbEntityName(item, 'ecole') || `École ${item.CODE_ETAB ?? item.code_etab ?? ''}`.trim(), ...efficienceScores(item, selectedNiveau, 'ecole') })),
+              { name: tdbEntityName(e, 'ecole') || tdbData.names?.NOM_ETAB || 'Établissement', isCurrent: true, ...efficienceScores(e, selectedNiveau) },
             ]}
             parentPoint={{ name: `ZAP ${tdbData.names?.ZAP || ''}`.trim(), ...efficienceScores(z, selectedNiveau, 'zap') }}
           />

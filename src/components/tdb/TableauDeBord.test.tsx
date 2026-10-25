@@ -50,6 +50,18 @@ describe('TableauDeBord', () => {
     expect(html).toContain('title="Nombre d’écoles fermées">0</td>');
   });
 
+  it('trace le nuage avec les autres DREN comparées', () => {
+    const html = renderToStaticMarkup(<TableauDeBord data={{
+      ...primary,
+      efficienceDrens: [
+        { DREN: 'ANALAMANGA', CODE_DREN: 11, nbr_eleve: 500000, pers_en_classe: 9000, nbr_etab: 3000, etab_eau: 900, etab_elec: 300, red_g: 40000, red_f: 38000 },
+        { DREN: 'ATSINANANA', CODE_DREN: 12, nbr_eleve: 289239, pers_en_classe: 6436 },
+      ],
+    }} niveau="primaire" codeDren="12" />);
+    expect(html).toContain('<title>ANALAMANGA</title>');
+    expect(html).toContain('● DREN');
+  });
+
   it('n’affiche pas de matrice au préscolaire et six goulots', () => {
     const html = renderToStaticMarkup(<TableauDeBord data={{ ...primary, niveau: 'presco', grades: 3 }} niveau="presco" codeDren="12" />);
     expect(html).not.toContain('EFFICIENCE (PUBLIC)');

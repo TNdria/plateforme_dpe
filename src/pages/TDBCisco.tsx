@@ -11,6 +11,7 @@ import { TDBShell } from '@/components/tdb/TDBShell';
 import { TDBImportDialog } from '@/components/tdb/TDBImportDialog';
 import { DisparityIcon } from '@/components/score/DisparityIcon';
 import { EfficienceGrid, efficienceScores } from '@/components/tdb/EfficienceGrid';
+import { tdbEntityName } from '@/utils/tdbEfficience';
 import { GoulotBars, buildGoulotItems, pctSansDiplome } from '@/components/tdb/GoulotBars';
 import DataActionsBar from '@/components/admin/DataActionsBar';
 import {
@@ -100,8 +101,13 @@ const TDBCisco = () => {
     setLoading(true);
     try {
       const data = await tdbApi.getTdbCiscoData(Number(selectedCisco), Number(selectedDren), Number(selectedAnnee));
-      try { data.efficience = await tdbApi.getEfficiencePopulation('cisco', { code_dren: Number(selectedDren) }, data.annee); }
-      catch { toast.warning('Les points de comparaison sont indisponibles.'); data.efficience = []; }
+      // Les CISCO importées (df_cisco.csv) sont plus riches ; sinon on garde la
+      // population calculée en SQL par getTdbCiscoData.
+      try {
+        const population = await tdbApi.getEfficiencePopulation('cisco', { code_dren: Number(selectedDren) }, data.annee);
+        if (population.length > 0) data.efficience = population;
+      } catch { toast.warning('Les points de comparaison sont indisponibles.'); }
+      if (!Array.isArray(data.efficience)) data.efficience = [];
       setTdbData(data);
       toast.success('Tableau de bord chargé');
     } catch (err) { console.error(err); toast.error('Erreur lors du chargement du TDB'); }
@@ -143,11 +149,11 @@ const TDBCisco = () => {
     const anneeDisplay = `${tdbData.annee - 1} - ${tdbData.annee}`;
 
     const efficienceData = (tdbData.efficience || []).map((item: any) => ({
-      name: item.CISCO || '',
-      isCurrent: Number(item.CODE_CISCO) === Number(selectedCisco),
+      name: tdbEntityName(item, 'cisco') || `CISCO ${item.CODE_CISCO ?? item.code_cisco ?? ''}`.trim(),
+      isCurrent: Number(item.CODE_CISCO ?? item.code_cisco ?? 0) === Number(selectedCisco),
       ...efficienceScores(item, 'primaire', 'cisco'),
     })).filter(p => !p.isCurrent);
-    efficienceData.push({ name: tdbData.names.CISCO, isCurrent: true, ...efficienceScores(c, 'primaire', 'cisco') });
+    efficienceData.push({ name: tdbEntityName(c, 'cisco') || tdbData.names.CISCO, isCurrent: true, ...efficienceScores(c, 'primaire', 'cisco') });
 
     return (
       <div style={{ width: '100%', maxWidth: '1191px', margin: '0 auto', font: '12px verdana', background: '#fff' }}>
