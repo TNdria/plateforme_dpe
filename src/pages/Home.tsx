@@ -1,26 +1,32 @@
 import { useNavigate } from "react-router-dom";
-import { useEffect, useState, type ElementType } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, ArrowUpRight, ArrowDown, GraduationCap, Users, School, Globe, BookOpen, Building2, UserCheck, MapPin, Baby, Mail, Sparkles, Target, BarChart4, Menu, X } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  GraduationCap,
+  BarChart3,
+  Users,
+  FileText,
+  ArrowRight,
+  Sparkles,
+  School,
+  TrendingUp,
+  Globe,
+  BookOpen,
+  Building2,
+  UserCheck,
+  Shield,
+  Cpu,
+  ChevronRight,
+  Target,
+  BarChart4,
+  MapPin,
+  Baby,
+  Mail,
+} from "lucide-react";
 import { referentielApi, dashboardApi } from "@/services/api";
 import ministryBuilding from "@/assets/ministry-building.jpg";
-import logoDpe from "@/assets/logoDpe.jpg";
-import logoMen from "@/assets/logoMen.jpg";
-
-type ModuleItem = { title: string; path: string; icon: ElementType; detail: string; tone: string };
-
-const ModuleLinks = ({ items }: { items: ModuleItem[] }) => {
-  const navigate = useNavigate();
-  return <div className={`home-modules ${items.length === 4 ? "home-modules-four" : ""}`}>
-    {items.map(({ title, path, icon: Icon, detail, tone }) => (
-      <Button key={path} variant="outline" onClick={() => navigate(path)} className={`home-module ${tone}`}>
-        <span className="home-module-top"><span className="home-module-icon"><Icon size={23} strokeWidth={1.6} /></span><ArrowUpRight size={20} className="home-module-arrow" /></span>
-        <span className="home-module-title">{title}</span>
-        <span className="home-module-detail">{detail}</span>
-      </Button>
-    ))}
-  </div>;
-};
+import { AnimatedLogo } from "@/components/AnimatedLogo";
 
 const Home = () => {
   const navigate = useNavigate();
@@ -49,6 +55,9 @@ const Home = () => {
     annee: null,
     loading: true,
   });
+
+  const [isVisible, setIsVisible] = useState(false);
+  const sectionRef = useRef(null);
 
   useEffect(() => {
     // Chiffres réels issus de la base : aucun chiffre n'est inventé.
@@ -140,118 +149,591 @@ const Home = () => {
       }
     };
     fetchCounts();
+
+    // Animation trigger
+    setTimeout(() => setIsVisible(true), 100);
+
+    // Intersection Observer pour animations
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("animate-in");
+          }
+        });
+      },
+      { threshold: 0.1 },
+    );
+
+    document.querySelectorAll(".scroll-trigger").forEach((el) => observer.observe(el));
+
+    return () => observer.disconnect();
   }, []);
 
   const formatNumber = (num: number) => {
     return num.toLocaleString("fr-FR");
   };
 
+
   const anneeLabel = stats.annee ? `${stats.annee - 1}-${stats.annee}` : null;
 
-  const [menuOpen, setMenuOpen] = useState(false);
-  const navLinks = [
-    { href: "#stats", label: "Chiffres clés" },
-    { href: "#tdb", label: "Tableaux de bord" },
-    { href: "#ors", label: "Carte scolaire" },
-    { href: "#analyse", label: "Analyse" },
+  // Icônes normalisées (même famille, même taille) et couleur d'accent unique.
+  const statsCards: Array<{
+    label: string;
+    value: number | null;
+    icon: any;
+    description: string;
+    sub?: string;
+    annuel?: boolean;
+  }> = [
+    {
+      label: "Établissements",
+      value: stats.etabTotal,
+      icon: School,
+      description: "Écoles, collèges et lycées",
+      annuel: true,
+      sub:
+        stats.etabPublic !== null || stats.etabPrive !== null
+          ? `Publics : ${stats.etabPublic !== null ? formatNumber(stats.etabPublic) : "n.d."} · Privés : ${stats.etabPrive !== null ? formatNumber(stats.etabPrive) : "n.d."}`
+          : undefined,
+    },
+    {
+      label: "Élèves",
+      value: stats.eleves,
+      icon: Users,
+      description: "Effectifs primaire, collège et lycée",
+      annuel: true,
+    },
+    {
+      label: "Préscolaire",
+      value: stats.presco,
+      icon: Baby,
+      description: "Effectifs du préscolaire",
+      annuel: true,
+    },
+    {
+      label: "Enseignants",
+      value: stats.enseignants,
+      icon: UserCheck,
+      description: "Personnel enseignant",
+      annuel: true,
+    },
+    { label: "DREN", value: stats.drens, icon: Globe, description: "Directions régionales" },
+    {
+      label: "CISCO",
+      value: stats.ciscos,
+      icon: Building2,
+      description: "Circonscriptions scolaires",
+    },
+    {
+      label: "ZAP",
+      value: stats.zaps,
+      icon: MapPin,
+      description: "Zones d'administration pédagogique",
+    },
   ];
-  const mainStats = [
-    { label: "Établissements", value: stats.etabTotal, icon: School, detail: "Écoles, collèges et lycées", tone: "home-tone-blue" },
-    { label: "Élèves", value: stats.eleves, icon: Users, detail: "Primaire, collège et lycée", tone: "home-tone-green" },
-    { label: "Préscolaire", value: stats.presco, icon: Baby, detail: "Effectifs du préscolaire", tone: "home-tone-red" },
-    { label: "Enseignants", value: stats.enseignants, icon: UserCheck, detail: "Personnel enseignant", tone: "home-tone-blue" },
+
+  const highlights = [
+    {
+      icon: Shield,
+      title: "Sécurité Maximale",
+      description: "Certification ISO 27001 & chiffrement des données",
+    },
+    {
+      icon: Cpu,
+      title: "Performance Optimisée",
+      description: "Temps de réponse < 200ms pour 95% des requêtes",
+    },
+    {
+      icon: Target,
+      title: "Précision des Données",
+      description: "Taux de fiabilité > 99.8% sur les indicateurs",
+    },
   ];
-  const renderValue = (value: number | null) => stats.loading
-    ? <span className="home-stat-skeleton shimmer" aria-label="Chargement" />
-    : value === null ? <span className="home-stat-unavailable">Non disponible</span> : formatNumber(value);
 
   return (
-    <div className="home-page">
-      <header className="home-header">
-        <div className="home-identity-line" aria-hidden="true" />
-        <nav className="home-container home-navigation" aria-label="Navigation principale">
-          <a href="#" className="home-brand" aria-label="DPE Plateforme — Accueil">
-            <img src={logoDpe} alt="Logo DPE" />
-            <span><strong>DPE Plateforme</strong><small>Planification de l’Éducation</small></span>
-          </a>
-          <div className="home-desktop-nav">{navLinks.map(link => <a key={link.href} href={link.href}>{link.label}</a>)}</div>
-          <div className="home-header-actions">
-            <img className="home-men-logo" src={logoMen} alt="Ministère de l’Éducation Nationale" />
-            <Button onClick={() => navigate("/login")} className="home-login">Connexion <ArrowUpRight size={16} /></Button>
-            <Button variant="ghost" size="icon" className="home-menu-toggle" aria-label={menuOpen ? "Fermer le menu" : "Ouvrir le menu"} aria-expanded={menuOpen} aria-controls="home-mobile-nav" onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X size={22} /> : <Menu size={22} />}</Button>
+    <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-gray-900 via-black to-primary/20">
+      {/* Animated Background */}
+      <div className="absolute inset-0 bg-grid-white/[0.02] bg-[size:60px_60px]" />
+
+      {/* Hero Gradient */}
+      <div className="absolute top-0 left-0 right-0 h-[800px] bg-gradient-to-b from-primary/20 via-transparent to-transparent" />
+
+      {/* Background Image avec parallax */}
+      <div
+        className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-20"
+        style={{
+          backgroundImage: `url(${ministryBuilding})`,
+          backgroundAttachment: "fixed",
+        }}
+      />
+
+      {/* Animated Orbs */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-primary/10 rounded-full blur-3xl animate-pulse-slow" />
+        <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] bg-info/10 rounded-full blur-3xl animate-pulse-slow delay-1000" />
+
+        {[...Array(15)].map((_, i) => (
+          <div
+            key={i}
+            className="absolute w-1 h-1 bg-white/30 rounded-full animate-orbital"
+            style={{
+              left: `${10 + i * 6}%`,
+              top: `${20 + i * 4}%`,
+              animationDelay: `${i * 0.5}s`,
+              animationDuration: `${10 + i}s`,
+            }}
+          />
+        ))}
+      </div>
+
+      <div className="relative z-10">
+        {/* Navigation */}
+        <nav className="container mx-auto px-6 py-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <AnimatedLogo className="h-14 w-14 shadow-lg border-2 border-white/20" />
+              <div className="flex flex-col">
+                <span className="text-lg font-bold bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
+                  DPE Plateforme
+                </span>
+                <span className="text-xs text-gray-400">Ministère de l'Éducation Nationale</span>
+              </div>
+            </div>
+            <div className="hidden md:flex items-center gap-6">
+              <a
+                href="#stats"
+                className="text-gray-300 hover:text-white transition-colors font-medium"
+              >
+                Chiffres clés
+              </a>
+              <a
+                href="#tdb"
+                className="text-gray-300 hover:text-white transition-colors font-medium"
+              >
+                Tableaux de bord
+              </a>
+              <a
+                href="#ors"
+                className="text-gray-300 hover:text-white transition-colors font-medium"
+              >
+                ORS
+              </a>
+              <a
+                href="#analyse"
+                className="text-gray-300 hover:text-white transition-colors font-medium"
+              >
+                DataViz
+              </a>
+              <a
+                href="#contact"
+                className="text-gray-300 hover:text-white transition-colors font-medium"
+              >
+                Contact
+              </a>
+            </div>
+            <Button
+              variant="ghost"
+              className="text-white hover:bg-white/10"
+              onClick={() => navigate("/login")}
+            >
+              Connexion
+            </Button>
           </div>
         </nav>
-        {menuOpen && <nav id="home-mobile-nav" className="home-mobile-nav" aria-label="Navigation mobile">{navLinks.map(link => <a key={link.href} href={link.href} onClick={() => setMenuOpen(false)}>{link.label}<ArrowUpRight size={16} /></a>)}</nav>}
-      </header>
 
-      <section className="home-hero" aria-labelledby="home-title">
-        <img className="home-hero-photo" src={ministryBuilding} alt="Façade du Ministère de l’Éducation Nationale à Madagascar" fetchPriority="high" />
-        <div className="home-hero-shade" aria-hidden="true" />
-        <div className="home-container home-hero-inner">
-          <div className="home-hero-copy">
-            <p className="home-eyebrow"><span />Ministère de l’Éducation Nationale</p>
-            <h1 id="home-title">DPE Plateforme</h1>
-            <h2>Direction de la Planification<br className="hidden sm:block" /> de l’Éducation</h2>
-            <p className="home-hero-description">La planification éducative à Madagascar,<br className="hidden sm:block" /> éclairée par les données.</p>
-            <div className="home-hero-actions">
-              <Button size="lg" variant="secondary" onClick={() => navigate("/dashboard")}>Explorer les données <ArrowRight size={18} /></Button>
-              <Button size="lg" variant="outline" className="home-hero-secondary" onClick={() => navigate("/login")}>Se connecter <ArrowUpRight size={18} /></Button>
+        {/* Hero Section */}
+        <section
+          className={`container mx-auto px-6 py-16 md:py-32 transition-all duration-1000 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"}`}
+        >
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-12">
+              <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/10 backdrop-blur-sm rounded-full mb-8 animate-fade-in">
+                <Sparkles className="h-4 w-4 text-warning" />
+                <span className="text-sm text-gray-300">Plateforme Officielle • Version 3.0</span>
+              </div>
+
+              <h1 className="text-5xl md:text-8xl lg:text-7xl font-bold font-heading tracking-tight mb-6">
+                <span className="bg-gradient-to-r from-white via-primary-foreground to-info bg-clip-text text-transparent">
+                  Direction de la Planification de l'Éducation
+                </span>
+              </h1>
+
+              <p className="text-xl md:text-2xl text-gray-400 max-w-3xl mx-auto mb-10 leading-relaxed">
+                Plateforme de gouvernance éducative intégrée pour la planification stratégique et
+                l'analyse des données nationales
+              </p>
+            </div>
+
+            {/* CTA Buttons */}
+            <div className="flex flex-col sm:flex-row gap-6 justify-center items-center mt-16">
+              <Button
+                size="lg"
+                className="h-16 px-12 text-lg font-semibold bg-gradient-to-r from-primary via-primary to-info hover:from-primary/90 hover:via-primary/90 hover:to-info/90 shadow-2xl shadow-primary/30 group transform transition-all duration-300 hover:scale-105"
+                onClick={() => navigate("/login")}
+              >
+                <span className="mr-3">Accéder à l'espace sécurisé</span>
+                <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-2" />
+              </Button>
+              <Button
+                size="lg"
+                variant="outline"
+                className="h-16 px-12 text-lg font-semibold border-2 border-white/20 text-white bg-white/5 backdrop-blur-lg hover:bg-white/10 hover:border-white/40 transform transition-all duration-300 hover:scale-105"
+                onClick={() => navigate("/dashboard")}
+              >
+                <span className="mr-3">Explorer les données</span>
+                <ChevronRight className="h-5 w-5" />
+              </Button>
+            </div>
+
+            {/* Highlights retirés à la demande (Sécurité/Performance/Précision) */}
+          </div>
+        </section>
+
+        {/* Stats Section */}
+        <section id="stats" className="container mx-auto px-6 py-20 scroll-trigger">
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-16">
+              <h2 className="text-3xl md:text-5xl font-bold mb-6 text-white">
+                <span className="bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
+                  Chiffres Clés
+                </span>
+                <span className="block text-lg md:text-xl text-gray-400 font-normal mt-4">
+                  Données nationales consolidées
+                  {anneeLabel ? ` · Année scolaire ${anneeLabel}` : ""}
+                </span>
+              </h2>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-4">
+              {statsCards.map((stat, index) => (
+                <div
+                  key={stat.label}
+                  className="group relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/5 to-white/10 backdrop-blur-sm border border-white/10 p-6 hover:border-white/20 transition-all duration-500 hover:scale-105 scroll-trigger"
+                  style={{ animationDelay: `${index * 0.1}s` }}
+                >
+                  {/* Hover effect */}
+                  <div className="absolute inset-0 bg-gradient-to-br from-transparent via-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+
+                  <div className="relative z-10">
+                    <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl mb-4 bg-white/10 ring-1 ring-white/15 text-primary-foreground">
+                      <stat.icon className="w-6 h-6" strokeWidth={1.75} />
+                    </div>
+
+                    <div className="text-2xl md:text-3xl font-bold text-white mb-2 tabular-nums">
+                      {stats.loading ? (
+                        <div className="h-8 w-full bg-white/10 rounded-lg animate-pulse" />
+                      ) : stat.value === null ? (
+                        <span className="text-base font-medium text-gray-400">
+                          Donnée non disponible
+                        </span>
+                      ) : (
+                        <span>{formatNumber(stat.value)}</span>
+                      )}
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="text-sm font-semibold text-white">{stat.label}</div>
+                      <div className="text-xs text-gray-400">{stat.description}</div>
+                      {stat.sub && <div className="text-xs text-gray-400">{stat.sub}</div>}
+                      {stat.annuel && anneeLabel && (
+                        <div className="text-[11px] text-gray-500">Année scolaire {anneeLabel}</div>
+                      )}
+                    </div>
+
+                    {/* Animated border */}
+                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-white/30 to-transparent transform scale-x-0 group-hover:scale-x-100 transition-transform duration-500" />
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
-          <div className="home-hero-bottom"><span>Direction de la Planification de l’Éducation · Madagascar</span><a href="#stats" aria-label="Voir les chiffres clés"><ArrowDown size={19} /></a></div>
-        </div>
-      </section>
+        </section>
 
-      <main>
-        <section id="stats" className="home-section home-stats-section">
-          <div className="home-container">
-            <div className="home-section-heading"><div><p className="home-section-kicker">Aperçu national</p><h2>Chiffres clés</h2></div><p className="home-period">{anneeLabel ? `Année scolaire ${anneeLabel}` : "Données nationales consolidées"}</p></div>
-            <div className="home-stats-grid" aria-busy={stats.loading}>
-              {mainStats.map(({ label, value, icon: Icon, detail, tone }) => <div key={label} className={`home-stat ${tone}`}><div className="home-stat-label"><Icon size={20} strokeWidth={1.7} /><span>{label}</span></div><div className="home-stat-value">{renderValue(value)}</div><p>{detail}</p></div>)}
+
+        {/* ORS Modules Section */}
+        <section id="ors" className="container mx-auto px-6 py-20 scroll-trigger">
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-16">
+              <div className="inline-block px-4 py-2 bg-emerald-500/20 backdrop-blur-sm rounded-full mb-4">
+                <span className="text-sm font-semibold text-emerald-300">CARTE SCOLAIRE ORS</span>
+              </div>
+              <h2 className="text-3xl md:text-5xl font-bold mb-6 text-white">
+                Organisation du <span className="text-emerald-400">Réseau Scolaire</span>
+              </h2>
+              <p className="text-lg text-gray-400 max-w-2xl mx-auto">
+                Analyse géospatiale des établissements et villages pour planifier les implantations
+              </p>
             </div>
-            <div className="home-network">
-              {[{ label: "DREN", value: stats.drens, icon: Globe }, { label: "CISCO", value: stats.ciscos, icon: Building2 }, { label: "ZAP", value: stats.zaps, icon: MapPin }].map(({ label, value, icon: Icon }) => <div key={label}><Icon size={18} /><strong>{renderValue(value)}</strong><span>{label}</span></div>)}
-              {(stats.etabPublic !== null || stats.etabPrive !== null) && <p>Établissements publics : {stats.etabPublic !== null ? formatNumber(stats.etabPublic) : "n.d."}<br />Établissements privés : {stats.etabPrive !== null ? formatNumber(stats.etabPrive) : "n.d."}</p>}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {[
+                {
+                  title: "ORS Primaire",
+                  desc: "EPP & écoles primaires",
+                  path: "/ors-primaire",
+                  icon: School,
+                  color: "from-emerald-500 to-teal-500",
+                },
+                {
+                  title: "ORS Collèges",
+                  desc: "Collèges publics & privés",
+                  path: "/ors-college",
+                  icon: BookOpen,
+                  color: "from-cyan-500 to-blue-500",
+                },
+                {
+                  title: "ORS Lycée",
+                  desc: "Lycées publics & privés",
+                  path: "/ors-lycee",
+                  icon: GraduationCap,
+                  color: "from-indigo-500 to-purple-500",
+                },
+              ].map((m, i) => (
+                <div
+                  key={m.title}
+                  onClick={() => navigate(m.path)}
+                  className="group relative cursor-pointer rounded-3xl bg-white/5 backdrop-blur-sm border border-white/10 hover:border-white/30 p-8 transition-all duration-500 hover:-translate-y-2 scroll-trigger"
+                  style={{ animationDelay: `${i * 0.15}s` }}
+                >
+                  <div
+                    className={`inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br ${m.color} rounded-2xl mb-6 shadow-xl group-hover:scale-110 transition-transform`}
+                  >
+                    <m.icon className="w-8 h-8 text-white" />
+                  </div>
+                  <h3 className="text-xl font-bold text-white mb-2">{m.title}</h3>
+                  <p className="text-gray-400 mb-4">{m.desc}</p>
+                  <div className="flex items-center gap-2 text-sm text-emerald-300 font-medium">
+                    Ouvrir la carte{" "}
+                    <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="text-center text-xs text-gray-500 mt-8">
+              <Shield className="inline h-3 w-3 mr-1" /> Connexion requise pour accéder aux modules
+              ORS
+            </p>
+          </div>
+        </section>
+
+        {/* TDB Section */}
+        <section id="tdb" className="container mx-auto px-6 py-20 scroll-trigger">
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-16">
+              <div className="inline-block px-4 py-2 bg-info/20 backdrop-blur-sm rounded-full mb-4">
+                <span className="text-sm font-semibold text-info">TABLEAUX DE BORD</span>
+              </div>
+              <h2 className="text-3xl md:text-5xl font-bold mb-6 text-white">
+                Pilotage par <span className="text-info">niveau territorial</span>
+              </h2>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[
+                {
+                  title: "TDB DREN",
+                  path: "/tdb-dren",
+                  icon: Globe,
+                  color: "from-blue-500 to-cyan-500",
+                },
+                {
+                  title: "TDB CISCO",
+                  path: "/tdb-cisco",
+                  icon: Building2,
+                  color: "from-indigo-500 to-purple-500",
+                },
+                {
+                  title: "TDB ZAP",
+                  path: "/tdb-zap",
+                  icon: MapPin,
+                  color: "from-teal-500 to-cyan-500",
+                },
+                {
+                  title: "TDB École",
+                  path: "/tdb-ecole",
+                  icon: School,
+                  color: "from-pink-500 to-rose-500",
+                },
+              ].map((t, i) => (
+                <div
+                  key={t.title}
+                  onClick={() => navigate(t.path)}
+                  className="group cursor-pointer rounded-2xl bg-white/5 backdrop-blur-sm border border-white/10 hover:border-white/30 p-6 transition-all hover:-translate-y-1 scroll-trigger"
+                  style={{ animationDelay: `${i * 0.1}s` }}
+                >
+                  <div
+                    className={`inline-flex items-center justify-center w-12 h-12 bg-gradient-to-br ${t.color} rounded-xl mb-4 shadow-lg group-hover:scale-110 transition-transform`}
+                  >
+                    <t.icon className="w-6 h-6 text-white" />
+                  </div>
+                  <h3 className="font-bold text-white">{t.title}</h3>
+                  <ArrowRight className="h-4 w-4 text-gray-400 mt-2 group-hover:text-white group-hover:translate-x-1 transition-all" />
+                </div>
+              ))}
             </div>
           </div>
         </section>
 
-        <section id="tdb" className="home-section home-band">
-          <div className="home-container"><div className="home-section-heading"><div><p className="home-section-kicker">Tableaux de bord</p><h2>Pilotage territorial</h2></div><span className="home-section-index">01 /</span></div>
-            <ModuleLinks items={[
-              { title: "DREN", detail: "Directions régionales", path: "/tdb-dren", icon: Globe, tone: "home-tone-blue" },
-              { title: "CISCO", detail: "Circonscriptions scolaires", path: "/tdb-cisco", icon: Building2, tone: "home-tone-green" },
-              { title: "ZAP", detail: "Zones pédagogiques", path: "/tdb-zap", icon: MapPin, tone: "home-tone-red" },
-              { title: "École", detail: "Établissements scolaires", path: "/tdb-ecole", icon: School, tone: "home-tone-blue" },
-            ]} />
+        {/* Analyse / Diagnostic Section */}
+        <section id="analyse" className="container mx-auto px-6 py-20 scroll-trigger">
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-16">
+              <div className="inline-block px-4 py-2 bg-warning/20 backdrop-blur-sm rounded-full mb-4">
+                <span className="text-sm font-semibold text-warning">ANALYSE & PROSPECTIVE</span>
+              </div>
+              <h2 className="text-3xl md:text-5xl font-bold mb-6 text-white">
+                Outils d'<span className="text-warning">analyse avancée</span>
+              </h2>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {[
+                {
+                  title: "Diagnostic IA",
+                  desc: "Analyse intelligente des indicateurs éducatifs",
+                  path: "/diagnostic",
+                  icon: Sparkles,
+                  color: "from-amber-500 to-orange-500",
+                },
+                {
+                  title: "Besoins",
+                  desc: "Évaluation des besoins en infrastructure et ressources",
+                  path: "/besoins",
+                  icon: Target,
+                  color: "from-rose-500 to-pink-500",
+                },
+                {
+                  title: "DataViz",
+                  desc: "Cartographie thématique et visualisation des données",
+                  path: "/dataviz",
+                  icon: BarChart4,
+                  color: "from-violet-500 to-fuchsia-500",
+                },
+              ].map((a, i) => (
+                <div
+                  key={a.title}
+                  onClick={() => navigate(a.path)}
+                  className="group cursor-pointer rounded-3xl bg-white/5 backdrop-blur-sm border border-white/10 hover:border-white/30 p-8 transition-all duration-500 hover:-translate-y-2 scroll-trigger"
+                  style={{ animationDelay: `${i * 0.15}s` }}
+                >
+                  <div
+                    className={`inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br ${a.color} rounded-2xl mb-6 shadow-xl group-hover:scale-110 transition-transform`}
+                  >
+                    <a.icon className="w-8 h-8 text-white" />
+                  </div>
+                  <h3 className="text-xl font-bold text-white mb-2">{a.title}</h3>
+                  <p className="text-gray-400">{a.desc}</p>
+                </div>
+              ))}
+            </div>
           </div>
         </section>
 
-        <section id="ors" className="home-section">
-          <div className="home-container"><div className="home-section-heading"><div><p className="home-section-kicker home-kicker-green">Carte scolaire ORS</p><h2>Organisation du Réseau Scolaire</h2></div><span className="home-section-index">02 /</span></div>
-            <ModuleLinks items={[
-              { title: "ORS Primaire", detail: "EPP et écoles primaires", path: "/ors-primaire", icon: School, tone: "home-tone-green" },
-              { title: "ORS Collèges", detail: "Collèges publics et privés", path: "/ors-college", icon: BookOpen, tone: "home-tone-blue" },
-              { title: "ORS Lycée", detail: "Lycées publics et privés", path: "/ors-lycee", icon: GraduationCap, tone: "home-tone-red" },
-            ]} />
+        {/* CTA Connexion */}
+        <section className="container mx-auto px-6 py-16">
+          <div className="max-w-4xl mx-auto rounded-3xl bg-gradient-to-br from-primary/20 via-info/10 to-primary/20 backdrop-blur-sm border border-white/20 p-12 text-center">
+            <Shield className="h-12 w-12 text-primary mx-auto mb-4" />
+            <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+              Accédez à toutes les fonctionnalités
+            </h2>
+            <p className="text-lg text-gray-300 mb-8 max-w-2xl mx-auto">
+              Connectez-vous à votre espace sécurisé pour gérer les données, exécuter les analyses
+              ORS et exporter vos rapports.
+            </p>
+            <Button
+              size="lg"
+              onClick={() => navigate("/login")}
+              className="h-14 px-10 text-lg font-semibold bg-gradient-to-r from-primary to-info hover:opacity-90 shadow-2xl shadow-primary/30"
+            >
+              Se connecter <ArrowRight className="h-5 w-5 ml-2" />
+            </Button>
           </div>
         </section>
 
-        <section id="analyse" className="home-section home-band">
-          <div className="home-container"><div className="home-section-heading"><div><p className="home-section-kicker">Analyse et prospective</p><h2>Diagnostic, besoins et cartographie</h2></div><span className="home-section-index">03 /</span></div>
-            <ModuleLinks items={[
-              { title: "Diagnostic IA", detail: "Indicateurs éducatifs", path: "/diagnostic", icon: Sparkles, tone: "home-tone-blue" },
-              { title: "Besoins", detail: "Infrastructures et ressources", path: "/besoins", icon: Target, tone: "home-tone-red" },
-              { title: "DataViz", detail: "Cartographie thématique", path: "/dataviz", icon: BarChart4, tone: "home-tone-green" },
-            ]} />
-          </div>
-        </section>
-      </main>
+        {/* Footer */}
+        <footer className="border-t border-white/10 mt-20">
+          <div className="container mx-auto px-6 py-12">
+            <div className="flex flex-col lg:flex-row items-center justify-between gap-8">
+              {/* Logo Section */}
+              <div className="flex items-center gap-4">
+                <AnimatedLogo size={64} className="shadow-lg border-2 border-white/20" />
+                <div className="flex flex-col">
+                  <div className="font-bold text-xl text-white">DPE Plateforme</div>
+                  <div className="text-sm text-gray-400">
+                    Direction de la Planification de l'Éducation
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    Ministère de l'Éducation Nationale
+                  </div>
+                </div>
+              </div>
 
-      <footer id="contact" className="home-footer">
-        <div className="home-container home-footer-inner"><div className="home-footer-brand"><img src={logoDpe} alt="DPE" /><img src={logoMen} alt="MEN" /><div><strong>DPE Plateforme</strong><p>Direction de la Planification de l’Éducation</p><p>Ministère de l’Éducation Nationale</p></div></div><div className="home-footer-contact"><a href="mailto:contact@dpe.education.gov.mg"><Mail size={16} />contact@dpe.education.gov.mg</a><p>© {new Date().getFullYear()} Plateforme DPE</p></div></div>
-        <div className="home-identity-line" aria-hidden="true" />
-      </footer>
+              {/* Info Section */}
+              <div
+                id="contact"
+                className="flex flex-col items-center lg:items-end gap-4 scroll-mt-24"
+              >
+                <a
+                  href="mailto:contact@dpe.education.gov.mg"
+                  className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors"
+                >
+                  <Mail className="h-4 w-4" strokeWidth={1.75} />
+                  contact@dpe.education.gov.mg
+                </a>
+                <div className="text-sm text-gray-500 text-center lg:text-right">
+                  © {new Date().getFullYear()} Plateforme DPE. Tous droits réservés.
+                  <br />
+                  <span className="text-xs">Version 3.0 • Conforme RGPD • ISO 27001</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </footer>
+      </div>
+
+      {/* Global Styles pour les animations */}
+      <style>{`
+        @keyframes pulse-slow {
+          0%, 100% { opacity: 0.5; }
+          50% { opacity: 0.8; }
+        }
+        
+        @keyframes orbital {
+          0% { transform: translate(0, 0) rotate(0deg); }
+          100% { transform: translate(100px, 100px) rotate(360deg); }
+        }
+        
+        @keyframes fade-in {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        
+        .animate-pulse-slow {
+          animation: pulse-slow 4s ease-in-out infinite;
+        }
+        
+        .animate-orbital {
+          animation: orbital linear infinite;
+        }
+        
+        .animate-fade-in {
+          animation: fade-in 0.8s ease-out;
+        }
+        
+        .scroll-trigger {
+          opacity: 0;
+          transform: translateY(30px);
+          transition: opacity 0.8s ease-out, transform 0.8s ease-out;
+        }
+        
+        .scroll-trigger.animate-in {
+          opacity: 1;
+          transform: translateY(0);
+        }
+        
+        .bg-grid-white\/\[0\.02\] {
+          background-image: linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+                            linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+        }
+      `}</style>
     </div>
   );
 };
