@@ -43,6 +43,16 @@ describe('DREN primary ODS reference', () => {
     expect(drenPromotion({ ressources: e.ressources }, 1)).toBeNull();
     expect(drenAbandon(e, 1)).toBe(15);
   });
+  it('calcule aussi la promotion et l’abandon par sexe', () => {
+    const e = {
+      ressources: { eff_t1_g: 100, eff_t1_f: 100 },
+      annee_suivante: { ressources: { eff_t2_g: 80, red_t2_g: 10, eff_t2_f: 90, red_t2_f: 0, red_t1_g: 5, red_t1_f: 5 } },
+    };
+    expect(drenPromotion(e, 1, '_g')).toBe(70);
+    expect(drenAbandon(e, 1, '_g')).toBe(25);
+    expect(drenPromotion(e, 1, '_f')).toBe(90);
+    expect(drenPromotion({ ressources: e.ressources }, 1, '_g')).toBeNull();
+  });
   it('retains negative abandonment caused by out-of-cohort entrants for review', () => {
     expect(drenAbandon({ ressources: { eff_t1: 100 }, annee_suivante: { ressources: { eff_t2: 110, red_t2: 0, red_t1: 5 } } }, 1)).toBeCloseTo(-15);
   });
@@ -54,5 +64,23 @@ describe('DREN primary ODS reference', () => {
   it('flags inconsistent exam proportions instead of clamping them to a fabricated 100%', () => {
     expect(drenAdmission({ ressources: { eff_t5: 100 }, cepe: { admis_f: 70, admis_g: 50 } })).toBeNull();
     expect(drenExamThreshold({ cepe: { mlg_sup10: 120, total_candidats: 100 } }, 'mlg_sup10')).toBeNull();
+  });
+});
+import { drenMalRepartis, drenQualifies, drenElevesParAdmin, drenManuelRow } from './tdbDrenFormulas';
+describe('fiche commentaires TDB DREN primaire', () => {
+  it('mal répartis = (1 − R²) × 100', () => {
+    expect(drenMalRepartis(0.75)).toBeCloseTo(25);
+    expect(drenMalRepartis(null)).toBeNull();
+  });
+  it('qualifiés = qualifiés ÷ enseignants en classe', () => {
+    expect(drenQualifies({ ens_qualifies: 30, ens_classe: 40 })).toBeCloseTo(75);
+  });
+  it('élèves par personnel administratif', () => {
+    expect(drenElevesParAdmin({ eleves: 1200, pers_admin: 10 })).toBe(120);
+  });
+  it('ratio élèves / manuel par groupe de classes', () => {
+    const r = drenManuelRow({ manuel_mlg_12: 50, eleves_12: 200, r2_manuel_mlg_12: 0.4 }, 'mlg_12', 'eleves_12');
+    expect(r.ratio).toBe(4);
+    expect(r.malRepartis).toBeCloseTo(60);
   });
 });

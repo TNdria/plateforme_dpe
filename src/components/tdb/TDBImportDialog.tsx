@@ -42,6 +42,13 @@ const TDB_TABLES: TableDef[] = [
   { table: 'tdb_dren', label: 'df_dren.csv → tdb_dren', description: 'Indicateurs agrégés par DREN', category: 'Indicateurs calculés (df_*.csv)', icon: <FileSpreadsheet className="w-4 h-4" /> },
   { table: 'tdb_mada', label: 'df_mada.csv → tdb_mada', description: 'Indicateurs nationaux (Madagascar)', category: 'Indicateurs calculés (df_*.csv)', icon: <FileSpreadsheet className="w-4 h-4" /> },
   { table: 'tdb_ref', label: 'df_ref.csv → tdb_ref', description: 'Référentiel établissements (CODE_ETAB, géolocalisation, milieu, secteur)', category: 'Indicateurs calculés (df_*.csv)', icon: <FileSpreadsheet className="w-4 h-4" /> },
+  {
+    table: 'tdb_ueas',
+    label: 'Acquis scolaires (UEAS) → tdb_ueas',
+    description: 'Une ligne par CODE_DREN × NIVEAU (T2, T5, COLLEGE4) × MATIERE × SECTEUR (PUBLIC, PRIVE, ENSEMBLE, MADA), avec MOYENNE, ECART_TYPE, PCT_50 (ou NB_SEUIL50 + ELEVES_TESTES). CODE_DREN = 0 pour la ligne nationale.',
+    category: 'Indicateurs calculés (df_*.csv)',
+    icon: <Award className="w-4 h-4" />,
+  },
 
   // === Données de référence (import spécifique) ===
   { table: 'tdb_caisse_ecole_import', ref: 'caisse', label: 'Caisse école (PRIMAIRE / COLLEGE / LYCEE)', description: 'Classeur Excel avec une feuille par niveau : Code, Total (Annee facultative).', category: 'Données de référence', icon: <Database className="w-4 h-4" /> },

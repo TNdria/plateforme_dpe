@@ -42,6 +42,24 @@ export function drenRetention(entity: Entity, grade: number, gender = ''): numbe
   };
   return drenDivide(access(grade), access(1));
 }
+/**
+ * Profil de rétention par cohorte reconstituée :
+ * R1 = 100 ; Rk = R(k-1) × passants Tk (année n) ÷ passants T(k-1) (année n-1),
+ * passants = effectif − redoublants. Le profil ne peut jamais remonter.
+ */
+export function drenRetentionCohort(entity: Entity, grades: number, gender = ''): (number | null)[] {
+  const prev = entity?.ressources || {}, cur = entity?.annee_suivante?.ressources || {};
+  const pass = (r: any, k: number) => {
+    const e = drenNumber(r[`eff_t${k}${gender}`]), red = drenNumber(r[`red_t${k}${gender}`]);
+    return e === null || red === null ? null : e - red;
+  };
+  const out: (number | null)[] = [100];
+  for (let k = 2; k <= grades; k++) {
+    const last = out[k - 2], a = pass(cur, k), b = pass(prev, k - 1);
+    out.push(last === null || a === null || b === null || b <= 0 ? null : last * Math.min(1, a / b));
+  }
+  return out;
+}
 export function drenAdmission(entity: Entity, gender = ''): number | null {
   const cepe = entity?.cepe || {};
   const admitted = gender ? cepe[`admis${gender}`] : drenSum([cepe.admis_f, cepe.admis_g]);
@@ -63,30 +81,30 @@ export function drenRepeat(entity: Entity, grade?: number, gender = ''): number 
     : drenRead(entity, gender === '_f' ? 'red_fille' : gender === '_g' ? 'red_garcons' : 'red_ensemble');
   return imported ?? pooled;
 }
-export function drenPromotion(entity: Entity, grade: number): number | null {
-  const direct = drenRead(entity, `promotion_t${grade}`, `tp_t${grade}`);
+export function drenPromotion(entity: Entity, grade: number, gender = ''): number | null {
+  const direct = drenRead(entity, `promotion_t${grade}${gender}`, `tp_t${grade}${gender}`);
   if (direct !== null) return direct;
   const next = entity?.annee_suivante?.ressources;
-  const eff = drenNumber(next?.[`eff_t${grade + 1}`]), red = drenNumber(next?.[`red_t${grade + 1}`]);
-  return drenDivide(eff === null || red === null ? null : eff - red, entity?.ressources?.[`eff_t${grade}`]);
+  const eff = drenNumber(next?.[`eff_t${grade + 1}${gender}`]), red = drenNumber(next?.[`red_t${grade + 1}${gender}`]);
+  return drenDivide(eff === null || red === null ? null : eff - red, entity?.ressources?.[`eff_t${grade}${gender}`]);
 }
-export function drenAbandon(entity: Entity, grade: number): number | null {
-  const direct = drenRead(entity, `abandon_t${grade}`);
+export function drenAbandon(entity: Entity, grade: number, gender = ''): number | null {
+  const direct = drenRead(entity, `abandon_t${grade}${gender}`);
   if (direct !== null) return direct;
-  const promotion = drenPromotion(entity, grade);
-  const repeat = drenDivide(entity?.annee_suivante?.ressources?.[`red_t${grade}`], entity?.ressources?.[`eff_t${grade}`]);
+  const promotion = drenPromotion(entity, grade, gender);
+  const repeat = drenDivide(entity?.annee_suivante?.ressources?.[`red_t${grade}${gender}`], entity?.ressources?.[`eff_t${grade}${gender}`]);
   // Coherent flow identity; the ODS abandonment expression contains duplicated terms.
   return promotion === null || repeat === null ? null : 100 - promotion - repeat;
 }
-export function drenCycleRate(entity: Entity, kind: 'promotion' | 'abandon'): number | null {
-  const rates = [1, 2, 3, 4].map(k => ({ rate: kind === 'promotion' ? drenPromotion(entity, k) : drenAbandon(entity, k), size: drenNumber(entity?.ressources?.[`eff_t${k}`]) }));
+export function drenCycleRate(entity: Entity, kind: 'promotion' | 'abandon', gender = ''): number | null {
+  const rates = [1, 2, 3, 4].map(k => ({ rate: kind === 'promotion' ? drenPromotion(entity, k, gender) : drenAbandon(entity, k, gender), size: drenNumber(entity?.ressources?.[`eff_t${k}${gender}`]) }));
   if (rates.some(r => r.rate === null || r.size === null)) return null;
   return drenDivide(rates.reduce((sum, r) => sum + (r.rate ?? 0) * (r.size ?? 0), 0), rates.reduce((sum, r) => sum + (r.size ?? 0), 0), 1);
 }
 export function drenCoverage(entity: Entity) {
   const r = entity?.ressources || {};
   const pop = drenRead(entity, 'population_6_10', 'pop_6_10', 'pop_6_10ans');
-  const cm2 = drenNumber(r.eff_t5), red = drenNumber(r.red_t5);
+  const cm2 = drenNumber(entity?.eff_t5_tous_secteurs ?? r.eff_t5), red = drenNumber(entity?.red_t5_tous_secteurs ?? r.red_t5);
   return [
     { label: 'Taux d’accès générationnel', value: drenRead(entity, 'taux_acces_generationnel', 'tag'), unit: ' %' },
     { label: 'Taux brut de scolarisation (TBS)', value: drenRead(entity, 'tbs') ?? drenDivide(entity?.nombre_eleves_tous_secteurs ?? r.nbr_eleve, pop), unit: ' %' },
@@ -125,4 +143,45 @@ export function drenExamThreshold(entity: Entity, key: string): number | null {
   // actual exam numerator/denominator; never interpret a count as a rate.
   const rate = calculated ?? drenDivide(direct, entity?.cepe?.total_candidats ?? drenSum([entity?.cepe?.nbr_f, entity?.cepe?.nbr_g]));
   return rate !== null && rate > 100 ? null : rate;
+}
+/** Indicateurs complémentaires du primaire (fiche « TDB_DREN_commentaire »). */
+export type PrimaireExtra = Record<string, unknown>;
+
+/** Part non expliquée par les effectifs : (1 − R²) × 100. */
+export function drenMalRepartis(r2: unknown): number | null {
+  const v = drenNumber(r2);
+  if (v === null || v < 0 || v > 1) return null;
+  return (1 - v) * 100;
+}
+
+/** % d’enseignants qualifiés = qualifiés ÷ enseignants en classe × 100. */
+export function drenQualifies(extra: PrimaireExtra | undefined): number | null {
+  return drenDivide(extra?.ens_qualifies, extra?.ens_classe);
+}
+
+/** Élèves par personnel administratif (personnel EN_SALLE = 0). */
+export function drenElevesParAdmin(extra: PrimaireExtra | undefined): number | null {
+  return drenDivide(extra?.eleves, extra?.pers_admin, 1);
+}
+
+export const DREN_MANUELS: { label: string; key: string; eleves: string }[] = [
+  { label: 'Malagasy T1-T2', key: 'mlg_12', eleves: 'eleves_12' },
+  { label: 'Malagasy T3', key: 'mlg_3', eleves: 'eleves_3' },
+  { label: 'Malagasy T4-T5', key: 'mlg_45', eleves: 'eleves_45' },
+  { label: 'Calcul T1-T2', key: 'cal_12', eleves: 'eleves_12' },
+  { label: 'Calcul T3', key: 'cal_3', eleves: 'eleves_3' },
+  { label: 'Calcul T4-T5', key: 'cal_45', eleves: 'eleves_45' },
+  { label: 'Français T1-T2', key: 'fr_12', eleves: 'eleves_12' },
+  { label: 'Français T3', key: 'fr_3', eleves: 'eleves_3' },
+  { label: 'Français T4-T5', key: 'fr_45', eleves: 'eleves_45' },
+  { label: 'Autres matières (Rakibolana, Histoire, Géographie, SVT)', key: 'autres', eleves: 'eleves' },
+];
+
+/** Ratio élèves / manuel et % de manuels mal répartis pour une ligne. */
+export function drenManuelRow(extra: PrimaireExtra | undefined, key: string, eleves: string) {
+  const manuels = drenNumber(extra?.[`manuel_${key}`]);
+  return {
+    ratio: manuels === null || manuels <= 0 ? null : drenDivide(extra?.[eleves], manuels, 1),
+    malRepartis: drenMalRepartis(extra?.[`r2_manuel_${key}`]),
+  };
 }

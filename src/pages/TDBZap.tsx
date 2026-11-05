@@ -89,6 +89,7 @@ const TDBZap = () => {
   const [selectedAnnee, setSelectedAnnee] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [tdbData, setTdbData] = useState<TdbZapData | null>(null);
+  const [downloadEntityCode, setDownloadEntityCode] = useState<string>();
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewName, setPreviewName] = useState('');
@@ -138,6 +139,7 @@ const TDBZap = () => {
       } catch { toast.warning('Les points de comparaison sont indisponibles.'); }
       if (!Array.isArray(data.efficience)) data.efficience = [];
       setTdbData(data);
+      setDownloadEntityCode(selectedZap);
       toast.success('Tableau de bord ZAP chargé');
     } catch (err) { console.error(err); toast.error('Erreur lors du chargement du TDB ZAP'); }
     finally { setLoading(false); }
@@ -708,6 +710,7 @@ const TDBZap = () => {
         title="Tableau de Bord — ZAP"
         entityName={zapName}
         entityCode={selectedZap !== '0' ? selectedZap : undefined}
+        downloadEntityCode={downloadEntityCode}
         annee={anneeLabel}
         loading={loading}
         hasData={!!tdbData}

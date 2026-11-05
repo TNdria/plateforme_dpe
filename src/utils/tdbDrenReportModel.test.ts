@@ -101,6 +101,48 @@ const collegeRaw = {
   bepc_mada: { total_candidats: 250000, nbr_g: 125000, nbr_f: 125000, admis_g: 56500, admis_f: 97500, tx_admis: 62.8, tx_admis_g: 45.2, tx_admis_f: 78.6, sm_mlg: 10.2, mlg_sup10: 120000, sm_frs: 8.8, frs_sup10: 90000, sm_math: 7.8, math_sup10: 70000, sm_svt: 10.4, svt_sup10: 130000, sm_phys: 10.1, phys_sup10: 125000 },
 };
 
+describe('évaluations nationales des acquis (UEAS)', () => {
+  const withUeas = () => {
+    const raw = JSON.parse(JSON.stringify(primaryRaw));
+    raw.ueas = [
+      { CODE_DREN: 12, NIVEAU: 'T2', MATIERE: 'Lecture', SECTEUR: 'PUBLIC', MOYENNE: 42.5, ECART_TYPE: 12.1, PCT_50: 61.2 },
+      { CODE_DREN: 12, NIVEAU: 'T2', MATIERE: 'Lecture', SECTEUR: 'ENSEMBLE', MOYENNE: 46, ECART_TYPE: 11.4, NB_SEUIL50: 620, ELEVES_TESTES: 1000 },
+      { CODE_DREN: 0, NIVEAU: 'T2', MATIERE: 'Lecture', SECTEUR: 'MADA', MOYENNE: 38, ECART_TYPE: 13, PCT_50: 48.5 },
+    ];
+    return raw;
+  };
+
+  it('remplit Public, Ensemble et MADA sans inventer le Privé', () => {
+    const model = buildDrenReport(withUeas(), 'primaire');
+    const block = model.ueas.find((b) => b.title.includes('T2'))!;
+    const lecture = block.subjectRows.find((r) => r.label === 'Lecture')!;
+    expect(lecture.cells[0].value).toBeCloseTo(42.5, 1);
+    expect(lecture.cells[0].display).toBe('42.5');
+    expect(lecture.cells[2].display).toBe('61.2%');
+    expect(lecture.cells[3].status).toBe('missing');
+    expect(lecture.cells[6].value).toBeCloseTo(46, 1);
+    expect(lecture.cells[8].value).toBeCloseTo(62, 1);
+    expect(lecture.cells[9].value).toBeCloseTo(38, 1);
+    expect(lecture.cells[11].value).toBeCloseTo(48.5, 1);
+  });
+
+  it('laisse « — » les matières et niveaux absents de l’import', () => {
+    const model = buildDrenReport(withUeas(), 'primaire');
+    const t2 = model.ueas.find((b) => b.title.includes('T2'))!;
+    const maths = t2.subjectRows.find((r) => r.label === 'Mathématique')!;
+    expect(maths.cells[0].status).toBe('missing');
+    expect(maths.cells[0].display).toBe('—');
+    const t5 = model.ueas.find((b) => b.title.includes('T5'))!;
+    expect(t5.subjectRows.every((r) => r.cells.every((c) => c.value === null))).toBe(true);
+  });
+
+  it('sans import UEAS, les tableaux restent vides', () => {
+    const model = buildDrenReport(JSON.parse(JSON.stringify(primaryRaw)), 'primaire');
+    expect(model.ueas).toHaveLength(2);
+    expect(model.ueas.every((b) => b.subjectRows.every((r) => r.cells.every((c) => c.value === null)))).toBe(true);
+  });
+});
+
 describe('formatage ministériel', () => {
   it('utilise l’espace des milliers, le point décimal et le % collé', () => {
     expect(formatDrenValue(3074, '', 0)).toBe('3 074');
@@ -228,6 +270,84 @@ describe('nuage d’efficience DREN', () => {
   });
 });
 
+describe('rapport primaire avec les deux secteurs', () => {
+  const withPrivate = () => {
+    const raw = JSON.parse(JSON.stringify(primaryRaw));
+    raw.dren.personnel.qualifies_classe = 1436;
+    raw.dren_prive = {
+      ressources: {
+        nbr_etab: 220, nbr_eleve: 36572, nbr_eleve_f: 18000,
+        eff_t1: 8000, eff_t2: 7000, eff_t3: 6000, eff_t4: 5000, eff_t5: 4000,
+        red_t1: 1000, red_t2: 800, red_t3: 600, red_t4: 500, red_t5: 400,
+        eff_t1_g: 4000, eff_t1_f: 4000, eff_t2_g: 3600, eff_t2_f: 3400,
+        eff_t3_g: 3000, eff_t3_f: 3000, eff_t4_g: 2500, eff_t4_f: 2500,
+        red_t2_g: 400, red_t2_f: 400, red_t3_g: 300, red_t3_f: 300, red_t4_g: 250, red_t4_f: 250, red_t5_g: 200, red_t5_f: 200,
+        nbr_section: 1200, nbr_sdc: 500, places_assises: 20000,
+        latrines: 100, latrines_fille: 30, eleve_2km: 30000,
+        etab_eau: 50, etab_elec: 5, ecole_continue: 180,
+        etab_latrine_f: 80, etab_cantine: 50, etab_handicap: 10,
+        reinseres: 12, nbr_eleve_t1_t2: 15000, nbr_eleve_t3: 6000, nbr_eleve_t4_t5: 9000,
+        etab_avec_cap: 60,
+      },
+      personnel: { nbr_pers: 800, pers_en_classe: 700, fonctionnaire: 0, sub: 100, non_sub: 600, qualifies_classe: 200, sans_diplome_ped: 500 },
+      sections: { nbr_section: 1200, nbr_sdc: 500 },
+      places: { places_assises: 20000, latrines: 100, latrines_fille: 30, etab_latrine_f: 80, etab_handicap: 10 },
+      manuels: { malagasy: 30000, maths: 20000, francais: 10000, manuel_t1_t2: 25000, manuel_t3: 8000, manuel_t4_t5: 9000 },
+      annee_suivante: { ressources: {
+        eff_t2: 7000, red_t2: 800, eff_t3: 6000, red_t3: 600, eff_t4: 5000, red_t4: 500, eff_t5: 4000, red_t5: 400,
+        eff_t2_g: 3600, red_t2_g: 400, eff_t2_f: 3400, red_t2_f: 400,
+        eff_t3_g: 3000, red_t3_g: 300, eff_t3_f: 3000, red_t3_f: 300,
+        eff_t4_g: 2500, red_t4_g: 250, eff_t4_f: 2500, red_t4_f: 250,
+        eff_t5_g: 2000, red_t5_g: 200, eff_t5_f: 2000, red_t5_f: 200,
+      } },
+      cepe: { total_candidats: 5000, nbr_g: 2500, nbr_f: 2500, admis_g: 1800, admis_f: 1900, sm_mlg: 9.2, mlg_sup10: 4000, sm_frs: 6.5, frs_sup10: 2000, sm_mths: 5.5, mths_sup10: 1500, sm_total: 9.0, autres_sup10: 3000 },
+    };
+    raw.dren_ensemble = { cepe: { total_candidats: 50000, nbr_g: 25000, nbr_f: 25000, admis_g: 15000, admis_f: 16000, sm_mlg: 10.1, mlg_sup10: 40000, sm_frs: 7.1, frs_sup10: 25000, sm_mths: 6.0, mths_sup10: 18000, sm_total: 9.4, autres_sup10: 35000 } };
+    return raw;
+  };
+
+  it('additionne les comptes publics et privés dans Ensemble', () => {
+    const model = buildDrenReport(withPrivate(), 'primaire');
+    const row = (label: string) => model.general.flatMap((t) => t.rows).find((r) => r.label === label)!;
+    expect(row('Nombre de sections').cells[0].value).toBe(9863);
+    expect(row('Nombre de sections').cells[1].value).toBe(8663);
+    expect(row('Dont filles').cells[0].value).toBe(161605);
+    expect(row('Nombre d’enfants réinsérés').cells[0].value).toBe(12);
+    expect(row('Nombre de places assises').cells[0].value).toBe(179716);
+  });
+
+  it('remplit les colonnes Privé et Ensemble des flux', () => {
+    const model = buildDrenReport(withPrivate(), 'primaire');
+    const red = model.flows.find((f) => f.title.includes('redoublants'))!;
+    const t1 = red.rows.find((r) => r.label === 'T1')!;
+    expect(t1.cells[1].value).toBeCloseTo(12.5, 1);
+    expect(t1.cells[2].value).toBeCloseTo(32.5, 1);
+    const promo = model.flows.find((f) => f.title.includes('Promotion'))!;
+    expect(promo.rows.find((r) => r.label === 'T1 → T2')!.cells[1].value).toBeCloseTo(77.5, 1);
+    expect(promo.rows.find((r) => r.label === 'Garçons')!.cells[1].value).not.toBeNull();
+    expect(promo.rows.find((r) => r.label === 'Filles')!.cells[1].value).not.toBeNull();
+  });
+
+  it('remplit le CEPE privé et l’ensemble sans recopier le public', () => {
+    const model = buildDrenReport(withPrivate(), 'primaire');
+    const row = model.exams[0].subjectRows[0];
+    expect(row.cells[2].value).toBeCloseTo(9.2, 1);
+    expect(row.cells[3].value).toBeCloseTo(80, 1);
+    expect(row.cells[4].value).toBeCloseTo(10.1, 1);
+    expect(row.cells[5].value).toBeCloseTo(80, 1);
+  });
+
+  it('calcule les indicateurs de ressources avec les nouveaux agrégats', () => {
+    const model = buildDrenReport(withPrivate(), 'primaire');
+    const value = (label: string) => model.other.rows.find((r) => r.label === label)!.cells[0].value;
+    expect(value('Pourcentage d’établissements avec cantine scolaire')).toBeCloseTo(2.5, 1);
+    expect(value('Pourcentage d’établissements accueillant des élèves en situation de handicap')).toBeCloseTo(0.5, 1);
+    expect(value('Pourcentage d’établissements avec latrine pour filles')).toBeCloseTo(4, 1);
+    const manuals = model.bottlenecks.find((b) => b.label === 'Nombre de manuels par élève T1-T2')!;
+    expect(manuals.raw).toBeCloseTo(0.6, 2);
+  });
+});
+
 describe('rapport collège', () => {
   const model = buildDrenReport(collegeRaw, 'college');
   it('calcule les effectifs par secteur et non depuis un champ absent', () => {
@@ -294,5 +414,66 @@ describe('rapport préscolaire', () => {
     expect(row('Parité filles / garçons de 3 à 4 ans').cells[0].value).toBe(1);
     expect(row('Taux de préscolarisation privé (3 à 5 ans)').cells[0].value).toBeCloseTo(2.6, 1);
     expect(row('Pourcentage d’abandon').cells[0].value).toBe(0);
+  });
+});
+
+describe('Ensemble columns from imported indicateurs', () => {
+  const withImports = () => {
+    const raw = JSON.parse(JSON.stringify(primaryRaw));
+    raw.dren.indicateurs = {
+      ratio_em: 31.5, ratio_eq: 33.3,
+      red_ensemble: 22.3, red_garcons: 23.5, red_fille: 20.8,
+      red_CP1: 29.1, red_CP2: 25.0, red_CE: 23.8, red_CM1: 19.6, red_CM2: 15.8,
+      txAbdcp1cp2: 9.0, txAbdcp2ce: 7.1, txAbdcecm1: 12.4, txAbdcm1cm2: 15.4, txAbdGlobal: 10.5,
+      TPA: 52.5,
+    };
+    return raw;
+  };
+  const findRow = (table: any, label: string) => table.rows.find((r: any) => r.label === label);
+
+  it('fills redoublants Ensemble column from imported red_* indicateurs', () => {
+    const model = buildDrenReport(withImports(), 'primaire');
+    const red = model.flows.find((f: any) => f.title.includes('redoublants'));
+    // columns: Public, Privé, Ensemble, MADA
+    expect(findRow(red, 'T1').cells[2].value).toBeCloseTo(29.1);
+    expect(findRow(red, 'Ensemble').cells[2].value).toBeCloseTo(22.3);
+    expect(findRow(red, 'Garçons').cells[2].value).toBeCloseTo(23.5);
+    expect(findRow(red, 'Filles').cells[2].value).toBeCloseTo(20.8);
+  });
+
+  it('fills abandon Ensemble column from imported txAbd* indicateurs', () => {
+    const model = buildDrenReport(withImports(), 'primaire');
+    const aband = model.flows.find((f: any) => f.title.includes('abandon'));
+    expect(findRow(aband, 'T1 → T2').cells[2].value).toBeCloseTo(9.0);
+    expect(findRow(aband, 'Ensemble').cells[2].value).toBeCloseTo(10.5);
+  });
+
+  it('fills promotion Ensemble total from imported TPA', () => {
+    const model = buildDrenReport(withImports(), 'primaire');
+    const promo = model.flows.find((f: any) => f.title.includes('Promotion'));
+    expect(findRow(promo, 'Ensemble').cells[2].value).toBeCloseTo(52.5);
+  });
+
+  it('fills ratio élève-maître and qualified teachers Ensemble from ratio_em/ratio_eq', () => {
+    const model = buildDrenReport(withImports(), 'primaire');
+    expect(findRow(model.human, 'Ratio élève-maître').cells[0].value).toBeCloseTo(31.5);
+    expect(findRow(model.human, 'Pourcentage des enseignants qualifiés').cells[0].value).toBeCloseTo(33.3);
+  });
+
+  it('keeps Ensemble cells missing when no imported indicateurs exist', () => {
+    const model = buildDrenReport(JSON.parse(JSON.stringify(primaryRaw)), 'primaire');
+    const red = model.flows.find((f: any) => f.title.includes('redoublants'));
+    expect(findRow(red, 'T1').cells[2].value).toBeNull();
+    expect(findRow(model.human, 'Ratio élève-maître').cells[0].value).toBeNull();
+  });
+
+  it('computes TNS/TNA from age breakdown provided by the API', () => {
+    const model = buildDrenReport(JSON.parse(JSON.stringify(primaryRaw)), 'primaire');
+    const tns = model.coverage.rows.find((r: any) => r.label === 'TNS (%)');
+    const tna = model.coverage.rows.find((r: any) => r.label === 'TNA (%)');
+    // 250000 élèves de 6-10 ans / 380000 pop = 65.8 %
+    expect(tns.cells[0].value).toBeCloseTo(65.8, 0);
+    // 60000 nouveaux de 6 ans / 75000 pop = 80 %
+    expect(tna.cells[0].value).toBeCloseTo(80, 0);
   });
 });

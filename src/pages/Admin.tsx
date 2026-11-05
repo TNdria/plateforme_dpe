@@ -285,7 +285,7 @@ const CEPE_ALIASES: Record<string, string> = {
 // Tables TDB flexibles : toutes les colonnes du fichier sont conservées
 // (colonnes structurelles + `data jsonb`). Aucun mapping manuel n'est nécessaire.
 const FLEXIBLE_TDB_TABLES = new Set([
-  'tdb_ecole', 'tdb_zap', 'tdb_cisco', 'tdb_dren', 'tdb_mada', 'tdb_ref',
+  'tdb_ecole', 'tdb_zap', 'tdb_cisco', 'tdb_dren', 'tdb_mada', 'tdb_ref', 'tdb_ueas',
 ]);
 
 const IMPORT_TARGETS = [
@@ -337,6 +337,14 @@ const IMPORT_TARGETS = [
     label: 'df_ecole.csv ou df_tdbecoles.csv',
     description: 'Une ligne par établissement (~25 000 écoles)',
     expectedHeaders: ['CODE_ETAB', 'txAbdGlobal'],
+    color: 'bg-accent text-accent-foreground border-border',
+  },
+  {
+    table: 'tdb_ueas',
+    label: 'Acquis scolaires (UEAS) : T2, T5, 4ème collège',
+    description:
+      'Une ligne par CODE_DREN × NIVEAU × MATIERE × SECTEUR ; CODE_DREN = 0 pour la ligne nationale (MADA)',
+    expectedHeaders: ['NIVEAU', 'MATIERE', 'MOYENNE'],
     color: 'bg-accent text-accent-foreground border-border',
   },
 ] as const;
@@ -840,7 +848,7 @@ const Admin = () => {
       // Auto-detect target if not yet selected
       if (!importTarget) {
         // Du plus fin au plus agrégé : un df_tdbecoles contient aussi CODE_ZAP/CISCO/DREN
-        const order = ['examen_cepe_candidates', 'examen_bepc_candidates', 'tdb_ecole', 'tdb_ref', 'tdb_zap', 'tdb_cisco', 'tdb_dren', 'tdb_mada'];
+        const order = ['examen_cepe_candidates', 'examen_bepc_candidates', 'tdb_ecole', 'tdb_ref', 'tdb_zap', 'tdb_cisco', 'tdb_dren', 'tdb_mada', 'tdb_ueas'];
         const detected = [...IMPORT_TARGETS].sort((a, b) => {
           const ia = order.indexOf(a.table), ib = order.indexOf(b.table);
           return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);

@@ -78,6 +78,20 @@ export function retentionProfile(d: SectorData | null | undefined, s: Secteur, g
   return Array.from({ length: grades }, (_, i) => div(entrants(i + 1), entrants(1)));
 }
 
+/** Rétention par cohorte : R1 = 100 ; Rk = R(k-1) × passants Tk (n) ÷ passants T(k-1) (n-1). Jamais croissant. */
+export function retentionCohort(prev: SectorData | null | undefined, cur: SectorData | null | undefined, s: Secteur, grades: number) {
+  const pass = (d: SectorData | null | undefined, k: number) => {
+    const e = effectif(d, s, grades, undefined, k), r = redoublants(d, s, grades, undefined, k);
+    return e === null || r === null ? null : e - r;
+  };
+  const out: (number | null)[] = [100];
+  for (let k = 2; k <= grades; k++) {
+    const last = out[k - 2], a = pass(cur, k), b = pass(prev, k - 1);
+    out.push(last === null || a === null || b === null || b <= 0 ? null : last * Math.min(1, a / b));
+  }
+  return out;
+}
+
 /** TNS (%) = élèves ayant l'âge officiel du niveau ÷ population de ce groupe d'âge. */
 export const tauxNetScolarisation = (d: SectorData | null | undefined, s: Secteur, populationAge: number | null) =>
   div(val(d, 'eleves_age', s), populationAge);

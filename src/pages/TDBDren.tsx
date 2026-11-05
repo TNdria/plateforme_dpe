@@ -35,6 +35,7 @@ const TDBDren = () => {
   const [selectedAnnee, setSelectedAnnee] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [tdbData, setTdbData] = useState<any>(null);
+  const [downloadEntityCode, setDownloadEntityCode] = useState<string>();
   const [niveau, setNiveau] = useState<'presco' | 'primaire' | 'college' | 'lycee'>('primaire');
   const [niveauData, setNiveauData] = useState<any>(null);
   const [generatingPdf, setGeneratingPdf] = useState(false);
@@ -60,22 +61,40 @@ const TDBDren = () => {
   const loadTdb = async () => {
     if (selectedDren === '0' || !selectedAnnee) return;
     setLoading(true);
+    // Le serveur distant peut être momentanément lent ou injoignable (4G) : on réessaie.
+    const withRetry = async <T,>(fn: () => Promise<T>): Promise<T> => {
+      let lastErr: unknown;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try { return await fn(); } catch (e) {
+          lastErr = e;
+          if (/API Error: 4\d\d/.test(String((e as Error)?.message))) break;
+          await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+        }
+      }
+      throw lastErr;
+    };
     try {
       if (niveau !== 'primaire') {
-        const nd = await tdbApi.getTdbDrenNiveau(Number(selectedDren), Number(selectedAnnee), niveau);
-        setNiveauData(nd); setTdbData(null);
+        const nd = await withRetry(() => tdbApi.getTdbDrenNiveau(Number(selectedDren), Number(selectedAnnee), niveau));
+        setNiveauData(nd); setTdbData(null); setDownloadEntityCode(selectedDren);
         toast.success('Tableau de bord DREN chargé');
         return;
       }
-      const data = await tdbApi.getTdbDrenData(Number(selectedDren), Number(selectedAnnee));
+      const data = await withRetry(() => tdbApi.getTdbDrenData(Number(selectedDren), Number(selectedAnnee)));
       // Nuage d'efficience : toutes les DREN (import df_dren.csv quand il existe).
       try {
         const population = await tdbApi.getEfficiencePopulation('dren', {}, data.annee);
         if (population.length > 0) data.efficiencePopulation = population;
       } catch { /* le repli SQL `efficienceDrens` reste utilisé */ }
-      setTdbData(data); setNiveauData(null);
+      setTdbData(data); setNiveauData(null); setDownloadEntityCode(selectedDren);
       toast.success('Tableau de bord DREN chargé');
-    } catch (err) { console.error(err); toast.error('Erreur lors du chargement du TDB DREN'); }
+    } catch (err) {
+      console.error(err);
+      const msg = String((err as Error)?.message || '');
+      toast.error(/503|Failed to fetch|NetworkError/i.test(msg)
+        ? 'Serveur de données momentanément injoignable — réessayez dans un instant'
+        : 'Erreur lors du chargement du TDB DREN');
+    }
     finally { setLoading(false); }
   };
 
@@ -113,6 +132,7 @@ const TDBDren = () => {
         title="Tableau de Bord — DREN"
         entityName={drenName}
         entityCode={selectedDren !== '0' ? selectedDren : undefined}
+        downloadEntityCode={downloadEntityCode}
         annee={anneeLabel}
         loading={loading}
         hasData={!!tdbData || !!niveauData}

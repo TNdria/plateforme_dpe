@@ -24,7 +24,13 @@ import {
   drenRead,
   drenRepeat,
   drenRetention,
+  drenRetentionCohort,
   drenSum,
+  drenMalRepartis,
+  drenQualifies,
+  drenElevesParAdmin,
+  drenManuelRow,
+  DREN_MANUELS,
 } from './tdbDrenFormulas';
 import { drenReportRead } from './tdbDrenPresentation';
 import {
@@ -36,6 +42,7 @@ import {
   parite,
   redoublants,
   retentionProfile,
+  retentionCohort,
   tauxAbandon,
   tauxNetScolarisation,
   tauxPromotion,
@@ -337,8 +344,8 @@ const META: Record<string, IndicatorMeta> = {
     section: 'ressources',
     sense: 'higher',
     max: 100,
-    definition: 'Part des enseignants en classe titulaires d’un diplôme pédagogique.',
-    formula: 'Enseignants avec diplôme pédagogique ÷ enseignants en classe × 100',
+    definition: 'Part des enseignants en classe du primaire ayant au moins le BEPC et un diplôme pédagogique reconnu.',
+    formula: 'Enseignants (en salle = 1, niveau tenu primaire, BEPC et plus, diplôme pédagogique hors « Autres », vide, éducation préscolaire, Maître EPS, Moniteur EPS) ÷ enseignants en classe × 100',
     dataNeeded: 'Personnel en classe et diplôme pédagogique.',
     source: 'Base RH DREN / FPE',
   }),
@@ -491,21 +498,21 @@ const META: Record<string, IndicatorMeta> = {
     dataNeeded: 'Inventaire des manuels par discipline et par niveau.',
     source: 'FPE / partenaires',
   }),
-  manuels_mal_repartis: makeMeta('manuels_mal_repartis', 'Manuels mal répartis', {
+  manuels_mal_repartis: makeMeta('manuels_mal_repartis', 'Pourcentage des manuels qui ne sont pas répartis en fonction du nombre d’élèves', {
     section: 'ressources',
     sense: 'lower',
     max: 100,
     definition: 'Part de la variance des manuels par établissement non expliquée par le nombre d’élèves.',
-    formula: '(1 − R²) × 100, régression des manuels par établissement sur les effectifs',
+    formula: '(1 − R²) × 100 ; X = effectif de la classe concernée par établissement, Y = manuels de la matière par établissement',
     dataNeeded: 'Manuels et effectifs par établissement public.',
     source: 'FPE',
   }),
-  enseignants_mal_repartis: makeMeta('enseignants_mal_repartis', 'Enseignants mal répartis', {
+  enseignants_mal_repartis: makeMeta('enseignants_mal_repartis', 'Pourcentage des enseignants qui ne sont pas répartis en fonction du nombre d’élèves', {
     section: 'ressources',
     sense: 'lower',
     max: 100,
     definition: 'Part de la variance des enseignants par établissement non expliquée par le nombre d’élèves.',
-    formula: '(1 − R²) × 100, régression des enseignants sur les effectifs par établissement',
+    formula: '(1 − R²) × 100 ; X = effectif par établissement, Y = enseignants fonctionnaires + contractuels en classe par établissement',
     dataNeeded: 'Enseignants et effectifs par établissement public.',
     source: 'FPE / base RH',
   }),
@@ -619,6 +626,105 @@ function keysRow(
 }
 
 /* ------------------------------------------------------------------ */
+/* UEAS — évaluation nationale des acquis scolaires                    */
+/* ------------------------------------------------------------------ */
+
+/** Clé de rapprochement des libellés importés (NIVEAU / MATIERE / SECTEUR). */
+const ueasNorm = (value: unknown) =>
+  String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+const UEAS_SECTEUR: Record<'public' | 'prive' | 'ensemble' | 'mada', string[]> = {
+  public: ['PUBLIC', 'PUB', '0'],
+  prive: ['PRIVE', 'PRIV', '1'],
+  ensemble: ['ENSEMBLE', 'ENS', 'TOUS SECTEURS', '2'],
+  mada: ['MADA', 'NATIONAL', 'MADAGASCAR', 'ENSEMBLE', '3'],
+};
+
+const UEAS_FIELDS: Record<'sm' | 'std' | 'pct', string[]> = {
+  sm: ['sm', 'moyenne', 'score_moyen'],
+  std: ['std', 'ecart_type', 'sd'],
+  pct: ['pct50', 'pct_50', 'pourcentage_50', 'pourcentage_sup50', 'taux_sup50', 'seuil_50'],
+};
+
+const UEAS_NOTE = 'SM : score moyen sur 100 · std : écart-type · % ≥50 : élèves ayant atteint le seuil de compétence. Les cellules restent « — » tant que l’évaluation nationale n’a pas été importée ; un score d’acquis ne se déduit pas des effectifs.';
+
+/**
+ * Bloc UEAS alimenté par les lignes importées dans `tdb_ueas` (une ligne par
+ * niveau × matière × secteur, `CODE_DREN = 0` pour la ligne nationale).
+ * Une combinaison absente reste « — » : aucun score n’est fabriqué.
+ */
+function buildUeasBlock(
+  rows: any[] | undefined,
+  title: string,
+  niveaux: string[],
+  subjects: { label: string; aliases: string[] }[],
+  note = UEAS_NOTE,
+): ExamBlock {
+  const value = (row: any, field: 'sm' | 'std' | 'pct'): number | null => {
+    if (!row) return null;
+    const direct = drenRead(row, ...UEAS_FIELDS[field]);
+    if (direct !== null) return direct;
+    if (field !== 'pct') return null;
+    // % ≥ 50 reconstitué depuis les effectifs testés quand le fichier ne le donne pas.
+    return drenDivide(
+      drenRead(row, 'nb_seuil50', 'nb_seuil_50', 'n_seuil50'),
+      drenRead(row, 'eleves_testes', 'effectif_eleves', 'nb_eleves'),
+    );
+  };
+  const findRow = (national: boolean, matieres: string[], secteur: string[]) => {
+    for (const row of rows || []) {
+      if ((Number(row?.CODE_DREN ?? row?.code_dren) === 0) !== national) continue;
+      if (!niveaux.some((n) => ueasNorm(n) === ueasNorm(row?.NIVEAU ?? row?.niveau))) continue;
+      if (!matieres.some((m) => ueasNorm(m) === ueasNorm(row?.MATIERE ?? row?.matiere))) continue;
+      if (!secteur.some((s) => ueasNorm(s) === ueasNorm(row?.SECTEUR ?? row?.secteur))) continue;
+      return row;
+    }
+    return null;
+  };
+  const meta = (label: string, field: 'sm' | 'std' | 'pct') =>
+    makeMeta(`ueas_${field}`, `Évaluation des acquis — ${label}`, {
+      unit: field === 'pct' ? '%' : '',
+      digits: 1,
+      max: field === 'pct' ? 100 : undefined,
+      sense: field === 'pct' ? 'higher' : undefined,
+      formula: field === 'pct'
+        ? 'Élèves ayant ≥ 50/100 ÷ élèves testés × 100'
+        : field === 'std'
+          ? 'Écart-type des scores sur 100'
+          : 'Moyenne des scores sur 100',
+      dataNeeded: 'Scores individuels de l’évaluation nationale des acquis.',
+      source: 'UEAS',
+    });
+  const cellsFor = (row: any, label: string) =>
+    (['sm', 'std', 'pct'] as const).map((field) => {
+      const raw = value(row, field);
+      return toCell(raw === null ? null : round(raw, 1), null, meta(label, field));
+    });
+  return {
+    title,
+    groups: [
+      { label: '', span: 1 },
+      { label: 'Public', span: 3 },
+      { label: 'Privé', span: 3 },
+      { label: 'Ensemble', span: 3 },
+      { label: 'MADA', span: 3 },
+    ],
+    subColumns: ['Matières', 'SM', 'std', '%≥50', 'SM', 'std', '%≥50', 'SM', 'std', '%≥50', 'SM', 'std', '%≥50'],
+    subjectRows: subjects.map(({ label, aliases }) => ({
+      label,
+      cells: [
+        ...cellsFor(findRow(false, aliases, UEAS_SECTEUR.public), label),
+        ...cellsFor(findRow(false, aliases, UEAS_SECTEUR.prive), label),
+        ...cellsFor(findRow(false, aliases, UEAS_SECTEUR.ensemble), label),
+        ...cellsFor(findRow(true, aliases, UEAS_SECTEUR.mada), label),
+      ],
+    })),
+    admissionRows: [],
+    note,
+  };
+}
+
+/* ------------------------------------------------------------------ */
 /* Primaire                                                            */
 /* ------------------------------------------------------------------ */
 
@@ -628,6 +734,50 @@ function buildPrimary(raw: any): DrenReportModel {
   const grades = GRADES.primaire;
   const g = grades.length;
   const read = (e: any, ...k: string[]) => drenReportRead(e, ...k);
+  // L'action primaire renvoie désormais les deux secteurs séparément : le
+  // public dans `dren`, le privé dans `dren_prive`. On additionne les comptes
+  // bruts pour reconstituer l'ensemble, sans jamais additionner un taux.
+  const dPr = raw.dren_prive || {};
+  const mPr = raw.mada_prive || {};
+  const addGroup = (a: any, b: any) => {
+    const out: any = { ...(a || {}) };
+    for (const [key, rawValue] of Object.entries(b || {})) {
+      const value = num(rawValue);
+      if (value === null) {
+        if (out[key] === undefined) out[key] = rawValue;
+        continue;
+      }
+      const current = num(out[key]);
+      out[key] = (current ?? 0) + value;
+    }
+    return out;
+  };
+  const mergeSector = (pub: any, priv: any) => {
+    if (!priv || (num(priv?.ressources?.nbr_eleve) === null && num(priv?.personnel?.nbr_pers) === null)) return null;
+    return {
+      ...pub,
+      ressources: addGroup(pub?.ressources, priv?.ressources),
+      personnel: addGroup(pub?.personnel, priv?.personnel),
+      sections: addGroup(pub?.sections, priv?.sections),
+      places: addGroup(pub?.places, priv?.places),
+      caisse: addGroup(pub?.caisse, priv?.caisse),
+      manuels: addGroup(pub?.manuels, priv?.manuels),
+      annee_suivante: { ressources: addGroup(pub?.annee_suivante?.ressources, priv?.annee_suivante?.ressources) },
+    };
+  };
+  const dEns = mergeSector(d, dPr) ?? {};
+  const mEns = mergeSector(m, mPr) ?? {};
+  const dExam = raw.dren_ensemble?.cepe ? { ...(Object.keys(dEns).length ? dEns : d), cepe: raw.dren_ensemble.cepe } : {};
+  const sectorValue = (e: any, group: string, key: string) => num(e?.[group]?.[key]);
+  const hasPrivate = (priv: any) => num(priv?.ressources?.nbr_eleve) !== null || num(priv?.personnel?.nbr_pers) !== null;
+  const ensembleValue = (pub: any, priv: any, ens: any, group: string, key: string) => {
+    const ensAvailable = !!ens && Object.keys(ens).length > 0;
+    if (!ensAvailable && !hasPrivate(priv)) return null;
+    const combined = sectorValue(ens, group, key);
+    if (combined !== null) return combined;
+    const a = sectorValue(pub, group, key), b = sectorValue(priv, group, key);
+    return a === null && b === null ? null : (a ?? 0) + (b ?? 0);
+  };
   // Les ratios ci-dessous ont besoin des effectifs bruts de la source SQL :
   // `read` privilégie les `indicateurs` importés, qui expriment certains de ces
   // champs en pourcentage (eleve_2km, ecole_continue…) et fausseraient le calcul.
@@ -637,13 +787,19 @@ function buildPrimary(raw: any): DrenReportModel {
   const pop = (e: any) => (e?.population || {}) as Record<string, number | null>;
   const allPupils = (e: any) => read(e, 'nombre_eleves_tous_secteurs') ?? read(e, 'nbr_eleve');
   const qualified = (e: any) => {
+    const exact = num(e?.personnel?.qualifies_classe);
     const teachers = read(e, 'pers_en_classe');
+    if (exact !== null && teachers !== null && teachers > 0) return (exact / teachers) * 100;
     const unqualified = read(e, 'sans_diplome_ped');
     return teachers === null || unqualified === null || teachers <= 0
       ? null
       : ((teachers - unqualified) / teachers) * 100;
   };
   const genderValue = (e: any, key: string) => read(e, key);
+  // Indicateurs complémentaires calculés côté serveur (fiche de commentaires).
+  const xDP = raw.primaire_extra?.dren?.public, xDE = raw.primaire_extra?.dren?.ensemble;
+  const xMP = raw.primaire_extra?.mada?.public, xME = raw.primaire_extra?.mada?.ensemble;
+  const xv = (x: any, key: string) => num(x?.[key]);
 
   const mk = (code: string, label: string, options: Partial<IndicatorMeta> = {}) =>
     META[code] ? { ...META[code], label, ...Object.fromEntries(Object.entries(options).filter(([, v]) => v !== undefined)) } : makeMeta(code, label, options);
@@ -660,39 +816,45 @@ function buildPrimary(raw: any): DrenReportModel {
       ],
     };
   };
-  const nonClasse = (() => {
-    const total = read(d, 'nbr_pers'), inClass = read(d, 'pers_en_classe');
+  const nonClasse = (e: any) => {
+    const total = sectorValue(e, 'personnel', 'nbr_pers') ?? read(e, 'nbr_pers');
+    const inClass = sectorValue(e, 'personnel', 'pers_en_classe') ?? read(e, 'pers_en_classe');
     return total === null || inClass === null ? null : total - inClass;
-  })();
+  };
+  const publicEtab = (e: any) => sectorValue(e, 'ressources', 'nbr_etab') ?? read(e, 'nbr_etab');
+  const publicSections = (e: any) => sectorValue(e, 'sections', 'nbr_section') ?? read(e, 'nbr_section');
+  const publicPupils = (e: any) => sectorValue(e, 'ressources', 'nbr_eleve') ?? read(e, 'nbr_eleve');
+  const publicSalles = (e: any) => sectorValue(e, 'sections', 'nbr_sdc') ?? read(e, 'nbr_sdc');
+  const publicPlaces = (e: any) => sectorValue(e, 'places', 'places_assises') ?? read(e, 'places_assises');
   const general: ReportTable[] = [
     {
       columns: ['', 'Ensemble', 'Publiques'],
       rows: [
         gen('Nombre de CISCO', read(d, 'nbr_cisco'), read(d, 'nbr_cisco'), 'cisco'),
         gen('Nombre de ZAP', read(d, 'nbr_zap'), read(d, 'nbr_zap'), 'zap'),
-        gen('Nombre d’écoles fonctionnelles', null, read(d, 'nbr_etab'), 'etab'),
-        gen('Nombre d’écoles fermées', null, read(d, 'nbr_etab_ferme'), 'etab_ferme'),
+        gen('Nombre d’écoles fonctionnelles', ensembleValue(d, dPr, dEns, 'ressources', 'nbr_etab'), publicEtab(d), 'etab'),
+        gen('Nombre d’écoles fermées', xv(xDE, 'etab_ferme'), xv(xDP, 'etab_ferme') ?? read(d, 'nbr_etab_ferme'), 'etab_ferme'),
       ],
     },
     {
       columns: ['', 'Ensemble', 'Publiques'],
       rows: [
-        gen('Nombre d’enseignants en classe', null, read(d, 'pers_en_classe'), 'ens_classe'),
+        gen('Nombre d’enseignants en classe', xv(xDE, 'ens_classe') ?? ensembleValue(d, dPr, dEns, 'personnel', 'pers_en_classe') ?? read(d, 'ens_classe'), xv(xDP, 'ens_classe') ?? read(d, 'pers_en_classe'), 'ens_classe'),
         gen('Fonctionnaires / Personnel de l’État', null, read(d, 'fonctionnaire'), 'fonctionnaire', { naEnsemble: true }),
         gen('FRAM subventionnés', null, read(d, 'sub'), 'fram_sub', { naEnsemble: true }),
         gen('FRAM non subventionnés', null, read(d, 'non_sub'), 'fram_non_sub', { naEnsemble: true }),
-        gen('Enseignants non en classe', null, nonClasse, 'non_classe'),
+        gen('Enseignants non en classe', xv(xDE, 'ens_non_classe') ?? nonClasse(dEns), xv(xDP, 'ens_non_classe') ?? nonClasse(d), 'non_classe'),
       ],
     },
     {
       columns: ['', 'Ensemble', 'Publiques'],
       rows: [
-        gen('Nombre de sections', null, read(d, 'nbr_section'), 'sections'),
-        gen('Effectif des élèves', allPupils(d), read(d, 'nbr_eleve'), 'effectif'),
-        gen('Dont filles', null, read(d, 'nbr_eleve_f'), 'filles'),
-        gen('Nombre d’enfants réinsérés', null, read(d, 'enfants_reinseres'), 'reinseres'),
-        gen('Nombre de salles définitives', null, read(d, 'nbr_sdc'), 'salles'),
-        gen('Nombre de places assises', null, read(d, 'places_assises'), 'places'),
+        gen('Nombre de sections', ensembleValue(d, dPr, dEns, 'sections', 'nbr_section'), publicSections(d), 'sections'),
+        gen('Effectif des élèves', allPupils(d) ?? sectorValue(dEns, 'ressources', 'nbr_eleve'), publicPupils(d), 'effectif'),
+        gen('Dont filles', ensembleValue(d, dPr, dEns, 'ressources', 'nbr_eleve_f'), sectorValue(d, 'ressources', 'nbr_eleve_f') ?? read(d, 'nbr_eleve_f'), 'filles'),
+        gen('Nombre d’enfants réinsérés', ensembleValue(d, dPr, dEns, 'ressources', 'reinseres'), sectorValue(d, 'ressources', 'reinseres') ?? read(d, 'enfants_reinseres'), 'reinseres'),
+        gen('Nombre de salles définitives', ensembleValue(d, dPr, dEns, 'sections', 'nbr_sdc'), publicSalles(d), 'salles'),
+        gen('Nombre de places assises', ensembleValue(d, dPr, dEns, 'places', 'places_assises'), publicPlaces(d), 'places'),
       ],
     },
   ];
@@ -702,7 +864,7 @@ function buildPrimary(raw: any): DrenReportModel {
     const base = drenCoverage(e);
     const p = pop(e);
     const t1 = read(e, 'eff_t1'), red1 = read(e, 'red_t1');
-    const entrants = t1 === null || red1 === null ? null : t1 - red1;
+    const entrants = read(e, 'entrants_t1_tous_secteurs') ?? (t1 === null || red1 === null ? null : t1 - red1);
     return [
       base[0].value,
       base[1].value,
@@ -736,11 +898,8 @@ function buildPrimary(raw: any): DrenReportModel {
   };
 
   /* ---- Profil de rétention ---- */
-  const profile = grades.map((label, i) => ({
-    label,
-    dren: i === 0 ? 100 : drenRetention(d, i + 1),
-    mada: i === 0 ? 100 : drenRetention(m, i + 1),
-  }));
+  const cohortD = drenRetentionCohort(d, grades.length), cohortM = drenRetentionCohort(m, grades.length);
+  const profile = grades.map((label, i) => ({ label, dren: round(cohortD[i], 1), mada: round(cohortM[i], 1) }));
 
   /* ---- CEPE ---- */
   const cepeMeta = (code: string, label: string, unit: '%' | '' = '%') =>
@@ -756,11 +915,14 @@ function buildPrimary(raw: any): DrenReportModel {
     });
   const cepeSubject = (label: string, key: string): ReportRow => {
     const make = (e: any) => {
-      const sm = key === 'autres' ? null : read(e, `sm_${key}`);
-      const threshold = drenExamThresholdSafe(e, `${key}_sup10`);
+      // Le bloc `cepe` porte le périmètre demandé (public, privé, ensemble) ;
+      // les `indicateurs` importés sont tous secteurs et ne doivent pas
+      // contaminer la colonne publique.
+      const sm = key === 'autres' ? null : num(e?.cepe?.[`sm_${key}`]);
+      const threshold = drenExamThresholdSafe({ cepe: e?.cepe }, `${key}_sup10`);
       return { sm, threshold };
     };
-    const dd = make(d), mm = make(m);
+    const dd = make(d), dp = make(dPr), de = make(dExam), mm = make(m);
     const metaSm = cepeMeta(`cepe_sm_${key}`, `Score moyen — ${label}`, '');
     const metaPct = cepeMeta(`cepe_pct_${key}`, `% ≥ 10 — ${label}`);
     const smCell = (value: number | null, meta: IndicatorMeta) =>
@@ -770,10 +932,10 @@ function buildPrimary(raw: any): DrenReportModel {
       cells: [
         smCell(dd.sm, metaSm),
         toCell(dd.threshold, mm.threshold, metaPct),
-        toCell(null, null, metaSm),
-        toCell(null, null, metaPct),
-        toCell(dd.sm, null, metaSm),
-        toCell(dd.threshold, null, metaPct),
+        smCell(dp.sm, metaSm),
+        toCell(dp.threshold, mm.threshold, metaPct),
+        smCell(de.sm, metaSm),
+        toCell(de.threshold, mm.threshold, metaPct),
         smCell(mm.sm, metaSm),
         toCell(mm.threshold, null, metaPct),
       ],
@@ -796,26 +958,26 @@ function buildPrimary(raw: any): DrenReportModel {
     {
       label: 'Ensemble',
       cells: [
-        toCell(read(d, 'sm_total'), null, cepeMeta('cepe_sm_total', 'Score moyen — Ensemble', '')),
+        toCell(num(d?.cepe?.sm_total), null, cepeMeta('cepe_sm_total', 'Score moyen — Ensemble', '')),
         toCell(null, null, cepeMeta('cepe_pct_total', '% ≥ 10 — Ensemble')),
-        toCell(null, null, cepeMeta('cepe_sm_priv', 'Score moyen — Privé', '')),
+        toCell(num(dPr?.cepe?.sm_total), null, cepeMeta('cepe_sm_priv', 'Score moyen — Privé', '')),
         toCell(null, null, cepeMeta('cepe_pct_priv', '% ≥ 10 — Privé')),
-        toCell(read(d, 'sm_total'), null, cepeMeta('cepe_sm_total_ens', 'Score moyen — Ensemble', '')),
+        toCell(num(dExam?.cepe?.sm_total), null, cepeMeta('cepe_sm_total_ens', 'Score moyen — Ensemble', '')),
         toCell(null, null, cepeMeta('cepe_pct_total_ens', '% ≥ 10 — Ensemble')),
-        toCell(read(m, 'sm_total'), null, cepeMeta('cepe_sm_total_mada', 'Score moyen — MADA', '')),
+        toCell(num(m?.cepe?.sm_total), null, cepeMeta('cepe_sm_total_mada', 'Score moyen — MADA', '')),
         toCell(null, null, cepeMeta('cepe_pct_total_mada', '% ≥ 10 — MADA')),
       ],
     },
   ];
   const admisMeta = META.admis;
   const admissionRow = (label: string, fn: (e: any) => number | null): ReportRow => {
-    const dv = fn(d), mv = fn(m);
+    const dv = fn(d), pv = fn(dPr), ev = fn(dExam), mv = fn(m);
     return {
       label,
       cells: [
         toCell(dv, mv, admisMeta, { span: 2 }),
-        toCell(null, null, admisMeta, { span: 2 }),
-        toCell(dv, mv, admisMeta, { span: 2 }),
+        toCell(pv, mv, admisMeta, { span: 2 }),
+        toCell(ev, mv, admisMeta, { span: 2 }),
         toCell(mv, null, admisMeta, { span: 2 }),
       ],
     };
@@ -831,84 +993,71 @@ function buildPrimary(raw: any): DrenReportModel {
       admissionRow('dont Garçons', (e) => drenAdmission(e, '_g')),
       admissionRow('dont Filles', (e) => drenAdmission(e, '_f')),
     ],
-    note: 'SM : Score Moyen sur 20. Les colonnes Privé et Ensemble ne sont pas collectées par la source primaire actuelle.',
+    note: 'SM : Score Moyen sur 20. Privé et Ensemble sont calculés depuis les candidats des deux secteurs ; une cellule reste « — » si la source ne fournit aucun candidat.',
   };
-
-  /* ---- UEAS ---- */
-  const ueas = (title: string, subjects: string[]): ExamBlock => ({
-    title,
-    groups: [
-      { label: '', span: 1 },
-      { label: 'Public', span: 3 },
-      { label: 'Privé', span: 3 },
-      { label: 'Ensemble', span: 3 },
-      { label: 'MADA', span: 3 },
-    ],
-    subColumns: ['Matières', 'SM', 'std', '%≥50', 'SM', 'std', '%≥50', 'SM', 'std', '%≥50', 'SM', 'std', '%≥50'],
-    subjectRows: subjects.map((label) => ({
-      label,
-      cells: Array.from({ length: 12 }, () =>
-        toCell(null, null, makeMeta('ueas', `Évaluation UEAS — ${label}`, {
-          formula: '% d’élèves ayant ≥ 50/100 ÷ élèves testés × 100',
-          dataNeeded: 'Résultats individuels de l’évaluation nationale.',
-          source: 'UEAS',
-        })),
-      ),
-    })),
-    admissionRows: [],
-    note: 'SM : score moyen sur 100 · std : écart-type · % ≥50 : élèves ayant atteint le seuil de compétence (lecture CP2 : 30 mots/minute).',
-  });
 
   /* ---- Flux ---- */
   const flowTable = (kind: 'red' | 'promo' | 'aband'): ReportTable => {
     const meta = kind === 'red' ? META.redoublement : kind === 'promo' ? META.promotion : META.abandon;
-    const rate = (e: any, grade?: number, gender?: 'g' | 'f') =>
-      kind === 'red'
-        ? drenRepeat(e, grade, gender ? `_${gender}` : '')
-        : grade
-          ? kind === 'promo'
-            ? drenPromotion(e, grade)
-            : drenAbandon(e, grade)
-          : gender
-            ? read(e, `${kind}_${gender}`)
-            : drenCycleRate(e, kind === 'promo' ? 'promotion' : 'abandon');
+    // Taux officiels tous secteurs issus de l'import df_dren/df_mada (indicateurs),
+    // utilisés seulement si les deux secteurs ne permettent pas le calcul.
+    const ensGradeKeys = kind === 'red'
+      ? ['red_CP1', 'red_CP2', 'red_CE', 'red_CM1', 'red_CM2']
+      : kind === 'aband'
+        ? ['txAbdcp1cp2', 'txAbdcp2ce', 'txAbdcecm1', 'txAbdcm1cm2']
+        : null;
+    const ensTotalKey = kind === 'red' ? 'red_ensemble' : kind === 'aband' ? 'txAbdGlobal' : 'TPA';
+    const ensGenderKeys = kind === 'red' ? { g: 'red_garcons', f: 'red_fille' } : null;
+    const rate = (e: any, grade?: number, gender?: 'g' | 'f') => {
+      if (!e || (!e.ressources && !e.cepe && !e.indicateurs)) return null;
+      const suffix = gender ? `_${gender}` : '';
+      if (kind === 'red') return drenRepeat(e, grade, suffix);
+      if (grade) return kind === 'promo' ? drenPromotion(e, grade, suffix) : drenAbandon(e, grade, suffix);
+      return drenCycleRate(e, kind === 'promo' ? 'promotion' : 'abandon', suffix) ?? read(e, `${kind}_${gender ?? ''}`);
+    };
     const rows: ReportRow[] = grades.map((label, i) => {
       if (kind !== 'red' && i === g - 1) {
         return { label, cells: [1, 2, 3, 4].map(() => toCell(null, null, meta, { na: true })) };
       }
       const drenLevel = kind === 'red' ? label : `${label} → ${grades[i + 1]}`;
-      const dv = rate(d, i + 1), mv = rate(m, i + 1);
+      const dv = rate(d, i + 1), pv = rate(dPr, i + 1);
+      const ev = rate(dEns, i + 1) ?? (ensGradeKeys ? read(d, ensGradeKeys[i]) : null);
+      const mv = rate(m, i + 1);
       return {
         label: drenLevel,
         meta,
         cells: [
           toCell(dv, mv, meta),
-          toCell(null, null, meta),
-          toCell(null, null, meta),
+          toCell(pv, mv, meta),
+          toCell(ev, mv, meta),
           toCell(mv, null, meta),
         ],
       };
     });
-    const dv = rate(d), mv = rate(m);
-    const dg = rate(d, undefined, 'g'), df = rate(d, undefined, 'f');
-    const side = disparite(df, dg, kind === 'promo');
+    const dv = rate(d), pv = rate(dPr), mv = rate(m);
+    const ev = rate(dEns) ?? read(d, ensTotalKey);
+    const dg = rate(d, undefined, 'g'), pg = rate(dPr, undefined, 'g'), mg = rate(m, undefined, 'g');
+    const df = rate(d, undefined, 'f'), pf = rate(dPr, undefined, 'f'), mf = rate(m, undefined, 'f');
+    const eg = rate(dEns, undefined, 'g') ?? (ensGenderKeys ? read(d, ensGenderKeys.g) : null);
+    const ef = rate(dEns, undefined, 'f') ?? (ensGenderKeys ? read(d, ensGenderKeys.f) : null);
+    const side = disparite(ef ?? df, eg ?? dg, kind === 'promo');
     rows.push({
       label: 'Ensemble',
       bold: true,
       meta,
-      cells: [toCell(dv, mv, meta), toCell(null, null, meta), toCell(null, null, meta), toCell(mv, null, meta)],
+      cells: [toCell(dv, mv, meta), toCell(pv, mv, meta), toCell(ev, mv, meta), toCell(mv, null, meta)],
     });
     rows.push({
       label: 'Garçons',
       indent: true,
       meta,
-      cells: [toCell(dg, null, meta), toCell(null, null, meta), toCell(null, null, meta), toCell(null, null, meta)],
+      cells: [toCell(dg, mg, meta), toCell(pg, mg, meta), toCell(eg, mg, meta), toCell(mg, null, meta)],
     });
     rows.push({
       label: 'Filles',
       indent: true,
       meta,
-      cells: [toCell(df, null, meta), toCell(null, null, meta), toCell(null, null, meta), toCell(null, null, meta)],
+      cells: [toCell(df, mf, meta), toCell(pf, mf, meta), toCell(ef, mf, meta), toCell(mf, null, meta)],
     });
     rows.push({
       label: 'Disparité au dépens des',
@@ -934,31 +1083,37 @@ function buildPrimary(raw: any): DrenReportModel {
       label: 'Pourcentage des enseignants qualifiés',
       meta: humanMeta('qualifies', 'Pourcentage des enseignants qualifiés'),
       cells: [
-        toCell(null, null, humanMeta('qualifies', 'Pourcentage des enseignants qualifiés')),
-        toCell(qualified(d), qualified(m), humanMeta('qualifies', 'Pourcentage des enseignants qualifiés')),
-        toCell(qualified(m), null, humanMeta('qualifies', 'Pourcentage des enseignants qualifiés')),
+        toCell(drenQualifies(xDE) ?? qualified(dEns) ?? read(d, 'ratio_eq'), null, humanMeta('qualifies', 'Pourcentage des enseignants qualifiés')),
+        toCell(drenQualifies(xDP) ?? qualified(d), drenQualifies(xMP) ?? qualified(m), humanMeta('qualifies', 'Pourcentage des enseignants qualifiés')),
+        toCell(drenQualifies(xMP) ?? qualified(m), null, humanMeta('qualifies', 'Pourcentage des enseignants qualifiés')),
       ],
     },
     {
       label: 'Ratio élève-maître',
       meta: humanMeta('eleves_enseignant', 'Ratio élève-maître'),
       cells: [
-        toCell(null, null, humanMeta('eleves_enseignant', 'Ratio élève-maître')),
-        toCell(ratio(read(d, 'nbr_eleve'), read(d, 'pers_en_classe')), ratio(read(m, 'nbr_eleve'), read(m, 'pers_en_classe')), humanMeta('eleves_enseignant', 'Ratio élève-maître')),
-        toCell(ratio(read(m, 'nbr_eleve'), read(m, 'pers_en_classe')), null, humanMeta('eleves_enseignant', 'Ratio élève-maître')),
+        toCell(ratio(sectorValue(dEns, 'ressources', 'nbr_eleve'), sectorValue(dEns, 'personnel', 'pers_en_classe')) ?? read(d, 'ratio_em'), null, humanMeta('eleves_enseignant', 'Ratio élève-maître')),
+        toCell(ratio(publicPupils(d), read(d, 'pers_en_classe')), ratio(publicPupils(m), read(m, 'pers_en_classe')), humanMeta('eleves_enseignant', 'Ratio élève-maître')),
+        toCell(ratio(publicPupils(m), read(m, 'pers_en_classe')), null, humanMeta('eleves_enseignant', 'Ratio élève-maître')),
       ],
     },
     {
       label: 'Élèves par personnel administratif',
       meta: humanMeta('eleves_admin', 'Élèves par personnel administratif'),
-      cells: [1, 2, 3].map(() => toCell(null, null, humanMeta('eleves_admin', 'Élèves par personnel administratif'), { na: true })),
+      cells: [
+        toCell(null, null, humanMeta('eleves_admin', 'Élèves par personnel administratif'), { na: true }),
+        toCell(drenElevesParAdmin(xDP), null, { ...humanMeta('eleves_admin', 'Élèves par personnel administratif'), unit: '', digits: 0 }),
+        toCell(drenElevesParAdmin(xMP), null, { ...humanMeta('eleves_admin', 'Élèves par personnel administratif'), unit: '', digits: 0 }),
+      ],
     },
     {
-      label: 'Enseignants mal répartis',
+      label: 'Pourcentage des enseignants qui ne sont pas répartis en fonction du nombre d’élèves',
       meta: META.enseignants_mal_repartis,
-      cells: [null, read(d, 'taux_aleas_enseignants'), read(m, 'taux_aleas_enseignants')].map((v, i) =>
-        toCell(v, null, META.enseignants_mal_repartis, { na: i === 0 }),
-      ),
+      cells: [
+        drenMalRepartis(xv(xDE, 'r2_enseignants')),
+        drenMalRepartis(xv(xDP, 'r2_enseignants')) ?? read(d, 'taux_aleas_enseignants'),
+        drenMalRepartis(xv(xMP, 'r2_enseignants')) ?? read(m, 'taux_aleas_enseignants'),
+      ].map((v) => toCell(v, null, META.enseignants_mal_repartis)),
     },
   ];
   const human: ReportTable = {
@@ -968,9 +1123,6 @@ function buildPrimary(raw: any): DrenReportModel {
 
   const financeRows: ReportRow[] = [
     ['Montant caisse école par élève (Ar)', 'total_fce'],
-    ['Montant subventions par élève (bailleurs) (Ar)', 'subventions'],
-    ['Montant cotisation FRAM par élève (Ar)', 'cotisations_fram'],
-    ['Autres ressources par élève (Ar)', 'autres_ressources'],
   ].map(([label, key]) => {
     const meta = { ...META.depense_eleve, code: `finance_${key}`, label };
     const dv = ratio(read(d, key), read(d, 'nbr_eleve'));
@@ -981,70 +1133,63 @@ function buildPrimary(raw: any): DrenReportModel {
       cells: [toCell(dv, mv, meta), toCell(mv, null, meta)],
     };
   });
-  const totalMeta = { ...META.depense_eleve, code: 'finance_total', label: 'Total (Ar)' };
-  const sumKnown = (values: (number | null)[]) => {
-    const known = values.filter((v): v is number => v !== null);
-    return known.length ? known.reduce((a, b) => a + b, 0) : null;
-  };
-  financeRows.push({
-    label: 'Total (Ar)',
-    bold: true,
-    meta: totalMeta,
-    cells: [
-      toCell(sumKnown(financeRows.map((r) => r.cells[0].value)), null, totalMeta),
-      toCell(sumKnown(financeRows.map((r) => r.cells[1].value)), null, totalMeta),
-    ],
-  });
   const finance: ReportTable = { columns: ['Ressources financières (public)', 'Votre DREN', 'MADA'], rows: financeRows };
 
   const otherMeta = (code: string, label: string) => mk(code, label, { section: 'ressources' });
   const otherRows: ReportRow[] = [];
-  const pushOther = (label: string, code: string, dv: number | null, mv: number | null, options: Partial<IndicatorMeta> = {}) => {
+  const pushOther = (label: string, code: string, dv: number | null, mv: number | null, options: Partial<IndicatorMeta> = {}, ev: number | null = null) => {
     const meta = otherMeta(code, label);
     Object.assign(meta, Object.fromEntries(Object.entries(options).filter(([, v]) => v !== undefined)));
     otherRows.push({
       label,
       meta,
       cells: [
-        toCell(null, null, meta, { na: true }),
+        toCell(ev, null, meta, ev === null ? { na: true } : {}),
         toCell(dv, mv, meta),
         toCell(mv, null, meta),
       ],
     });
   };
-  const eppCap = (e: any) => drenDivide(res(e, 'etab_avec_cap'), read(e, 'nbr_etab'));
-  const eppContinues = (e: any) => importedPct(e, 'ecole_continue') ?? drenDivide(res(e, 'ecole_continue'), read(e, 'nbr_etab'));
-  const within2km = (e: any) => importedPct(e, 'eleve_2km') ?? drenDivide(res(e, 'eleve_2km'), read(e, 'nbr_eleve'));
-  const electricity = (e: any) => importedPct(e, 'electricite') ?? drenDivide(res(e, 'etab_elec'), read(e, 'nbr_etab'));
-  const water = (e: any) => importedPct(e, 'point_eau') ?? drenDivide(res(e, 'etab_eau'), read(e, 'nbr_etab'));
-  pushOther('Pourcentage d’EPP ayant de CAP (préscolaire)', 'epp_cap', eppCap(d), eppCap(m), { sense: 'higher', max: 100 });
-  pushOther('Pourcentage d’EPP continues', 'epp_continues', eppContinues(d), eppContinues(m), { sense: 'higher', max: 100 });
-  pushOther('Pourcentage de fokontany ayant au moins une EPP', 'fokontany_epp', null, null, { sense: 'higher', max: 100 });
-  pushOther('Rapport classes pédagogiques par salle définitive', 'section_salle', ratio(read(d, 'nbr_section'), read(d, 'nbr_sdc')), ratio(read(m, 'nbr_section'), read(m, 'nbr_sdc')), { sense: 'lower', unit: '', digits: 1 });
-  pushOther('Nombre d’élèves par place assise', 'eleves_place', ratio(read(d, 'nbr_eleve'), read(d, 'places_assises')), ratio(read(m, 'nbr_eleve'), read(m, 'places_assises')), { sense: 'lower', unit: '', digits: 1 });
-  pushOther('Nombre d’élèves par latrine', 'eleves_latrine', ratio(read(d, 'nbr_eleve'), read(d, 'latrines'), 1), ratio(read(m, 'nbr_eleve'), read(m, 'latrines'), 1), { sense: 'lower', unit: '', digits: 0 });
-  pushOther('Nombre de filles par latrine pour filles', 'filles_latrine', ratio(read(d, 'nbr_eleve_f'), read(d, 'latrines_fille')), ratio(read(m, 'nbr_eleve_f'), read(m, 'latrines_fille')), { sense: 'lower', unit: '', digits: 0 });
-  pushOther('Pourcentage d’établissements avec latrine pour filles', 'latrine_filles', drenDivide(read(d, 'etab_latrine_f'), read(d, 'nbr_etab')), drenDivide(read(m, 'etab_latrine_f'), read(m, 'nbr_etab')));
-  pushOther('Pourcentage d’élèves vivant à moins de 2 km', 'moins_2km', within2km(d), within2km(m));
-  pushOther('Pourcentage d’établissements avec électricité', 'electricite', electricity(d), electricity(m));
-  pushOther('Pourcentage d’établissements avec cantine scolaire', 'cantine', null, null);
-  pushOther('Pourcentage d’établissements avec point d’eau', 'eau', water(d), water(m));
-  pushOther('Pourcentage d’établissements accueillant des élèves en situation de handicap', 'handicap', null, null);
+  const eppCap = (e: any) => drenDivide(sectorValue(e, 'ressources', 'etab_avec_cap'), sectorValue(e, 'ressources', 'nbr_etab') ?? read(e, 'nbr_etab'));
+  const eppContinues = (e: any) => importedPct(e, 'ecole_continue') ?? drenDivide(sectorValue(e, 'ressources', 'ecole_continue'), sectorValue(e, 'ressources', 'nbr_etab') ?? read(e, 'nbr_etab'));
+  const within2km = (e: any) => importedPct(e, 'eleve_2km') ?? drenDivide(sectorValue(e, 'ressources', 'eleve_2km'), sectorValue(e, 'ressources', 'nbr_eleve') ?? read(e, 'nbr_eleve'));
+  const electricity = (e: any) => importedPct(e, 'electricite') ?? drenDivide(sectorValue(e, 'ressources', 'etab_elec'), sectorValue(e, 'ressources', 'nbr_etab') ?? read(e, 'nbr_etab'));
+  const water = (e: any) => importedPct(e, 'point_eau') ?? drenDivide(sectorValue(e, 'ressources', 'etab_eau'), sectorValue(e, 'ressources', 'nbr_etab') ?? read(e, 'nbr_etab'));
+  const fokontanyRate = (e: any) => drenDivide(read(e, 'fokontany_ecole'), read(e, 'fokontany'));
+  const latrineRate = (e: any) => drenDivide(sectorValue(e, 'places', 'etab_latrine_f') ?? sectorValue(e, 'ressources', 'etab_latrine_f'), sectorValue(e, 'ressources', 'nbr_etab') ?? read(e, 'nbr_etab'));
+  const cantineRate = (e: any) => drenDivide(sectorValue(e, 'ressources', 'etab_cantine'), sectorValue(e, 'ressources', 'nbr_etab') ?? read(e, 'nbr_etab'));
+  const handicapRate = (e: any) => drenDivide(sectorValue(e, 'places', 'etab_handicap') ?? sectorValue(e, 'ressources', 'etab_handicap'), sectorValue(e, 'ressources', 'nbr_etab') ?? read(e, 'nbr_etab'));
+  pushOther('Pourcentage d’EPP ayant de CAP (préscolaire)', 'epp_cap', eppCap(d), eppCap(m), { sense: 'higher', max: 100 }, eppCap(dEns));
+  pushOther('Pourcentage d’EPP continues', 'epp_continues', eppContinues(d), eppContinues(m), { sense: 'higher', max: 100 }, importedPct(d, 'ecole_continue') ?? eppContinues(dEns));
+  pushOther('Pourcentage de fokontany ayant au moins une EPP', 'fokontany_epp', fokontanyRate(d), fokontanyRate(m), { sense: 'higher', max: 100 }, fokontanyRate(d));
+  pushOther('Rapport classes pédagogiques par salle définitive', 'section_salle', ratio(read(d, 'nbr_section'), read(d, 'nbr_sdc')), ratio(read(m, 'nbr_section'), read(m, 'nbr_sdc')), { sense: 'lower', unit: '', digits: 1 }, ratio(sectorValue(dEns, 'sections', 'nbr_section'), sectorValue(dEns, 'sections', 'nbr_sdc')));
+  pushOther('Nombre d’élèves par place assise', 'eleves_place', ratio(read(d, 'nbr_eleve'), read(d, 'places_assises')), ratio(read(m, 'nbr_eleve'), read(m, 'places_assises')), { sense: 'lower', unit: '', digits: 1 }, ratio(sectorValue(dEns, 'ressources', 'nbr_eleve'), sectorValue(dEns, 'places', 'places_assises')));
+  pushOther('Nombre d’élèves par latrine', 'eleves_latrine', ratio(read(d, 'nbr_eleve'), read(d, 'latrines'), 1), ratio(read(m, 'nbr_eleve'), read(m, 'latrines'), 1), { sense: 'lower', unit: '', digits: 0 }, ratio(sectorValue(dEns, 'ressources', 'nbr_eleve'), sectorValue(dEns, 'places', 'latrines'), 1));
+  pushOther('Nombre de filles par latrine pour filles', 'filles_latrine', ratio(read(d, 'nbr_eleve_f'), read(d, 'latrines_fille')), ratio(read(m, 'nbr_eleve_f'), read(m, 'latrines_fille')), { sense: 'lower', unit: '', digits: 0 }, ratio(sectorValue(dEns, 'ressources', 'nbr_eleve_f'), sectorValue(dEns, 'places', 'latrines_fille')));
+  pushOther('Pourcentage d’établissements avec latrine pour filles', 'latrine_filles', latrineRate(d), latrineRate(m), {}, latrineRate(dEns));
+  pushOther('Pourcentage d’élèves vivant à moins de 2 km', 'moins_2km', within2km(d), within2km(m), {}, importedPct(d, 'eleve_2km') ?? drenDivide(sectorValue(dEns, 'ressources', 'eleve_2km'), sectorValue(dEns, 'ressources', 'nbr_eleve')));
+  pushOther('Pourcentage d’établissements avec électricité', 'electricite', electricity(d), electricity(m), {}, importedPct(d, 'electricite') ?? drenDivide(sectorValue(dEns, 'ressources', 'etab_elec'), sectorValue(dEns, 'ressources', 'nbr_etab')));
+  pushOther('Pourcentage d’établissements avec cantine scolaire', 'cantine', cantineRate(d), cantineRate(m), {}, cantineRate(dEns));
+  pushOther('Pourcentage d’établissements avec point d’eau', 'eau', water(d), water(m), {}, importedPct(d, 'point_eau') ?? drenDivide(sectorValue(dEns, 'ressources', 'etab_eau'), sectorValue(dEns, 'ressources', 'nbr_etab')));
+  pushOther('Pourcentage d’établissements accueillant des élèves en situation de handicap', 'handicap', handicapRate(d), handicapRate(m), {}, handicapRate(dEns));
   const other: ReportTable = { columns: ['Autres ressources', 'Ensemble', 'Publique', 'MADA'], rows: otherRows };
 
   /* ---- Manuels ---- */
   const manualMeta = META.manuel_eleve;
+  const malMeta = META.manuels_mal_repartis;
   const manuals: ReportTable = {
-    columns: ['Matière', 'Votre DREN', 'MADA'],
-    note: 'Répartition par niveau (T1-T2 / T3 / T4-T5) non disponible dans la source actuelle.',
-    rows: ['Malagasy', 'Calcul', 'Français', 'Autres matières'].map((label, i) => {
-      const key = ['malagasy', 'maths', 'francais', 'autres'][i];
+    columns: ['Manuels', 'Élèves / manuel DREN', 'Élèves / manuel MADA', '% mal répartis DREN', '% mal répartis MADA'],
+    note: 'Élèves / manuel : effectif des classes concernées ÷ manuels (Malagasy = Série vola + Malagasy). % mal répartis : (1 − R²) × 100 entre manuels et effectifs par établissement, tous secteurs.',
+    rows: DREN_MANUELS.map(({ label, key, eleves }) => {
+      const dr = drenManuelRow(xDE, key, eleves), mr = drenManuelRow(xME, key, eleves);
       return {
         label,
         meta: manualMeta,
         cells: [
-          toCell(ratio(read(d, 'nbr_eleve'), read(d, key as any)), null, manualMeta),
-          toCell(ratio(read(m, 'nbr_eleve'), read(m, key as any)), null, manualMeta),
+          toCell(dr.ratio, null, { ...manualMeta, unit: '' }),
+          toCell(mr.ratio, null, { ...manualMeta, unit: '' }),
+          toCell(dr.malRepartis, mr.malRepartis, malMeta),
+          toCell(mr.malRepartis, null, malMeta),
         ],
       };
     }),
@@ -1054,19 +1199,19 @@ function buildPrimary(raw: any): DrenReportModel {
   const p = pop(d);
   const sortedProfile = profile;
   const bottleneckValues: [string, string, number | null][] = [
-    ['Pourcentage de fokontany ayant au moins une école', 'fokontany_ecole', null],
-    ['Nombre de salles de classes définitives pour 1 000 enfants', 'salles_1000', drenDivide(read(d, 'nbr_sdc'), p.pop_6_10, 1000)],
-    ['Pourcentage d’élèves vivant à moins de 2 km', 'moins_2km', within2km(d)],
+    ['Pourcentage de fokontany ayant au moins une école', 'fokontany_ecole', fokontanyRate(d)],
+    ['Nombre de salles de classes définitives pour 1 000 enfants', 'salles_1000', drenDivide(sectorValue(dEns, 'sections', 'nbr_sdc') ?? read(d, 'nbr_sdc'), p.pop_6_10, 1000)],
+    ['Pourcentage d’élèves vivant à moins de 2 km', 'moins_2km', importedPct(d, 'eleve_2km') ?? drenDivide(sectorValue(dEns, 'ressources', 'eleve_2km'), sectorValue(dEns, 'ressources', 'nbr_eleve')) ?? within2km(d)],
     ['Taux d’accès générationnel', 'tag', cd[0]],
-    ['Taux de rétention', 'retention', sortedProfile[g - 1]?.dren ?? null],
-    ['Nombre d’enseignants pour 1 000 enfants d’âge scolaire', 'enseignants_1000', drenDivide(read(d, 'pers_en_classe'), p.pop_6_10, 1000)],
-    ['Nombre de places assises par enfant d’âge scolaire', 'places_enfant', drenDivide(read(d, 'places_assises'), p.pop_6_10, 1)],
-    ['Pourcentage d’EPP continues', 'ecole_continue', eppContinues(d)],
-    ['Pourcentage d’enseignants qualifiés', 'qualifies', qualified(d)],
-    ['Ratio groupe pédagogique par enseignant', 'groupe_enseignant', ratio(read(d, 'nbr_section'), read(d, 'pers_en_classe'))],
-    ['Nombre de manuels par élève T1-T2', 'manuel_eleve', null],
-    ['Nombre de manuels par élève T3', 'manuel_eleve', null],
-    ['Nombre de manuels par élève T4-T5', 'manuel_eleve', null],
+    ['Taux de rétention', 'retention', drenRetention(dEns, 5) ?? sortedProfile[g - 1]?.dren ?? null],
+    ['Nombre d’enseignants pour 1 000 enfants d’âge scolaire', 'enseignants_1000', drenDivide(sectorValue(dEns, 'personnel', 'pers_en_classe') ?? read(d, 'pers_en_classe'), p.pop_6_10, 1000)],
+    ['Nombre de places assises par enfant d’âge scolaire', 'places_enfant', drenDivide(sectorValue(dEns, 'places', 'places_assises') ?? read(d, 'places_assises'), p.pop_6_10, 1)],
+    ['Pourcentage d’EPP continues', 'ecole_continue', importedPct(d, 'ecole_continue') ?? eppContinues(dEns)],
+    ['Pourcentage d’enseignants qualifiés', 'qualifies', qualified(dEns) ?? qualified(d)],
+    ['Ratio groupe pédagogique par enseignant', 'groupe_enseignant', ratio(sectorValue(dEns, 'sections', 'nbr_section'), sectorValue(dEns, 'personnel', 'pers_en_classe')) ?? ratio(publicSections(d), read(d, 'pers_en_classe'))],
+    ['Nombre de manuels par élève T1-T2', 'manuel_eleve', ratio(sectorValue(dEns, 'ressources', 'nbr_eleve_t1_t2'), sectorValue(dEns, 'manuels', 'manuel_t1_t2')) ?? ratio(sectorValue(d, 'ressources', 'nbr_eleve_t1_t2'), sectorValue(d, 'manuels', 'manuel_t1_t2'))],
+    ['Nombre de manuels par élève T3', 'manuel_eleve', ratio(sectorValue(dEns, 'ressources', 'nbr_eleve_t3'), sectorValue(dEns, 'manuels', 'manuel_t3')) ?? ratio(sectorValue(d, 'ressources', 'nbr_eleve_t3'), sectorValue(d, 'manuels', 'manuel_t3'))],
+    ['Nombre de manuels par élève T4-T5', 'manuel_eleve', ratio(sectorValue(dEns, 'ressources', 'nbr_eleve_t4_t5'), sectorValue(dEns, 'manuels', 'manuel_t4_t5')) ?? ratio(sectorValue(d, 'ressources', 'nbr_eleve_t4_t5'), sectorValue(d, 'manuels', 'manuel_t4_t5'))],
   ];
 
   /* ---- Efficience ---- */
@@ -1092,7 +1237,29 @@ function buildPrimary(raw: any): DrenReportModel {
     profile,
     profileTitle: 'Profil de Rétention',
     exams: [cepe],
-    ueas: [ueas('Évaluation Nationale des acquis scolaires T2 (UEAS)', ['Lecture', 'Mathématique']), ueas('Évaluation Nationale des acquis scolaires T5 (UEAS)', ['Malagasy', 'Mathématique', 'Français'])],
+    ueas: [
+      buildUeasBlock(
+        raw.ueas,
+        'Évaluation Nationale des acquis scolaires T2 (UEAS)',
+        ['T2', 'UEAS_T2'],
+        [
+          { label: 'Lecture', aliases: ['LECTURE', 'READING'] },
+          { label: 'Mathématique', aliases: ['MATHEMATIQUE', 'MATHEMATIQUES', 'MATHS', 'MATH'] },
+        ],
+        'SM : score moyen sur 100 · std : écart-type · % ≥50 : élèves ayant atteint le seuil de compétence (lecture CP2 : 30 mots/minute). Les cellules restent « — » tant que l’évaluation nationale n’a pas été importée.',
+      ),
+      buildUeasBlock(
+        raw.ueas,
+        'Évaluation Nationale des acquis scolaires T5 (UEAS)',
+        ['T5', 'UEAS_T5'],
+        [
+          { label: 'Malagasy', aliases: ['MALAGASY', 'MLG'] },
+          { label: 'Mathématique', aliases: ['MATHEMATIQUE', 'MATHEMATIQUES', 'MATHS', 'MATH'] },
+          { label: 'Français', aliases: ['FRANCAIS', 'FRS'] },
+        ],
+        'SM : score moyen sur 100 · std : écart-type · % ≥50 : élèves ayant atteint le seuil de compétence (lecture CP2 : 30 mots/minute). Les cellules restent « — » tant que l’évaluation nationale n’a pas été importée.',
+      ),
+    ],
     flows: [flowTable('red'), flowTable('promo'), flowTable('aband')],
     human,
     finance,
@@ -1106,7 +1273,8 @@ function buildPrimary(raw: any): DrenReportModel {
     })),
     efficiency,
     notes: [
-      'Les colonnes Privé et Ensemble ne sont pas fournies par l’actuelle action primaire ; elles restent signalées en bleu.',
+      'Les colonnes Privé et Ensemble sont calculées en agrégeant les deux secteurs ; une cellule reste « — » lorsque la source ne fournit pas la donnée.',
+      'Les évaluations UEAS T2/T5 ne sont pas disponibles dans la base actuelle : leurs cellules restent vides plutôt que d’afficher un score inventé.',
       'Le taux d’accès générationnel n’est affiché que s’il est fourni par un import (projection de cohorte) ; il n’est pas déductible des seules données annuelles.',
       'Le TNA retire les redoublants de CP1 âgés de 6 ans : il mesure donc les seuls nouveaux entrants de 6 ans.',
     ],
@@ -1351,13 +1519,8 @@ function buildNiveau(raw: any, level: Exclude<ReportLevel, 'primaire'>): DrenRep
   /* ---- Profil derétention ---- */
   // Profil de rétention calculé uniquement pour le primaire (pseudo-longitudinal).
   // Pour collège et lycée, on garde une valeur par défaut (100 au premier niveau).
-  const profile = level === 'presco' ? [] : level === 'college' || level === 'lycee'
-    ? grades.map((label, i) => ({ label, dren: i === 0 ? 100 : null, mada: i === 0 ? 100 : null }))
-    : grades.map((label, i) => {
-    const pd = retentionProfile(d, 'ens', g, popD);
-    const pm = retentionProfile(m, 'ens', g, popM);
-    return { label, dren: i === 0 ? 100 : pd[i] ?? null, mada: i === 0 ? 100 : pm[i] ?? null };
-  });
+  const cohD = retentionCohort(d, raw.dren_next, 'ens', g), cohM = retentionCohort(m, raw.mada_next, 'ens', g);
+  const profile = level === 'presco' ? [] : grades.map((label, i) => ({ label, dren: round(cohD[i], 1), mada: round(cohM[i], 1) }));
 
   /* ---- Examens ---- */
   const exams: ExamBlock[] = [];
@@ -1406,7 +1569,18 @@ function buildNiveau(raw: any, level: Exclude<ReportLevel, 'primaire'>): DrenRep
       ],
       note: 'SM : Score Moyen sur 20 · std : écart-type.',
     });
-    exams.push(emptyUeas('Évaluation des acquis scolaires 4ème année du collège', ['Malagasy', 'Français', 'Mathématique', 'Sciences (SVT, PC)']));
+    exams.push(buildUeasBlock(
+      raw?.ueas,
+      'Évaluation des acquis scolaires 4ème année du collège',
+      ['COLLEGE4', 'T4COLLEGE', '4EME'],
+      [
+        { label: 'Malagasy', aliases: ['MALAGASY', 'MLG'] },
+        { label: 'Français', aliases: ['FRANCAIS', 'FRS'] },
+        { label: 'Mathématique', aliases: ['MATHEMATIQUE', 'MATHEMATIQUES', 'MATHS', 'MATH'] },
+        { label: 'Sciences (SVT, PC)', aliases: ['SCIENCES', 'SVT', 'SCIENCES SVT PC'] },
+      ],
+      'SM : score moyen sur 100 · std : écart-type · % ≥ 50 : seuil de compétence. Les cellules restent « — » tant que l’évaluation nationale n’a pas été importée.',
+    ));
   } else if (level === 'lycee') {
     const series: [string, string[]][] = [
       ['C', ['Mathématiques', 'Physique']],
@@ -1698,32 +1872,6 @@ function buildNiveau(raw: any, level: Exclude<ReportLevel, 'primaire'>): DrenRep
     notes: level === 'lycee'
       ? ['Les taux de promotion supérieurs à 100 % et les abandons négatifs traduisent des entrants hors cohorte : ils sont signalés en jaune, jamais tronqués.']
       : [],
-  };
-}
-
-function emptyUeas(title: string, subjects: string[]): ExamBlock {
-  return {
-    title,
-    groups: [
-      { label: '', span: 1 },
-      { label: 'Public', span: 3 },
-      { label: 'Privé', span: 3 },
-      { label: 'Ensemble', span: 3 },
-      { label: 'MADA', span: 3 },
-    ],
-    subColumns: ['Matières', 'SM', 'std', '%≥50', 'SM', 'std', '%≥50', 'SM', 'std', '%≥50', 'SM', 'std', '%≥50'],
-    subjectRows: subjects.map((label) => ({
-      label,
-      cells: Array.from({ length: 12 }, () =>
-        toCell(null, null, makeMeta('ueas', `Évaluation des acquis — ${label}`, {
-          formula: '% d’élèves ayant ≥ 50/100 ÷ élèves testés × 100',
-          dataNeeded: 'Résultats individuels de l’évaluation nationale.',
-          source: 'UEAS',
-        })),
-      ),
-    })),
-    admissionRows: [],
-    note: 'SM : score moyen · std : écart-type · % ≥50 : seuil de compétence.',
   };
 }
 

@@ -16,6 +16,7 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  authorizeTdbDownload: (level: string, code: string | number) => Promise<boolean>;
   login: (
     username: string,
     password: string,
@@ -29,7 +30,11 @@ interface AuthContextType {
   }) => Promise<{ success: boolean; error?: string }>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+// Keep one context identity when Vite refreshes this mixed hook/provider module.
+// Mounted providers and refreshed consumers must reference the same context.
+const AuthContext: React.Context<AuthContextType | undefined> =
+  import.meta.hot?.data.authContext ?? createContext<AuthContextType | undefined>(undefined);
+if (import.meta.hot) import.meta.hot.data.authContext = AuthContext;
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
@@ -68,6 +73,7 @@ async function loginDjangoSession(username: string, password: string): Promise<b
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
 
   // Ne restaure PAS depuis localStorage : chaque chargement part déconnecté.
   // Évite les sessions « collées » sur le même navigateur / machine.
@@ -151,6 +157,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Stockage session-only pour l'UI de cet onglet (pas de persistance long terme)
       sessionStorage.setItem("dpe_user", JSON.stringify(userData));
       setUser(userData);
+      setSessionToken(typeof result.sessionToken === 'string' ? result.sessionToken : null);
 
       notify({
         title: `Bienvenue, ${userData.first_name || userData.username}`,
@@ -184,6 +191,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     localStorage.removeItem("dpe_user");
     sessionStorage.removeItem("dpe_user");
     setUser(null);
+    setSessionToken(null);
     notify({
       title: "Déconnexion",
       message: name ? `À bientôt, ${name}.` : undefined,
@@ -251,6 +259,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  const authorizeTdbDownload = React.useCallback(async (level: string, code: string | number): Promise<boolean> => {
+    if (!sessionToken) return false;
+    try {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/db-query?action=authorizeTdbDownload`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
+        body: JSON.stringify({ sessionToken, level, code }),
+        signal: AbortSignal.timeout(15000),
+      });
+      return response.ok && (await response.json()).allowed === true;
+    } catch { return false; }
+  }, [sessionToken]);
+
   const value = {
     user,
     isAuthenticated: !!user,
@@ -258,6 +279,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     login,
     logout,
     updateProfile,
+    authorizeTdbDownload,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

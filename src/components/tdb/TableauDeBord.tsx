@@ -385,9 +385,9 @@ export function TableauDeBord({ data, niveau, codeDren }: Props) {
         <div>
           <DataTable table={report.human} onMeta={openFiche} />
           {report.manuals && <DataTable table={report.manuals} onMeta={openFiche} />}
+          {report.finance && <DataTable table={report.finance} onMeta={openFiche} />}
         </div>
         <div>
-          {report.finance && <DataTable table={report.finance} onMeta={openFiche} />}
           <DataTable table={report.other} onMeta={openFiche} />
         </div>
       </div>

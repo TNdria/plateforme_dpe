@@ -1,4 +1,4 @@
-import { ensureTdbTables } from './tdbStore';
+import { ensureTdbTables } from './tdbStore.ts';
 
 // Import admin des données de référence TDB : Caisse école (par établissement et niveau)
 // et Population DREN par âge (G/F/T, 3 à 17 ans). Les tables sont créées au besoin.

@@ -6,11 +6,22 @@ import { Client } from "https://deno.land/x/postgres@v0.17.0/mod.ts";
 import { executeDiagnosticDataset } from "./diagnostic.ts";
 import { executeTdbDrenNiveau, type NiveauDren } from "./tdbDrenNiveau.ts";
 import { ensureRefTables, CE_SRC, popSource, importReference } from "./refImport.ts";
+import { canDownloadTdb, issueTdbSession, verifyTdbSession, passwordMatchesSession } from './tdbDownloadAuth.ts';
 import {
   importTdbRows, latestTdbRow, ensureTdbTables, isTdbTable, updateTdbRow, insertTdbRow, listTdbRows,
   type TdbTable,
 } from "./tdbStore.ts";
-const VERSION = "v58-20261022-tdb-imports-db";
+const VERSION = "v61-20261104-dren-commentaires";
+
+// Aménagements accessibles aux élèves en situation de handicap (fiche j2).
+const ACCES_ESH_COLS = [
+  'BUREAU_PROV_DIR_ACCES_ESH', 'BUREAU_PROV_DIR_ADJOINT_ACCES_ESH', 'BUREAU_SURVEILLANT_GENERAL_ACCES_ESH',
+  'BUREAU_SURVEILLANT_ACCES_ESH', 'SALLES_PROFESSEURS_ACCES_ESH', 'BIBLIOTHEQUE_ACCES_ESH', 'INFIRMERIE_ACCES_ESH',
+  'CANTINE_REFECTOIRE_ACCES_ESH', 'MAGASIN_STOCKAGE_ACCES_ESH', 'CUISINE_ACCES_ESH', 'LOGEMENT_ACCES_ESH',
+  'SALLES_INFORMATIQUES_ACCES_ESH', 'LABORATOIRE_ACCES_ESH', 'TERRAIN_SPORT_ACCES_ESH', 'ESPACE_COIN_COUR_JEUX_ACCES_ESH',
+  'WC_LATRINES_FILLES_ACCES_ESH', 'WC_LATRINES_GARCONS_ACCES_ESH', 'WC_LATRINES_COMMUNES_ACCES_ESH',
+  'WC_LATRINES_PERSONNEL_ACCES_ESH', 'POINT_EAU_ACCES_ESH',
+];
 
 // PBKDF2-SHA256 password verification for Django auth
 async function verifyDjangoPassword(password: string, encoded: string): Promise<boolean> {
@@ -182,7 +193,10 @@ function normalizeImportedCepe(row: any): any | null {
   const hasCepe = [smMlg, supMlg, smFr, supFr, smMaths, supMaths, txG, txF, tx].some((v) => v !== null);
   if (!hasCepe) return null;
 
-  const smAutres = pickNumber(row, ['sm_total', 'sm_autres']) ?? averagePresent([smTfm, smGeo, smSvt]);
+  // `sm_total` d'un snapshot importé est la moyenne générale ; la moyenne des
+  // « autres matières » ne doit pas la remplacer, sinon la ligne « Ensemble »
+  // du CEPE affiche une moyenne qui n'en est pas une.
+  const smAutres = pickNumber(row, ['sm_autres']) ?? averagePresent([smTfm, smGeo, smSvt]);
   const supAutres = preferPercentOrCount(row, ['autres_sup10', 'sup_10_autres']) ?? averagePresent([supTfm, supGeo, supSvt]);
   return {
     source: 'csv_import',
@@ -212,14 +226,15 @@ function normalizeImportedCepe(row: any): any | null {
     sm_histoire: smTfm, histoire_sup10: supTfm,
     sm_geographie: smGeo, geographie_sup10: supGeo,
     sm_svt: smSvt, svt_sup10: supSvt,
-    sm_total: smAutres, autres_sup10: supAutres,
+    sm_total: pickNumber(row, ['sm_total', 'sm_moyenne', 'score_moyen_total']),
+    sm_autres: smAutres, autres_sup10: supAutres,
   };
 }
 
 function completeCepe(row: any): any {
   if (!row || typeof row !== 'object') return row;
   const total = pickNumber(row, ['total_candidats', 'Nbre', 'NBRE', 'inscrits_cepe', 'nb_candidats']);
-  const smAutres = pickNumber(row, ['sm_total', 'sm_autres']);
+  const smAutres = pickNumber(row, ['sm_autres', 'sm_total']);
   const supAutres = pickNumber(row, ['autres_sup10', 'sup_10_autres', 'autres_sup_10']);
   const withValue = (key: string, value: number | null) => row[key] === null || row[key] === undefined ? value : row[key];
   return {
@@ -301,6 +316,18 @@ function mergeImportedTdbSnapshot(level: any, imported: any): any {
 // Merge candidate-aggregated counts into CSV-imported cepe row so frontend can
 // compute Note>=10 percentages. CSV imports miss nbr_g/nbr_f/total_candidats;
 // the candidates aggregation provides them.
+// Les scores « public » ne doivent pas être empruntés au snapshot tous secteurs :
+// les candidats du secteur priment, le CSV ne comble que les champs absents.
+function preferCandidateCepe(candidate: any, fallback: any): any | null {
+  if (!candidate) return fallback || null;
+  if (!fallback) return candidate;
+  const out = { ...candidate };
+  for (const [key, value] of Object.entries(fallback)) {
+    if (out[key] === null || out[key] === undefined) out[key] = value;
+  }
+  return out;
+}
+
 function mergeCepeWithCounts(csvCepe: any, candCepe: any): any | null {
   if (!csvCepe && !candCepe) return null;
   if (!csvCepe) return candCepe;
@@ -336,6 +363,7 @@ async function getLatestImportedTdbRow(
   } catch (e) {
     console.error('getLatestImportedTdbRow (ministère) error:', table, (e as Error)?.message);
   }
+  if (table === 'tdb_ref' || table === 'tdb_ueas') return null;
   return await getLatestImportedTdbRowSupabase(table, filters);
 }
 
@@ -369,13 +397,42 @@ async function getLatestImportedTdbRowSupabase(
   }
 }
 
+// Résultats de l'évaluation nationale des acquis scolaires (UEAS) déjà importés
+// pour une DREN, plus la ligne nationale (CODE_DREN = 0). Ces scores ne se
+// déduisent pas des effectifs : sans import, le tableau reste vide côté rapport.
+async function loadUeasRows(client: any, codeDren: number): Promise<any[]> {
+  try {
+    await ensureTdbTables(client);
+    const dren = Number(codeDren) > 0 ? Number(codeDren) : 0;
+    const res = await client.queryObject(
+      `SELECT * FROM public.tdb_ueas WHERE "CODE_DREN" IN (${dren}, 0) ORDER BY "CODE_DREN", "NIVEAU", "MATIERE", "SECTEUR"`,
+    );
+    return (res.rows as any[]).map((row) => {
+      const data = row.data && typeof row.data === 'object' ? row.data : {};
+      const flat: any = { ...data };
+      for (const k of Object.keys(row)) {
+        if (k !== 'data' && k !== 'id' && (flat[k] === undefined || flat[k] === null)) flat[k] = row[k];
+      }
+      return flat;
+    });
+  } catch (e) {
+    console.error('tdb_ueas unavailable', e);
+    return [];
+  }
+}
+
+// Clé de rapprochement d'un libellé DREN/CISCO : l'import d'examen écrit
+// « AMORON'IMANIA » là où la vue de référence écrit « AMORON'I MANIA ».
+const labelKey = (expr: string) =>
+  `regexp_replace(translate(upper(COALESCE(${expr}::text,'')), 'ÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ-''.', 'AAAAEEEEIIOOUUUC'), '[^A-Z0-9]', '', 'g')`;
+
 // Aggregate per-candidate CEPE results (stored in Supabase examen_cepe_candidates)
 // into the same shape as normalizeImportedCepe — used as a fallback when the
 // official Django examen_cepe table is empty for the requested year (e.g. 2025).
 async function aggregateCandidatesCepe(
   djangoClient: any,
   annee: number,
-  scope: { type: 'mada' | 'dren' | 'cisco' | 'zap' | 'ecole'; codeDren?: number; codeCisco?: number; codeZap?: number; codeEtab?: number },
+  scope: { type: 'mada' | 'dren' | 'cisco' | 'zap' | 'ecole'; codeDren?: number; codeCisco?: number; codeZap?: number; codeEtab?: number; secteur?: number | null },
 ): Promise<any | null> {
   // Now reads from Django DB (table examen_cepe_candidates is auto-created on import).
   try {
@@ -391,13 +448,15 @@ async function aggregateCandidatesCepe(
     }
     if (probe.rows.length === 0) return null;
 
-    let etabFilter = '';
+    let etabFilter: string | null = '';
     const params: any[] = [annee];
     if (scope.type === 'ecole' && scope.codeEtab && scope.codeEtab > 0) {
       params.push(scope.codeEtab);
       etabFilter = `AND "CODE_ETAB" = $${params.length}`;
     } else if (scope.type !== 'mada') {
-      const conds: string[] = [`"ANNEE_SCOLAIRE"=${annee}`, `"SECTEUR"=0`, `"EXISTE_PRIMAIRE"=1`];
+      const secteur = scope.secteur === undefined ? 0 : scope.secteur;
+      const conds: string[] = [`"ANNEE_SCOLAIRE"=${annee}`, `"EXISTE_PRIMAIRE"=1`];
+      if (secteur !== null) conds.push(`"SECTEUR"=${secteur}`);
       if (scope.codeDren && scope.codeDren > 0) conds.push(`"CODE_DREN"=${scope.codeDren}`);
       if (scope.codeCisco && scope.codeCisco > 0) conds.push(`"CODE_CISCO"=${scope.codeCisco}`);
       if (scope.codeZap && scope.codeZap > 0) conds.push(`"CODE_ZAP"=${scope.codeZap}`);
@@ -408,85 +467,129 @@ async function aggregateCandidatesCepe(
         );
         etabs = (ar.rows as any[]).map((r) => Number(r.CODE_ETAB)).filter((n) => Number.isFinite(n));
       } catch (_) { /* fall back to all */ }
-      if (etabs.length === 0) return null;
-      params.push(etabs);
-      etabFilter = `AND "CODE_ETAB" = ANY($${params.length}::bigint[])`;
+      // Aucun établissement apparié : ne pas interroger sans filtre, cela
+      // ramènerait les candidats de tout Madagascar.
+      if (etabs.length === 0) etabFilter = null;
+      else {
+        params.push(etabs);
+        etabFilter = `AND "CODE_ETAB" = ANY($${params.length}::bigint[])`;
+      }
     }
 
-    const sql = `
-      WITH per_etab AS (
+    const aggregate = async (filter: string, queryParams: any[]): Promise<any | null> => {
+      const sql = `
+        WITH scoped AS (
+          SELECT * FROM examen_cepe_candidates WHERE "ANNEE_SCOLAIRE"=$1 ${filter}
+        ), scales AS (
+          -- Les notes du fichier d'examen ne sont pas toutes sur 20 (PROBLEME et
+          -- SVT y sont sur 40). Le diviseur est déduit du maximum observé pour
+          -- compter les notes >= 10/20 sans supposer une échelle fixe.
+          SELECT
+            GREATEST(1, ROUND(COALESCE(MAX("MALAGASY"), 20) / 20.0)) AS d_mlg,
+            GREATEST(1, ROUND(COALESCE(MAX("FRANCAIS"), 20) / 20.0)) AS d_frs,
+            GREATEST(1, ROUND(COALESCE(MAX("OP"), 20) / 20.0)) AS d_op,
+            GREATEST(1, ROUND(COALESCE(MAX("PROBLEME"), 20) / 20.0)) AS d_prob,
+            GREATEST(1, ROUND(COALESCE(MAX("SVT"), 20) / 20.0)) AS d_svt,
+            GREATEST(1, ROUND(COALESCE(MAX("TFM"), 20) / 20.0)) AS d_tfm,
+            GREATEST(1, ROUND(COALESCE(MAX("GEOGRAPHIE"), 20) / 20.0)) AS d_geo
+          FROM scoped
+        ), per_etab AS (
+          SELECT
+            COALESCE("CODE_ETAB", 0) AS etab,
+            COUNT(*) AS total,
+            COUNT(*) FILTER (WHERE upper("GENRE")='G') AS nbr_g,
+            COUNT(*) FILTER (WHERE upper("GENRE")='F') AS nbr_f,
+            COUNT(*) FILTER (WHERE upper("GENRE")='G' AND upper("CEPE")='A') AS admis_g,
+            COUNT(*) FILTER (WHERE upper("GENRE")='F' AND upper("CEPE")='A') AS admis_f,
+            ROUND(AVG("MALAGASY" / s.d_mlg)::numeric, 1) AS sm_mlg,
+            ROUND(AVG("FRANCAIS" / s.d_frs)::numeric, 1) AS sm_frs,
+            ROUND(AVG("OP" / s.d_op)::numeric, 1) AS sm_op,
+            ROUND(AVG("PROBLEME" / s.d_prob)::numeric, 1) AS sm_prob,
+            ROUND(AVG("SVT" / s.d_svt)::numeric, 1) AS sm_svt,
+            ROUND(AVG("TFM" / s.d_tfm)::numeric, 1) AS sm_histoire,
+            ROUND(AVG("GEOGRAPHIE" / s.d_geo)::numeric, 1) AS sm_geographie,
+            ROUND(AVG("MOYENNE")::numeric, 1) AS sm_total,
+            COUNT(*) FILTER (WHERE "MALAGASY" / s.d_mlg >= 10) AS mlg_sup10,
+            COUNT(*) FILTER (WHERE "FRANCAIS" / s.d_frs >= 10) AS frs_sup10,
+            COUNT(*) FILTER (WHERE "OP" / s.d_op >= 10) AS op_sup10,
+            COUNT(*) FILTER (WHERE "PROBLEME" / s.d_prob >= 10) AS prob_sup10,
+            COUNT(*) FILTER (WHERE "SVT" / s.d_svt >= 10) AS svt_sup10,
+            COUNT(*) FILTER (WHERE "TFM" / s.d_tfm >= 10) AS histoire_sup10,
+            COUNT(*) FILTER (WHERE "GEOGRAPHIE" / s.d_geo >= 10) AS geographie_sup10
+          FROM scoped, scales s
+          GROUP BY 1
+        )
         SELECT
-          "CODE_ETAB",
-          COUNT(*) AS total,
-          COUNT(*) FILTER (WHERE upper("GENRE")='G') AS nbr_g,
-          COUNT(*) FILTER (WHERE upper("GENRE")='F') AS nbr_f,
-          COUNT(*) FILTER (WHERE upper("GENRE")='G' AND upper("CEPE")='A') AS admis_g,
-          COUNT(*) FILTER (WHERE upper("GENRE")='F' AND upper("CEPE")='A') AS admis_f,
-          ROUND(AVG("MALAGASY")::numeric, 1) AS sm_mlg,
-          ROUND(AVG("FRANCAIS")::numeric, 1) AS sm_frs,
-          ROUND(AVG("OP")::numeric, 1) AS sm_op,
-          ROUND(AVG("PROBLEME")::numeric, 1) AS sm_prob,
-          ROUND(AVG("SVT")::numeric, 1) AS sm_svt,
-          ROUND(AVG("TFM")::numeric, 1) AS sm_histoire,
-          ROUND(AVG("GEOGRAPHIE")::numeric, 1) AS sm_geographie,
-          COUNT(*) FILTER (WHERE "MALAGASY" >= 20) AS mlg_sup10,
-          COUNT(*) FILTER (WHERE "FRANCAIS" >= 10) AS frs_sup10,
-          COUNT(*) FILTER (WHERE "OP" >= 10) AS op_sup10,
-          COUNT(*) FILTER (WHERE "PROBLEME" >= 20) AS prob_sup10,
-          COUNT(*) FILTER (WHERE "SVT" >= 20) AS svt_sup10,
-          COUNT(*) FILTER (WHERE "TFM" >= 20) AS histoire_sup10,
-          COUNT(*) FILTER (WHERE "GEOGRAPHIE" >= 10) AS geographie_sup10
-        FROM examen_cepe_candidates
-        WHERE "ANNEE_SCOLAIRE"=$1 ${etabFilter}
-        GROUP BY "CODE_ETAB"
-      )
-      SELECT
-        SUM(total) AS total, SUM(nbr_g) AS nbr_g, SUM(nbr_f) AS nbr_f,
-        SUM(admis_g) AS admis_g, SUM(admis_f) AS admis_f,
-        AVG(sm_mlg)::numeric AS sm_mlg, AVG(sm_frs)::numeric AS sm_frs,
-        AVG(sm_op)::numeric AS sm_op, AVG(sm_prob)::numeric AS sm_prob,
-        AVG((sm_op + sm_prob) / 2.0)::numeric AS sm_mths,
-        AVG((sm_mlg + sm_frs + sm_op + sm_prob + sm_svt + sm_histoire + sm_geographie) / 7.0)::numeric AS sm_total,
-        AVG(sm_svt)::numeric AS sm_svt, AVG(sm_histoire)::numeric AS sm_histoire, AVG(sm_geographie)::numeric AS sm_geographie,
-        SUM(mlg_sup10) AS mlg_sup10, SUM(frs_sup10) AS frs_sup10,
-        SUM(op_sup10) AS op_sup10, SUM(prob_sup10) AS prob_sup10, SUM(op_sup10) + SUM(prob_sup10) AS mths_sup10,
-        SUM(svt_sup10) + SUM(histoire_sup10) + SUM(geographie_sup10) AS autres_sup10,
-        SUM(svt_sup10) AS svt_sup10, SUM(histoire_sup10) AS histoire_sup10, SUM(geographie_sup10) AS geographie_sup10
-      FROM per_etab
-    `;
-    const r = await djangoClient.queryObject(sql, params);
-    const a: any = r.rows[0];
-    if (!a || Number(a.total) === 0) return null;
-    const round = (v: any) => v === null || v === undefined ? null : Math.round(Number(v) * 10) / 10;
-    const total = Number(a.total) || 0;
-    const nbrG = Number(a.nbr_g) || 0;
-    const nbrF = Number(a.nbr_f) || 0;
-    const admisG = Number(a.admis_g) || 0;
-    const admisF = Number(a.admis_f) || 0;
-    return {
-      source: 'candidates',
-      total_candidats: total,
-      nbr_g: nbrG, nbr_f: nbrF,
-      admis_g: admisG, admis_f: admisF,
-      tx_admis_g: nbrG ? Math.round((admisG * 1000) / nbrG) / 10 : null,
-      tx_admis_f: nbrF ? Math.round((admisF * 1000) / nbrF) / 10 : null,
-      tx_admis: total ? Math.round(((admisG + admisF) * 1000) / total) / 10 : null,
-      sm_mlg: round(a.sm_mlg), mlg_sup10: Number(a.mlg_sup10) || 0,
-      sm_mlg_fahazoana: round(a.sm_mlg), mlg_compo_sup10: Number(a.mlg_sup10) || 0,
-      sm_mlg_fitsipika: round(a.sm_mlg), mlg_gram_sup10: Number(a.mlg_sup10) || 0,
-      sm_mlg_fanazarana: round(a.sm_mlg), mlg_exp_sup10: Number(a.mlg_sup10) || 0,
-      sm_frs: round(a.sm_frs), frs_sup10: Number(a.frs_sup10) || 0,
-      sm_frs_comprehension: round(a.sm_frs), frs_compo_sup10: Number(a.frs_sup10) || 0,
-      sm_frs_grammaire: round(a.sm_frs), frs_gram_sup10: Number(a.frs_sup10) || 0,
-      sm_frs_expression: round(a.sm_frs), frs_exp_sup10: Number(a.frs_sup10) || 0,
-      sm_mths: round(a.sm_mths), mths_sup10: Number(a.mths_sup10) || 0,
-      sm_mths_operation: round(a.sm_op), op_sup10: Number(a.op_sup10) || 0,
-      sm_mths_probleme: round(a.sm_prob), prob_sup10: Number(a.prob_sup10) || 0,
-      sm_svt: round(a.sm_svt), svt_sup10: Number(a.svt_sup10) || 0,
-      sm_histoire: round(a.sm_histoire), histoire_sup10: Number(a.histoire_sup10) || 0,
-      sm_geographie: round(a.sm_geographie), geographie_sup10: Number(a.geographie_sup10) || 0,
-      sm_total: round(a.sm_total), autres_sup10: Number(a.autres_sup10) || 0,
+          SUM(total) AS total, SUM(nbr_g) AS nbr_g, SUM(nbr_f) AS nbr_f,
+          SUM(admis_g) AS admis_g, SUM(admis_f) AS admis_f,
+          AVG(sm_mlg)::numeric AS sm_mlg, AVG(sm_frs)::numeric AS sm_frs,
+          AVG(sm_op)::numeric AS sm_op, AVG(sm_prob)::numeric AS sm_prob,
+          AVG((sm_op + sm_prob) / 2.0)::numeric AS sm_mths,
+          AVG(sm_total)::numeric AS sm_total,
+          AVG(sm_svt)::numeric AS sm_svt, AVG(sm_histoire)::numeric AS sm_histoire, AVG(sm_geographie)::numeric AS sm_geographie,
+          SUM(mlg_sup10) AS mlg_sup10, SUM(frs_sup10) AS frs_sup10,
+          SUM(op_sup10) AS op_sup10, SUM(prob_sup10) AS prob_sup10, SUM(op_sup10) + SUM(prob_sup10) AS mths_sup10,
+          SUM(svt_sup10) + SUM(histoire_sup10) + SUM(geographie_sup10) AS autres_sup10,
+          SUM(svt_sup10) AS svt_sup10, SUM(histoire_sup10) AS histoire_sup10, SUM(geographie_sup10) AS geographie_sup10
+        FROM per_etab
+      `;
+      const r = await djangoClient.queryObject(sql, queryParams);
+      const a: any = r.rows[0];
+      if (!a || Number(a.total) === 0) return null;
+      const round = (v: any) => v === null || v === undefined ? null : Math.round(Number(v) * 10) / 10;
+      const total = Number(a.total) || 0;
+      const nbrG = Number(a.nbr_g) || 0;
+      const nbrF = Number(a.nbr_f) || 0;
+      const admisG = Number(a.admis_g) || 0;
+      const admisF = Number(a.admis_f) || 0;
+      return {
+        source: 'candidates',
+        total_candidats: total,
+        nbr_g: nbrG, nbr_f: nbrF,
+        admis_g: admisG, admis_f: admisF,
+        tx_admis_g: nbrG ? Math.round((admisG * 1000) / nbrG) / 10 : null,
+        tx_admis_f: nbrF ? Math.round((admisF * 1000) / nbrF) / 10 : null,
+        tx_admis: total ? Math.round(((admisG + admisF) * 1000) / total) / 10 : null,
+        sm_mlg: round(a.sm_mlg), mlg_sup10: Number(a.mlg_sup10) || 0,
+        sm_mlg_fahazoana: round(a.sm_mlg), mlg_compo_sup10: Number(a.mlg_sup10) || 0,
+        sm_mlg_fitsipika: round(a.sm_mlg), mlg_gram_sup10: Number(a.mlg_sup10) || 0,
+        sm_mlg_fanazarana: round(a.sm_mlg), mlg_exp_sup10: Number(a.mlg_sup10) || 0,
+        sm_frs: round(a.sm_frs), frs_sup10: Number(a.frs_sup10) || 0,
+        sm_frs_comprehension: round(a.sm_frs), frs_compo_sup10: Number(a.frs_sup10) || 0,
+        sm_frs_grammaire: round(a.sm_frs), frs_gram_sup10: Number(a.frs_sup10) || 0,
+        sm_frs_expression: round(a.sm_frs), frs_exp_sup10: Number(a.frs_sup10) || 0,
+        sm_mths: round(a.sm_mths), mths_sup10: Number(a.mths_sup10) || 0,
+        sm_mths_operation: round(a.sm_op), op_sup10: Number(a.op_sup10) || 0,
+        sm_mths_probleme: round(a.sm_prob), prob_sup10: Number(a.prob_sup10) || 0,
+        sm_svt: round(a.sm_svt), svt_sup10: Number(a.svt_sup10) || 0,
+        sm_histoire: round(a.sm_histoire), histoire_sup10: Number(a.histoire_sup10) || 0,
+        sm_geographie: round(a.sm_geographie), geographie_sup10: Number(a.geographie_sup10) || 0,
+        sm_total: round(a.sm_total), autres_sup10: Number(a.autres_sup10) || 0,
+      };
     };
+
+    let result = etabFilter === null ? null : await aggregate(etabFilter, params);
+
+    // Les imports d'examen antérieurs (ex. CEPE 2024) n'ont ni CODE_ETAB ni
+    // ECOLE_ORIGINE : plus aucun candidat ne se rattache à un établissement et
+    // toutes les colonnes du rapport tombaient à « — ». Le périmètre « tous
+    // secteurs » reste déductible du libellé DREN/CISCO porté par les candidats ;
+    // la répartition public/privé, elle, n'est pas déductible et reste vide.
+    if (!result && scope.secteur === null && (scope.type === 'dren' || scope.type === 'cisco')) {
+      const labelOf = async (sql: string) => {
+        try { return String(((await djangoClient.queryObject(sql)).rows[0] as any)?.k || ''); }
+        catch (_) { return ''; }
+      };
+      const key = scope.type === 'dren' && scope.codeDren && scope.codeDren > 0
+        ? await labelOf(`SELECT ${labelKey('"DREN"')} AS k FROM v_dren WHERE "CODE_DREN"=${scope.codeDren}`)
+        : scope.type === 'cisco' && scope.codeCisco && scope.codeCisco > 0
+          ? await labelOf(`SELECT ${labelKey('"CISCO"')} AS k FROM v_cisco WHERE "CODE_CISCO"=${scope.codeCisco}`)
+          : '';
+      const column = scope.type === 'dren' ? '"DREN"' : '"CISCO"';
+      if (key) result = await aggregate(`AND ${labelKey(column)}='${key.replace(/'/g, "''")}'`, [annee]);
+    }
+
+    return result;
   } catch (e) {
     console.error('aggregateCandidatesCepe error:', e);
     return null;
@@ -651,6 +754,19 @@ serve(async (req: Request) => {
 
 
     switch (action) {
+      case "authorizeTdbDownload": {
+        const body = await req.json();
+        const session = await verifyTdbSession(typeof body.sessionToken === 'string' ? body.sessionToken : '', Deno.env.get('TDB_SESSION_SECRET') || '');
+        let account: any = null;
+        if (session) {
+          const users = await client.queryObject('SELECT password, is_active, is_staff, is_superuser, dren, cisco FROM login_customuser WHERE id = $1', [session.sub]);
+          const candidate: any = users.rows[0];
+          if (candidate && await passwordMatchesSession(candidate.password, session.fingerprint)) account = candidate;
+        }
+        const allowed = canDownloadTdb(account, { level: body.level, code: Number(body.code) });
+        await client.end();
+        return new Response(JSON.stringify({ allowed }), { status: allowed ? 200 : 403, headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+      }
       case "getDrens":
         result = await client.queryObject('SELECT DISTINCT "CODE_DREN", "DREN" FROM v_dren WHERE "CODE_DREN" IS NOT NULL ORDER BY "DREN"');
         break;
@@ -1004,6 +1120,7 @@ serve(async (req: Request) => {
             ]);
             data.bepc_dren = bd || {}; data.bepc_mada = bm || {};
           }
+          if (niv === 'college') data.ueas = await loadUeasRows(client, codeDren);
           await client.end();
           return new Response(JSON.stringify(serializeData(data)), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         } catch (e: any) {
@@ -1016,17 +1133,23 @@ serve(async (req: Request) => {
         const annee = parseInt(url.searchParams.get("annee") || "2025");
         const examYear = await resolveExamenYear(client, annee);
         try {
-          const rawData = await executeTdbDrenData(client, codeDren, annee);
-          const [csvDren, csvMada, candDren, candMada] = await Promise.all([
+          const rawData: any = await executeTdbDrenData(client, codeDren, annee);
+          rawData.dren_prive = rawData.dren_prive || {};
+          const [csvDren, csvMada, candDren, candMada, candDrenPriv, candDrenEns] = await Promise.all([
             getLatestImportedTdbRow(client, 'tdb_dren', { CODE_DREN: codeDren }),
             getLatestImportedTdbRow(client, 'tdb_mada', {}),
-            aggregateCandidatesCepe(client, examYear, { type: 'dren', codeDren }),
-            aggregateCandidatesCepe(client, examYear, { type: 'mada' }),
+            aggregateCandidatesCepe(client, examYear, { type: 'dren', codeDren, secteur: 0 }),
+            aggregateCandidatesCepe(client, examYear, { type: 'mada', secteur: 0 }),
+            aggregateCandidatesCepe(client, examYear, { type: 'dren', codeDren, secteur: 1 }),
+            aggregateCandidatesCepe(client, examYear, { type: 'dren', codeDren, secteur: null }),
           ]);
-          rawData.dren.cepe = completeCepe(mergeCepeWithCounts(normalizeImportedCepe(csvDren), candDren) ?? rawData.dren.cepe);
-          rawData.mada.cepe = completeCepe(mergeCepeWithCounts(normalizeImportedCepe(csvMada), candMada) ?? rawData.mada.cepe);
+          rawData.dren.cepe = completeCepe(preferCandidateCepe(candDren, normalizeImportedCepe(csvDren)) ?? rawData.dren.cepe);
+          rawData.mada.cepe = completeCepe(preferCandidateCepe(candMada, normalizeImportedCepe(csvMada)) ?? rawData.mada.cepe);
+          rawData.dren_prive.cepe = completeCepe(candDrenPriv ?? rawData.dren_prive.cepe);
+          rawData.dren_ensemble = { cepe: completeCepe(candDrenEns ?? normalizeImportedCepe(csvDren)) };
           rawData.dren = mergeImportedTdbSnapshot(rawData.dren, csvDren);
           rawData.mada = mergeImportedTdbSnapshot(rawData.mada, csvMada);
+          rawData.ueas = await loadUeasRows(client, codeDren);
           await client.end();
           return new Response(JSON.stringify({ ...serializeData(rawData), examen_annee: examYear }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         } catch (tdbErr: any) {
@@ -1203,19 +1326,6 @@ serve(async (req: Request) => {
           await client.end();
           return new Response(JSON.stringify({ success: false, error: "Nom d'utilisateur et mot de passe requis" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
-        // Bootstrap admin/admin account on first login attempt
-        if (username === 'admin' && password === 'admin') {
-          const adminExists = await client.queryObject(`SELECT id FROM login_customuser WHERE username = 'admin'`);
-          if (adminExists.rows.length === 0) {
-            const aSalt = crypto.randomUUID().replace(/-/g, '').substring(0, 22);
-            const aEnc = new TextEncoder();
-            const aKM = await crypto.subtle.importKey('raw', aEnc.encode('admin'), 'PBKDF2', false, ['deriveBits']);
-            const aBits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: aEnc.encode(aSalt), iterations: 600000, hash: 'SHA-256' }, aKM, 256);
-            const aHash = `pbkdf2_sha256$600000$${aSalt}$${btoa(String.fromCharCode(...new Uint8Array(aBits)))}`;
-            await client.queryObject(`INSERT INTO login_customuser (id, password, last_login, is_superuser, username, first_name, last_name, email, is_staff, is_active, date_joined, dren, cisco) VALUES ((SELECT COALESCE(MAX(id),0)+1 FROM login_customuser), '${aHash}', NULL, true, 'admin', 'Administrateur', 'Système', 'admin@dpe.local', true, true, NOW(), 0, 0)`);
-            console.log('[bootstrap] Admin account created');
-          }
-        }
         const userResult = await client.queryObject(`SELECT id, username, password, first_name, last_name, is_active, is_staff, is_superuser, email, dren, cisco FROM login_customuser WHERE username = '${username.replace(/'/g, "''")}'`);
         if (userResult.rows.length === 0) {
           await client.end();
@@ -1235,9 +1345,11 @@ serve(async (req: Request) => {
         const dren = user.dren;
         const cisco = user.cisco;
         const redirect = user.username === 'eager' ? '/eager' : '/dashboard';
+        const sessionToken = await issueTdbSession(Number(user.id), user.password, Deno.env.get('TDB_SESSION_SECRET') || '');
         await client.end();
         return new Response(JSON.stringify({
           success: true,
+          sessionToken,
           redirect,
           user: { username: user.username, first_name: user.first_name, last_name: user.last_name, is_active: user.is_active, is_staff: user.is_staff, is_superuser: user.is_superuser, dren, cisco }
         }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -1806,7 +1918,7 @@ serve(async (req: Request) => {
         // ---- TDB tables (tdb_*) : stockées dans la base du ministère (pas Supabase) ----
         // Toutes les colonnes du fichier sont conservées dans `data jsonb` ; les colonnes
         // structurelles (CODE_DREN, CODE_CISCO, CODE_ZAP, CODE_ETAB, CODE_MADA) servent aux filtres.
-        const tdbTargets = ['tdb_ecole', 'tdb_zap', 'tdb_cisco', 'tdb_dren', 'tdb_mada', 'tdb_ref'];
+        const tdbTargets = ['tdb_ecole', 'tdb_zap', 'tdb_cisco', 'tdb_dren', 'tdb_mada', 'tdb_ref', 'tdb_ueas'];
         if (tdbTargets.includes(tableName)) {
           if (!isTdbTable(tableName)) {
             await client.end();
@@ -2731,7 +2843,7 @@ async function executeTdbDrenData(client: Client, codeDren: number, annee: numbe
   const elevesAges = (alias: string) => AGE_6_10.map((col) => si(`${alias}."${col}"`)).join('+');
 
   // Reuse same helpers as CISCO but with DREN vs MADA
-  async function getRessources(where: string, year = annee) {
+  async function getRessources(where: string, year = annee, secteur: 0 | 1 | null = 0) {
     const q = `SELECT COUNT(DISTINCT CASE WHEN a1."EXISTE_PRIMAIRE"=1 THEN a1."CODE_ETAB" END) AS nbr_etab,
       COUNT(DISTINCT CASE WHEN a1."EXISTE_PRIMAIRE"=1 AND a1."EXISTE_PRESCO"=1 THEN a1."CODE_ETAB" END) AS etab_avec_cap,
       SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T1_G"')}+${si('e1."T1_F"')}+${si('e1."T2_G"')}+${si('e1."T2_F"')}+${si('e1."T3_G"')}+${si('e1."T3_F"')}+${si('e1."T4_G"')}+${si('e1."T4_F"')}+${si('e1."T5_G"')}+${si('e1."T5_F"')} ELSE 0 END) AS nbr_eleve,
@@ -2751,44 +2863,108 @@ async function executeTdbDrenData(client: Client, codeDren: number, annee: numbe
       SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T5_G"')}+${si('e1."T5_F"')} ELSE 0 END) AS eff_t5,
       SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T1_G"')} ELSE 0 END) AS eff_t1_g,
       SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T1_F"')} ELSE 0 END) AS eff_t1_f,
+      SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T2_G"')} ELSE 0 END) AS eff_t2_g,
+      SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T2_F"')} ELSE 0 END) AS eff_t2_f,
+      SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T3_G"')} ELSE 0 END) AS eff_t3_g,
+      SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T3_F"')} ELSE 0 END) AS eff_t3_f,
+      SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T4_G"')} ELSE 0 END) AS eff_t4_g,
+      SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T4_F"')} ELSE 0 END) AS eff_t4_f,
       SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T5_G"')} ELSE 0 END) AS eff_t5_g,
       SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T5_F"')} ELSE 0 END) AS eff_t5_f,
+      SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T1_G_REDOUBLANT"')} ELSE 0 END) AS red_t1_g,
+      SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T1_F_REDOUBLANT"')} ELSE 0 END) AS red_t1_f,
+      SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T2_G_REDOUBLANT"')} ELSE 0 END) AS red_t2_g,
+      SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T2_F_REDOUBLANT"')} ELSE 0 END) AS red_t2_f,
+      SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T3_G_REDOUBLANT"')} ELSE 0 END) AS red_t3_g,
+      SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T3_F_REDOUBLANT"')} ELSE 0 END) AS red_t3_f,
+      SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T4_G_REDOUBLANT"')} ELSE 0 END) AS red_t4_g,
+      SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T4_F_REDOUBLANT"')} ELSE 0 END) AS red_t4_f,
+      SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T5_G_REDOUBLANT"')} ELSE 0 END) AS red_t5_g,
+      SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T5_F_REDOUBLANT"')} ELSE 0 END) AS red_t5_f,
+      SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T1_G"')}+${si('e1."T2_G"')}+${si('e1."T3_G"')}+${si('e1."T4_G"')}+${si('e1."T5_G"')}+${si('e1."T1_F"')}+${si('e1."T2_F"')}+${si('e1."T3_F"')}+${si('e1."T4_F"')}+${si('e1."T5_F"')} ELSE 0 END) AS nbr_eleve_total,
+      SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T1_G"')}+${si('e1."T1_F"')}+${si('e1."T2_G"')}+${si('e1."T2_F"')} ELSE 0 END) AS nbr_eleve_t1_t2,
+      SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T3_G"')}+${si('e1."T3_F"')} ELSE 0 END) AS nbr_eleve_t3,
+      SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T4_G"')}+${si('e1."T4_F"')}+${si('e1."T5_G"')}+${si('e1."T5_F"')} ELSE 0 END) AS nbr_eleve_t4_t5,
+      SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T1_G_CRAN"')}+${si('e1."T1_F_CRAN"')}+${si('e1."T2_G_CRAN"')}+${si('e1."T2_F_CRAN"')}+${si('e1."T3_G_CRAN"')}+${si('e1."T3_F_CRAN"')}+${si('e1."T4_G_CRAN"')}+${si('e1."T4_F_CRAN"')}+${si('e1."T5_G_CRAN"')}+${si('e1."T5_F_CRAN"')} ELSE 0 END) AS reinseres,
       COUNT(DISTINCT CASE WHEN a1."EXISTE_PRIMAIRE"=1 AND a1."EST_ALIMENTE_EAU"='1' THEN a1."CODE_ETAB" END) AS etab_eau,
       COUNT(DISTINCT CASE WHEN a1."EXISTE_PRIMAIRE"=1 AND a1."EST_ELECTRIFIE"='1' THEN a1."CODE_ETAB" END) AS etab_elec,
+      COUNT(DISTINCT CASE WHEN a1."EXISTE_PRIMAIRE"=1 AND (
+        COALESCE(NULLIF(btrim(COALESCE(d1."CANTINE_1"::text,'')),''),'0') NOT IN ('0','NON','N')
+        OR COALESCE(NULLIF(btrim(COALESCE(d1."CANTINE_2"::text,'')),''),'0') NOT IN ('0','NON','N')
+        OR COALESCE(NULLIF(btrim(COALESCE(d1."CANTINE_3"::text,'')),''),'0') NOT IN ('0','NON','N')
+        OR COALESCE(NULLIF(btrim(COALESCE(d1."CANTINE_4"::text,'')),''),'0') NOT IN ('0','NON','N')
+        OR COALESCE(NULLIF(btrim(COALESCE(d1."CANTINE_5"::text,'')),''),'0') NOT IN ('0','NON','N')
+      ) THEN a1."CODE_ETAB" END) AS etab_cantine,
       SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T1_G_2KM"')}+${si('e1."T1_F_2KM"')}+${si('e1."T2_G_2KM"')}+${si('e1."T2_F_2KM"')}+${si('e1."T3_G_2KM"')}+${si('e1."T3_F_2KM"')}+${si('e1."T4_G_2KM"')}+${si('e1."T4_F_2KM"')}+${si('e1."T5_G_2KM"')}+${si('e1."T5_F_2KM"')} ELSE 0 END) AS eleve_2km,
       SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 AND (${si('e1."T4_G"')}+${si('e1."T4_F"')}) > 0 AND (${si('e1."T5_G"')}+${si('e1."T5_F"')}) > 0 THEN 1 ELSE 0 END) AS ecole_continue
     FROM fpe_a1 a1 LEFT JOIN fpe_e1 e1 ON e1."CODE_ETAB"=a1."CODE_ETAB" AND e1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND e1."SECTEUR"=a1."SECTEUR"
-    WHERE a1."ANNEE_SCOLAIRE"=${year} AND a1."SECTEUR"=0 AND a1."EXISTE_PRIMAIRE"=1 ${where}`;
-    return (await client.queryObject(q)).rows[0] || {};
+    LEFT JOIN fpe_d1 d1 ON d1."CODE_ETAB"=a1."CODE_ETAB" AND d1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND d1."SECTEUR"=a1."SECTEUR"
+    WHERE a1."ANNEE_SCOLAIRE"=${year} AND ${secteur === null ? '1=1' : `a1."SECTEUR"=${secteur}`} AND a1."EXISTE_PRIMAIRE"=1 ${where}`;
+    try { return (await client.queryObject(q)).rows[0] || {}; }
+    catch (e) { console.error('DREN ressources unavailable', e); return {}; }
   }
-  async function getPersonnel(where: string) {
+  async function getPersonnel(where: string, secteur: 0 | 1 | null = 0) {
     const q = `SELECT SUM(CASE WHEN p1."CODE_STATUT" IN ('1','2','3','4') THEN 1 ELSE 0 END) AS nbr_pers,
       SUM(CASE WHEN p1."CODE_STATUT" IN ('1','2','3','4') AND ${si('p1."EN_SALLE"')}=1 THEN 1 ELSE 0 END) AS pers_en_classe,
       SUM(CASE WHEN p1."CODE_STATUT" IN ('1','2') THEN 1 ELSE 0 END) AS fonctionnaire,
       SUM(CASE WHEN p1."CODE_STATUT"='3' THEN 1 ELSE 0 END) AS sub,
       SUM(CASE WHEN p1."CODE_STATUT"='4' THEN 1 ELSE 0 END) AS non_sub,
+      SUM(CASE WHEN p1."CODE_STATUT" IN ('1','2','3','4') AND ${si('p1."EN_SALLE"')}=1 AND COALESCE(p1."DIPLOME_PEDAGOGIQUE",'')<>'' AND upper(p1."DIPLOME_PEDAGOGIQUE")<>'AUTRES' THEN 1 ELSE 0 END) AS qualifies_classe,
       SUM(CASE WHEN COALESCE(p1."DIPLOME_PEDAGOGIQUE",'')='' THEN 1 ELSE 0 END) AS sans_diplome_ped
-    FROM fpe_p1 p1 INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=p1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=p1."ANNEE_SCOLAIRE"
-    WHERE p1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 AND p1."NIVEAU_TENU_PRIMAIRE"='1' ${where}`;
-    return (await client.queryObject(q)).rows[0] || {};
+    FROM fpe_p1 p1 INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=p1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=p1."ANNEE_SCOLAIRE" AND p1."SECTEUR"=a1."SECTEUR"
+    WHERE p1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND ${secteur === null ? '1=1' : `a1."SECTEUR"=${secteur}`} AND p1."NIVEAU_TENU_PRIMAIRE"='1' ${where}`;
+    try { return (await client.queryObject(q)).rows[0] || {}; }
+    catch (e) { console.error('DREN personnel unavailable', e); return {}; }
   }
-  async function getSections(where: string) {
-    try { const q = `SELECT SUM(${si('g1."T1_SECTION"')}+${si('g1."T2_SECTION"')}+${si('g1."T3_SECTION"')}+${si('g1."T4_SECTION"')}+${si('g1."T5_SECTION"')}) AS nbr_section, SUM(${si('j1."SDC_PRIMAIRE_BON_ETAT"')}+${si('j1."SDC_PRIMAIRE_MAUVAIS_ETAT"')}) AS nbr_sdc FROM fpe_a1 a1 LEFT JOIN fpe_g1 g1 ON g1."CODE_ETAB"=a1."CODE_ETAB" AND g1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" LEFT JOIN fpe_j1 j1 ON j1."CODE_ETAB"=a1."CODE_ETAB" AND j1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return { nbr_section: 0, nbr_sdc: 0 }; }
+  async function getSections(where: string, secteur: 0 | 1 | null = 0) {
+    try { const q = `SELECT SUM(${si('g1."T1_SECTION"')}+${si('g1."T2_SECTION"')}+${si('g1."T3_SECTION"')}+${si('g1."T4_SECTION"')}+${si('g1."T5_SECTION"')}) AS nbr_section, SUM(${si('j1."SDC_PRIMAIRE_BON_ETAT"')}+${si('j1."SDC_PRIMAIRE_MAUVAIS_ETAT"')}) AS nbr_sdc FROM fpe_a1 a1 LEFT JOIN fpe_g1 g1 ON g1."CODE_ETAB"=a1."CODE_ETAB" AND g1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND g1."SECTEUR"=a1."SECTEUR" LEFT JOIN fpe_j1 j1 ON j1."CODE_ETAB"=a1."CODE_ETAB" AND j1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND j1."SECTEUR"=a1."SECTEUR" WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND ${secteur === null ? '1=1' : `a1."SECTEUR"=${secteur}`} ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return { nbr_section: 0, nbr_sdc: 0 }; }
   }
-  async function getPlaces(where: string) {
-    try { const q = `SELECT SUM((${si('k1."PRIMAIRE_TABLES_BANCS_1PL_BON_ETAT"')}+${si('k1."PRIMAIRE_TABLES_BANCS_1PL_MAUVAIS_ETAT"')})+(${si('k1."PRIMAIRE_TABLES_BANCS_2PL_BON_ETAT"')}+${si('k1."PRIMAIRE_TABLES_BANCS_2PL_MAUVAIS_ETAT"')})*2+(${si('k1."PRIMAIRE_TABLES_BANCS_3PL_BON_ETAT"')}+${si('k1."PRIMAIRE_TABLES_BANCS_3PL_MAUVAIS_ETAT"')})*3+(${si('k1."PRIMAIRE_TABLES_BANCS_4PL_BON_ETAT"')}+${si('k1."PRIMAIRE_TABLES_BANCS_4PL_MAUVAIS_ETAT"')})*4+(${si('k1."PRIMAIRE_TABLES_BANCS_5PL_PLUS_BON_ETAT"')}+${si('k1."PRIMAIRE_TABLES_BANCS_5PL_PLUS_MAUVAIS_ETAT"')})*5) AS places_assises, SUM(${si('j2."WC_LATRINES_COMMUNES_BON_ETAT"')}+${si('j2."WC_LATRINES_COMMUNES_MAUVAIS_ETAT"')}+${si('j2."WC_LATRINES_FILLES_BON_ETAT"')}+${si('j2."WC_LATRINES_FILLES_MAUVAIS_ETAT"')}+${si('j2."WC_LATRINES_GARCONS_BON_ETAT"')}+${si('j2."WC_LATRINES_GARCONS_MAUVAIS_ETAT"')}) AS latrines, SUM(${si('j2."WC_LATRINES_FILLES_BON_ETAT"')}+${si('j2."WC_LATRINES_FILLES_MAUVAIS_ETAT"')}) AS latrines_fille FROM fpe_a1 a1 LEFT JOIN fpe_k1 k1 ON k1."CODE_ETAB"=a1."CODE_ETAB" AND k1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" LEFT JOIN fpe_j2 j2 ON j2."CODE_ETAB"=a1."CODE_ETAB" AND j2."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return { places_assises: 0, latrines: 0, latrines_fille: 0 }; }
+  async function getPlaces(where: string, secteur: 0 | 1 | null = 0) {
+    try { const q = `SELECT SUM((${si('k1."PRIMAIRE_TABLES_BANCS_1PL_BON_ETAT"')}+${si('k1."PRIMAIRE_TABLES_BANCS_1PL_MAUVAIS_ETAT"')})+(${si('k1."PRIMAIRE_TABLES_BANCS_2PL_BON_ETAT"')}+${si('k1."PRIMAIRE_TABLES_BANCS_2PL_MAUVAIS_ETAT"')})*2+(${si('k1."PRIMAIRE_TABLES_BANCS_3PL_BON_ETAT"')}+${si('k1."PRIMAIRE_TABLES_BANCS_3PL_MAUVAIS_ETAT"')})*3+(${si('k1."PRIMAIRE_TABLES_BANCS_4PL_BON_ETAT"')}+${si('k1."PRIMAIRE_TABLES_BANCS_4PL_MAUVAIS_ETAT"')})*4+(${si('k1."PRIMAIRE_TABLES_BANCS_5PL_PLUS_BON_ETAT"')}+${si('k1."PRIMAIRE_TABLES_BANCS_5PL_PLUS_MAUVAIS_ETAT"')})*5) AS places_assises, SUM(${si('j2."WC_LATRINES_COMMUNES_BON_ETAT"')}+${si('j2."WC_LATRINES_COMMUNES_MAUVAIS_ETAT"')}+${si('j2."WC_LATRINES_FILLES_BON_ETAT"')}+${si('j2."WC_LATRINES_FILLES_MAUVAIS_ETAT"')}+${si('j2."WC_LATRINES_GARCONS_BON_ETAT"')}+${si('j2."WC_LATRINES_GARCONS_MAUVAIS_ETAT"')}) AS latrines, SUM(${si('j2."WC_LATRINES_FILLES_BON_ETAT"')}+${si('j2."WC_LATRINES_FILLES_MAUVAIS_ETAT"')}) AS latrines_fille, COUNT(DISTINCT CASE WHEN ${si('j2."WC_LATRINES_FILLES_BON_ETAT"')}+${si('j2."WC_LATRINES_FILLES_MAUVAIS_ETAT"')} > 0 THEN a1."CODE_ETAB" END) AS etab_latrine_f, COUNT(DISTINCT CASE WHEN ${ACCES_ESH_COLS.map((col) => si(`j2."${col}"`)).join('+')} > 0 THEN a1."CODE_ETAB" END) AS etab_handicap FROM fpe_a1 a1 LEFT JOIN fpe_k1 k1 ON k1."CODE_ETAB"=a1."CODE_ETAB" AND k1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND k1."SECTEUR"=a1."SECTEUR" LEFT JOIN fpe_j2 j2 ON j2."CODE_ETAB"=a1."CODE_ETAB" AND j2."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND j2."SECTEUR"=a1."SECTEUR" WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND ${secteur === null ? '1=1' : `a1."SECTEUR"=${secteur}`} ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return { places_assises: 0, latrines: 0, latrines_fille: 0 }; }
   }
-  async function getCepe(where: string) {
-    try { const q = `SELECT SUM(COALESCE(c."Nbre",0)) AS total_candidats, SUM(COALESCE(c."nbrG",0)) AS nbr_g, SUM(COALESCE(c."nbrF",0)) AS nbr_f, SUM(COALESCE(c."admisG",0)) AS admis_g, SUM(COALESCE(c."admisF",0)) AS admis_f, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."mlg"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."ml_fahazoana_lahatsoratra"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg_fahazoana, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."ml_fitsipika"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg_fitsipika, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."ml_fanazarana_hanoratra"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg_fanazarana, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."frs"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."fr_comprehension"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs_comprehension, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."fr_grammaire"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs_grammaire, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."fr_expression_ecrite"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs_expression, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."operation"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mths_operation, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."probleme"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mths_probleme, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM((COALESCE(c."operation",0)+COALESCE(c."probleme",0))/2.0*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mths, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."moyenne"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_total, SUM(COALESCE(c."malagasy_sup_10",0)) AS mlg_sup10, SUM(COALESCE(c."malagasy_compo_sup_10",0)) AS mlg_compo_sup10, SUM(COALESCE(c."malagasy_gram_sup_10",0)) AS mlg_gram_sup10, SUM(COALESCE(c."malagasy_exp_10",0)) AS mlg_exp_sup10, SUM(COALESCE(c."francais_sup_10",0)) AS frs_sup10, SUM(COALESCE(c."francais_compo_sup_10",0)) AS frs_compo_sup10, SUM(COALESCE(c."francais_gram_sup_10",0)) AS frs_gram_sup10, SUM(COALESCE(c."francais_exp_10",0)) AS frs_exp_sup10, SUM(COALESCE(c."math_sup_10",0)) AS mths_sup10, SUM(COALESCE(c."op_sup_10",0)) AS op_sup10, SUM(COALESCE(c."probleme_sup_10",0)) AS prob_sup10, SUM(COALESCE(c."autres_sup_10",0)) AS autres_sup10 FROM examen_cepe c INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=c."code_etab" AND a1."ANNEE_SCOLAIRE"=c."id_annee_scolaire" WHERE c."id_annee_scolaire"=${annee} AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
+  async function getCepe(where: string, secteur: 0 | 1 | null = 0) {
+    try { const q = `SELECT SUM(COALESCE(c."Nbre",0)) AS total_candidats, SUM(COALESCE(c."nbrG",0)) AS nbr_g, SUM(COALESCE(c."nbrF",0)) AS nbr_f, SUM(COALESCE(c."admisG",0)) AS admis_g, SUM(COALESCE(c."admisF",0)) AS admis_f, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."mlg"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."ml_fahazoana_lahatsoratra"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg_fahazoana, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."ml_fitsipika"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg_fitsipika, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."ml_fanazarana_hanoratra"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg_fanazarana, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."frs"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."fr_comprehension"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs_comprehension, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."fr_grammaire"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs_grammaire, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."fr_expression_ecrite"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs_expression, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."operation"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mths_operation, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."probleme"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mths_probleme, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM((COALESCE(c."operation",0)+COALESCE(c."probleme",0))/2.0*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mths, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."moyenne"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_total, SUM(COALESCE(c."malagasy_sup_10",0)) AS mlg_sup10, SUM(COALESCE(c."malagasy_compo_sup_10",0)) AS mlg_compo_sup10, SUM(COALESCE(c."malagasy_gram_sup_10",0)) AS mlg_gram_sup10, SUM(COALESCE(c."malagasy_exp_10",0)) AS mlg_exp_sup10, SUM(COALESCE(c."francais_sup_10",0)) AS frs_sup10, SUM(COALESCE(c."francais_compo_sup_10",0)) AS frs_compo_sup10, SUM(COALESCE(c."francais_gram_sup_10",0)) AS frs_gram_sup10, SUM(COALESCE(c."francais_exp_10",0)) AS frs_exp_sup10, SUM(COALESCE(c."math_sup_10",0)) AS mths_sup10, SUM(COALESCE(c."op_sup_10",0)) AS op_sup10, SUM(COALESCE(c."probleme_sup_10",0)) AS prob_sup10, SUM(COALESCE(c."autres_sup_10",0)) AS autres_sup10 FROM examen_cepe c INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=c."code_etab" AND a1."ANNEE_SCOLAIRE"=c."id_annee_scolaire" WHERE c."id_annee_scolaire"=${annee} AND ${secteur === null ? '1=1' : `a1."SECTEUR"=${secteur}`} ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
   }
-  async function getCaisseEcole(where: string) {
-    try { const q = `SELECT SUM(COALESCE(ce."FCE",0)) AS total_fce FROM ${CE_SRC} ce INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=ce."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=${annee} WHERE ce."ANNEE_SCOLAIRE"=(SELECT MAX("ANNEE_SCOLAIRE") FROM ${CE_SRC} cx WHERE "ANNEE_SCOLAIRE"<=${annee}) AND a1."EXISTE_PRIMAIRE"=1 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
+  async function getCaisseEcole(where: string, secteur: 0 | 1 | null = 0) {
+    try { const q = `SELECT SUM(COALESCE(ce."FCE",0)) AS total_fce FROM ${CE_SRC} ce INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=ce."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=${annee} WHERE ce."ANNEE_SCOLAIRE"=(SELECT MAX("ANNEE_SCOLAIRE") FROM ${CE_SRC} cx WHERE "ANNEE_SCOLAIRE"<=${annee}) AND a1."EXISTE_PRIMAIRE"=1 AND ${secteur === null ? '1=1' : `a1."SECTEUR"=${secteur}`} ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
   }
-  async function getManuels(where: string) {
-    try { const q = `SELECT SUM(${si('l1."MALAGASY_T1"')}+${si('l1."MALAGASY_T2"')}+${si('l1."MALAGASY_T3"')}+${si('l1."MALAGASY_T4"')}+${si('l1."MALAGASY_T5"')}) AS malagasy, SUM(${si('l1."MATHS_T1"')}+${si('l1."MATHS_T2"')}+${si('l1."MATHS_T3"')}+${si('l1."MATHS_T4"')}+${si('l1."MATHS_T5"')}) AS maths, SUM(${si('l1."FRANCAIS_T1"')}+${si('l1."FRANCAIS_T2"')}+${si('l1."FRANCAIS_T3"')}+${si('l1."FRANCAIS_T4"')}+${si('l1."FRANCAIS_T5"')}) AS francais FROM fpe_l1 l1 INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=l1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=l1."ANNEE_SCOLAIRE" WHERE l1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
+  async function getManuels(where: string, secteur: 0 | 1 | null = 0) {
+    try { const q = `SELECT SUM(${si('l1."MALAGASY_T1"')}+${si('l1."MALAGASY_T2"')}+${si('l1."MALAGASY_T3"')}+${si('l1."MALAGASY_T4"')}+${si('l1."MALAGASY_T5"')}) AS malagasy, SUM(${si('l1."MATHS_T1"')}+${si('l1."MATHS_T2"')}+${si('l1."MATHS_T3"')}+${si('l1."MATHS_T4"')}+${si('l1."MATHS_T5"')}) AS maths, SUM(${si('l1."FRANCAIS_T1"')}+${si('l1."FRANCAIS_T2"')}+${si('l1."FRANCAIS_T3"')}+${si('l1."FRANCAIS_T4"')}+${si('l1."FRANCAIS_T5"')}) AS francais, SUM(${si('l1."MALAGASY_T1"')}+${si('l1."MATHS_T1"')}+${si('l1."FRANCAIS_T1"')}+${si('l1."MALAGASY_T2"')}+${si('l1."MATHS_T2"')}+${si('l1."FRANCAIS_T2"')}) AS manuel_t1_t2, SUM(${si('l1."MALAGASY_T3"')}+${si('l1."MATHS_T3"')}+${si('l1."FRANCAIS_T3"')}) AS manuel_t3, SUM(${si('l1."MALAGASY_T4"')}+${si('l1."MATHS_T4"')}+${si('l1."FRANCAIS_T4"')}+${si('l1."MALAGASY_T5"')}+${si('l1."MATHS_T5"')}+${si('l1."FRANCAIS_T5"')}) AS manuel_t4_t5 FROM fpe_l1 l1 INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=l1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=l1."ANNEE_SCOLAIRE" AND l1."SECTEUR"=a1."SECTEUR" WHERE l1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND ${secteur === null ? '1=1' : `a1."SECTEUR"=${secteur}`} ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
   }
   async function getEfficience() {
-    try { const q = `SELECT c."CISCO", c."CODE_CISCO", SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T1_G"')}+${si('e1."T1_F"')}+${si('e1."T2_G"')}+${si('e1."T2_F"')}+${si('e1."T3_G"')}+${si('e1."T3_F"')}+${si('e1."T4_G"')}+${si('e1."T4_F"')}+${si('e1."T5_G"')}+${si('e1."T5_F"')} ELSE 0 END) AS nbr_eleve, SUM(CASE WHEN p1."CODE_STATUT" IN ('1','2','3','4') AND ${si('p1."EN_SALLE"')}=1 THEN 1 ELSE 0 END) AS pers_en_classe, SUM(COALESCE(ce."admisG",0)+COALESCE(ce."admisF",0)) AS admis, SUM(COALESCE(ce."Nbre",0)) AS inscrits_cepe FROM v_cisco c LEFT JOIN fpe_a1 a1 ON a1."CODE_CISCO"=c."CODE_CISCO" AND a1."ANNEE_SCOLAIRE"=${annee} AND a1."SECTEUR"=0 AND a1."EXISTE_PRIMAIRE"=1 LEFT JOIN fpe_e1 e1 ON e1."CODE_ETAB"=a1."CODE_ETAB" AND e1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND e1."SECTEUR"=a1."SECTEUR" LEFT JOIN fpe_p1 p1 ON p1."CODE_ETAB"=a1."CODE_ETAB" AND p1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND p1."NIVEAU_TENU_PRIMAIRE"='1' LEFT JOIN examen_cepe ce ON ce."code_etab"=a1."CODE_ETAB" AND ce."id_annee_scolaire"=a1."ANNEE_SCOLAIRE" WHERE c."CODE_DREN"=${codeDren} GROUP BY c."CISCO",c."CODE_CISCO" ORDER BY c."CISCO"`; return (await client.queryObject(q)).rows || []; } catch(e) { return []; }
+    // examen_cepe n'existe plus sur le serveur ; les admis/inscrits CEPE sont
+    // agrégés depuis examen_cepe_candidates (une ligne par candidat).
+    // Trois sous-requêtes séparées pour éviter le produit cartésien élèves × enseignants × candidats.
+    try {
+      const qEleve = `SELECT a1."CODE_CISCO" AS code, SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T1_G"')}+${si('e1."T1_F"')}+${si('e1."T2_G"')}+${si('e1."T2_F"')}+${si('e1."T3_G"')}+${si('e1."T3_F"')}+${si('e1."T4_G"')}+${si('e1."T4_F"')}+${si('e1."T5_G"')}+${si('e1."T5_F"')} ELSE 0 END) AS nbr_eleve FROM fpe_a1 a1 LEFT JOIN fpe_e1 e1 ON e1."CODE_ETAB"=a1."CODE_ETAB" AND e1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND e1."SECTEUR"=a1."SECTEUR" WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."SECTEUR"=0 AND a1."EXISTE_PRIMAIRE"=1 AND a1."CODE_DREN"=${codeDren} GROUP BY a1."CODE_CISCO"`;
+      const qPers = `SELECT a1."CODE_CISCO" AS code, COUNT(*) AS pers_en_classe FROM fpe_a1 a1 JOIN fpe_p1 p1 ON p1."CODE_ETAB"=a1."CODE_ETAB" AND p1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."SECTEUR"=0 AND a1."EXISTE_PRIMAIRE"=1 AND a1."CODE_DREN"=${codeDren} AND p1."NIVEAU_TENU_PRIMAIRE"='1' AND p1."CODE_STATUT" IN ('1','2','3','4') AND ${si('p1."EN_SALLE"')}=1 GROUP BY a1."CODE_CISCO"`;
+      const qCepe = `SELECT a1."CODE_CISCO" AS code, COUNT(*) AS inscrits_cepe, COUNT(*) FILTER (WHERE upper(ce."CEPE")='A') AS admis FROM fpe_a1 a1 JOIN examen_cepe_candidates ce ON ce."CODE_ETAB"=a1."CODE_ETAB" AND ce."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."SECTEUR"=0 AND a1."EXISTE_PRIMAIRE"=1 AND a1."CODE_DREN"=${codeDren} GROUP BY a1."CODE_CISCO"`;
+      const qNoms = `SELECT "CISCO", "CODE_CISCO" FROM v_cisco WHERE "CODE_DREN"=${codeDren} ORDER BY "CISCO"`;
+      const safe = async (q: string) => { try { return (await client.queryObject(q)).rows as any[]; } catch (e) { console.error('getEfficience part', e); return [] as any[]; } };
+      const [rEleve, rPers, rCepe, rNoms] = await Promise.all([safe(qEleve), safe(qPers), safe(qCepe), safe(qNoms)]);
+      const idx = (rows: any[]) => Object.fromEntries(rows.map((r: any) => [String(r.code), r]));
+      const el = idx(rEleve), pe = idx(rPers), cp = idx(rCepe);
+      return rNoms.map((c: any) => ({
+        CISCO: c.CISCO,
+        CODE_CISCO: c.CODE_CISCO,
+        nbr_eleve: Number(el[String(c.CODE_CISCO)]?.nbr_eleve || 0),
+        pers_en_classe: Number(pe[String(c.CODE_CISCO)]?.pers_en_classe || 0),
+        admis: Number(cp[String(c.CODE_CISCO)]?.admis || 0),
+        inscrits_cepe: Number(cp[String(c.CODE_CISCO)]?.inscrits_cepe || 0),
+      }));
+    } catch(e) { console.error('getEfficience error:', e); return []; }
+  }
+
+  // Effectifs par âge : TNS (élèves de 6-10 ans) et TNA (nouveaux de 6 ans en T1).
+  async function getAges(where: string) {
+    try {
+      const ages610 = [1, 2, 3, 4, 5].flatMap((k) => ['G', 'F'].flatMap((g) => [6, 7, 8, 9, 10].map((a) => si(`e1."T${k}_${g}_${a}ANS"`)))).join('+');
+      const q = `SELECT SUM(${ages610}) AS eleves_6_10ans,
+        GREATEST(SUM(${si('e1."T1_G_6ANS"')}+${si('e1."T1_F_6ANS"')}) - SUM(${si('e1."T1_G_RED_6ANS"')}+${si('e1."T1_F_RED_6ANS"')}), 0) AS nouveaux_cp1_6ans
+        FROM fpe_a1 a1 JOIN fpe_e1 e1 ON e1."CODE_ETAB"=a1."CODE_ETAB" AND e1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND e1."SECTEUR"=a1."SECTEUR"
+        WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND e1."EXISTE_PRIMAIRE"=1 ${where}`;
+      return (await client.queryObject(q)).rows[0] || {};
+    } catch (e) { console.error('DREN age breakdown unavailable', e); return {}; }
   }
 
   // Efficience de TOUTES les DRENs (23 points) — requêtes légères agrégées en JS
@@ -2838,14 +3014,46 @@ async function executeTdbDrenData(client: Client, codeDren: number, annee: numbe
     }).filter((d: any) => d.nbr_eleve > 0);
   }
 
-  const [resDren, resMada, persDren, persMada, secDren, secMada, plDren, plMada, cepeDren, cepeMada, ceDren, ceMada, manDren, manMada, efficience, efficienceDrens] = await Promise.all([
-    getRessources(whereDren), getRessources(whereMada),
-    getPersonnel(whereDren), getPersonnel(whereMada),
-    getSections(whereDren), getSections(whereMada),
-    getPlaces(whereDren), getPlaces(whereMada),
-    getCepe(whereDren), getCepe(whereMada),
-    getCaisseEcole(whereDren), getCaisseEcole(whereMada),
-    getManuels(whereDren), getManuels(whereMada),
+  // Agrège un périmètre (public ou privé) en une seule passe.
+  async function collectSecteur(where: string, secteur: 0 | 1) {
+    const [ressources, personnel, sections, places, cepe, caisse, manuels] = await Promise.all([
+      getRessources(where, annee, secteur),
+      getPersonnel(where, secteur),
+      getSections(where, secteur),
+      getPlaces(where, secteur),
+      getCepe(where, secteur),
+      getCaisseEcole(where, secteur),
+      getManuels(where, secteur),
+    ]);
+    return { ressources, personnel, sections, places, cepe, caisse, manuels };
+  }
+
+  // Couverture fokontany : le dénominateur vient des limites administratives,
+  // le numérateur des codes fokontany réellement portés par les EPP.
+  async function getFokontany(where: string, code?: number) {
+    try {
+      // P_CODE est alphanumérique (ex. « MDG22203090008 ») : on compare les chiffres en texte.
+      const drenNum = `NULLIF(regexp_replace(dren::text, '\\D', '', 'g'), '')::bigint`;
+      const scope = code ? `WHERE ${drenNum}=${code}` : `WHERE ${drenNum}>0`;
+      const exists = `EXISTS (SELECT 1 FROM shape_fokontany f WHERE ltrim(regexp_replace(f."P_CODE"::text, '\\D', '', 'g'), '0')=ltrim(regexp_replace(a1."CODE_FOKONTANY"::text, '\\D', '', 'g'), '0') ${code ? `AND NULLIF(regexp_replace(f.dren::text, '\\D', '', 'g'), '')::bigint=${code}` : ''})`;
+      const [total, withSchool] = await Promise.all([
+        client.queryObject(`SELECT COUNT(DISTINCT "P_CODE") AS fokontany FROM shape_fokontany ${scope}`),
+        client.queryObject(`SELECT COUNT(DISTINCT a1."CODE_FOKONTANY") AS fokontany_ecole FROM fpe_a1 a1 WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."SECTEUR"=0 AND a1."EXISTE_PRIMAIRE"=1 ${where} AND ${exists}`),
+      ]);
+      const fokontany = Number((total.rows[0] as any)?.fokontany || 0);
+      const fokontanyEcole = Number((withSchool.rows[0] as any)?.fokontany_ecole || 0);
+      return {
+        fokontany: fokontany > 0 ? fokontany : null,
+        // Un 0 peut trahir un code fokontany non appariable : mieux vaut « — »
+        // qu'un taux de couverture faussement nul.
+        fokontany_ecole: fokontanyEcole > 0 ? fokontanyEcole : null,
+      };
+    } catch (e) { console.error('DREN fokontany coverage unavailable', e); return {}; }
+  }
+
+  const [drenPub, drenPriv, madaPub, efficience, efficienceDrens] = await Promise.all([
+    collectSecteur(whereDren, 0), collectSecteur(whereDren, 1),
+    collectSecteur(whereMada, 0),
     getEfficience(), getEfficienceDrens(),
   ]);
 
@@ -2863,8 +3071,8 @@ async function executeTdbDrenData(client: Client, codeDren: number, annee: numbe
       return (await client.queryObject(q)).rows[0] || {};
     } catch (e) { console.error('DREN population unavailable', e); return {}; }
   }
-  async function getNextYear(where: string) {
-    try { return { ressources: await getRessources(where, annee + 1) }; }
+  async function getNextYear(where: string, secteur: 0 | 1) {
+    try { return { ressources: await getRessources(where, annee + 1, secteur) }; }
     catch (e) { console.error('DREN next-year flows unavailable', e); return {}; }
   }
   async function getAllSectorPupils(where: string) {
@@ -2874,12 +3082,81 @@ async function executeTdbDrenData(client: Client, codeDren: number, annee: numbe
       // par âge sont donc lus sans filtre de secteur.
       return (await client.queryObject(`SELECT SUM(${pupils}) AS nombre_eleves_tous_secteurs,
         NULLIF(SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${elevesAges('e1')} ELSE 0 END), 0) AS eleves_6_10ans,
-        NULLIF(SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T1_G_6ANS"')}+${si('e1."T1_F_6ANS"')}-${si('e1."T1_G_RED_6ANS"')}-${si('e1."T1_F_RED_6ANS"')} ELSE 0 END), 0) AS nouveaux_cp1_6ans
+        NULLIF(SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T1_G_6ANS"')}+${si('e1."T1_F_6ANS"')}-${si('e1."T1_G_RED_6ANS"')}-${si('e1."T1_F_RED_6ANS"')} ELSE 0 END), 0) AS nouveaux_cp1_6ans,
+        NULLIF(SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T1_G"')}+${si('e1."T1_F"')}-${si('e1."T1_G_REDOUBLANT"')}-${si('e1."T1_F_REDOUBLANT"')} ELSE 0 END), 0) AS entrants_t1_tous_secteurs,
+        NULLIF(SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T5_G"')}+${si('e1."T5_F"')} ELSE 0 END), 0) AS eff_t5_tous_secteurs,
+        NULLIF(SUM(CASE WHEN e1."EXISTE_PRIMAIRE"=1 THEN ${si('e1."T5_G_REDOUBLANT"')}+${si('e1."T5_F_REDOUBLANT"')} ELSE 0 END), 0) AS red_t5_tous_secteurs
         FROM fpe_a1 a1 JOIN fpe_e1 e1 ON e1."CODE_ETAB"=a1."CODE_ETAB" AND e1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND e1."SECTEUR"=a1."SECTEUR" WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND e1."EXISTE_PRIMAIRE"=1 ${where}`)).rows[0] || {};
     } catch (e) { console.error('DREN all-sector enrolment unavailable', e); return {}; }
   }
-  const [popDren, popMada, nextDren, nextMada, allDren, allMada] = await Promise.all([
-    getPopulation(codeDren), getPopulation(), getNextYear(whereDren), getNextYear(whereMada), getAllSectorPupils(whereDren), getAllSectorPupils(whereMada)
+  const [popDren, popMada, nextDren, nextMada, nextDrenPriv, allDren, allMada, agesDren, agesMada, fokDren, fokMada] = await Promise.all([
+    getPopulation(codeDren), getPopulation(), getNextYear(whereDren, 0), getNextYear(whereMada, 0),
+    getNextYear(whereDren, 1),
+    getAllSectorPupils(whereDren), getAllSectorPupils(whereMada),
+    getAges(whereDren), getAges(whereMada),
+    getFokontany(whereDren, codeDren), getFokontany(whereMada),
+  ]);
+
+  // ---- Indicateurs DREN primaire (fiche de commentaires TDB_DREN) ----
+  // Calculés en sous-requêtes par établissement pour éviter les produits
+  // cartésiens ; les R² utilisent regr_r2(Y, X) = COEFFICIENT.DETERMINATION.
+  async function getPrimaireExtra(where: string, secteur: 0 | null) {
+    const sect = secteur === null ? '1=1' : `a1."SECTEUR"=${secteur}`;
+    const T = (cols: string[]) => cols.map((c) => si(`l1."${c}"`)).join('+');
+    const eff = (grades: number[]) => grades.flatMap((k) => [si(`e1."T${k}_G"`), si(`e1."T${k}_F"`)]).join('+');
+    const MAN: Record<string, string> = {
+      mlg_12: T(['SERIES_VOLA_T1', 'MALAGASY_T1', 'SERIES_VOLA_T2', 'MALAGASY_T2']),
+      mlg_3: T(['SERIES_VOLA_T3', 'MALAGASY_T3']),
+      mlg_45: T(['SERIES_VOLA_T4', 'MALAGASY_T4', 'SERIES_VOLA_T5', 'MALAGASY_T5']),
+      cal_12: T(['MATHS_T1', 'MATHS_T2']),
+      cal_3: T(['MATHS_T3']),
+      cal_45: T(['MATHS_T4', 'MATHS_T5']),
+      fr_12: T(['FRANCAIS_T1', 'FRANCAIS_T2']),
+      fr_3: T(['FRANCAIS_T3']),
+      fr_45: T(['FRANCAIS_T4', 'FRANCAIS_T5']),
+      autres: T([1, 2, 3, 4, 5].flatMap((k) => [`RAKIBOLANA_T${k}`, `HISTOIRE_T${k}`, `GEOGRAPHIE_T${k}`, `SVT_T${k}`])),
+    };
+    const EFF: Record<string, string> = { '12': eff([1, 2]), '3': eff([3]), '45': eff([4, 5]), tot: eff([1, 2, 3, 4, 5]) };
+    const effKey = (k: string) => (k === 'autres' ? 'tot' : k.split('_')[1]);
+    const dipA = `upper(btrim(COALESCE(p1."DIPLOME_ACADEMIQUE",'')))`;
+    const dipP = `upper(btrim(COALESCE(p1."DIPLOME_PEDAGOGIQUE",'')))`;
+    const qualif = `${si('p1."EN_SALLE"')}=1 AND ${dipA} ~ '(BEPC|BAC|LICENCE|MAITRISE|MASTER|DOCTORAT|DEA|DESS|INGENIEUR)'
+      AND ${dipP}<>'' AND ${dipP} NOT IN ('AUTRES','AUTRE','MAITRE EPS(ENS)','MONITEUR EPS(ANS)')
+      AND ${dipP} NOT LIKE '%PR_SCOLAIRE%' AND ${dipP} NOT LIKE '%PRESCOLAIRE%'`;
+    const safe = async (q: string) => { try { return (await client.queryObject(q)).rows[0] || {}; } catch (e) { console.error('DREN primaire extra', (e as Error).message); return {}; } };
+    const qPers = `SELECT
+        SUM(CASE WHEN p1."NIVEAU_TENU_PRIMAIRE"='1' AND ${si('p1."EN_SALLE"')}=1 THEN 1 ELSE 0 END) AS ens_classe,
+        SUM(CASE WHEN p1."NIVEAU_TENU_PRIMAIRE"='1' AND ${si('p1."EN_SALLE"')}=0 THEN 1 ELSE 0 END) AS ens_non_classe,
+        SUM(CASE WHEN p1."NIVEAU_TENU_PRIMAIRE"='1' AND ${qualif} THEN 1 ELSE 0 END) AS ens_qualifies,
+        SUM(CASE WHEN ${si('p1."EN_SALLE"')}=0 THEN 1 ELSE 0 END) AS pers_admin
+      FROM fpe_p1 p1 JOIN fpe_a1 a1 ON a1."CODE_ETAB"=p1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=p1."ANNEE_SCOLAIRE" AND a1."SECTEUR"=p1."SECTEUR"
+      WHERE p1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND ${sect} ${where}`;
+    const qFerme = `SELECT COUNT(DISTINCT a1."CODE_ETAB") AS etab_ferme FROM fpe_a1 a1
+      WHERE a1."ANNEE_SCOLAIRE"=${annee - 1} AND a1."EXISTE_PRIMAIRE"=1 AND ${sect} ${where}
+      AND NOT EXISTS (SELECT 1 FROM fpe_a1 b WHERE b."CODE_ETAB"=a1."CODE_ETAB" AND b."ANNEE_SCOLAIRE"=${annee} AND b."EXISTE_PRIMAIRE"=1)
+      AND EXISTS (SELECT 1 FROM fpe_a1 c WHERE c."ANNEE_SCOLAIRE"=${annee} LIMIT 1)`;
+    const qEtab = `WITH el AS (
+        SELECT a1."CODE_ETAB" AS etab, ${Object.entries(EFF).map(([k, v]) => `SUM(${v}) AS e_${k}`).join(', ')}
+        FROM fpe_a1 a1 JOIN fpe_e1 e1 ON e1."CODE_ETAB"=a1."CODE_ETAB" AND e1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND e1."SECTEUR"=a1."SECTEUR"
+        WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND ${sect} ${where} GROUP BY a1."CODE_ETAB"),
+      ens AS (
+        SELECT p1."CODE_ETAB" AS etab, COUNT(*) AS n FROM fpe_p1 p1 JOIN fpe_a1 a1 ON a1."CODE_ETAB"=p1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=p1."ANNEE_SCOLAIRE" AND a1."SECTEUR"=p1."SECTEUR"
+        WHERE p1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND ${sect} ${where}
+          AND p1."NIVEAU_TENU_PRIMAIRE"='1' AND ${si('p1."EN_SALLE"')}=1 AND p1."CODE_STATUT" IN ('1','2') GROUP BY p1."CODE_ETAB"),
+      man AS (
+        SELECT l1."CODE_ETAB" AS etab, ${Object.entries(MAN).map(([k, v]) => `SUM(${v}) AS m_${k}`).join(', ')}
+        FROM fpe_l1 l1 JOIN fpe_a1 a1 ON a1."CODE_ETAB"=l1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=l1."ANNEE_SCOLAIRE" AND a1."SECTEUR"=l1."SECTEUR"
+        WHERE l1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND ${sect} ${where} GROUP BY l1."CODE_ETAB")
+      SELECT SUM(el.e_tot) AS eleves, ${Object.keys(EFF).filter((k) => k !== 'tot').map((k) => `SUM(el.e_${k}) AS eleves_${k}`).join(', ')},
+        regr_r2(COALESCE(ens.n,0)::float8, el.e_tot::float8) AS r2_enseignants,
+        ${Object.keys(MAN).map((k) => `SUM(man.m_${k}) AS manuel_${k}, regr_r2(man.m_${k}::float8, el.e_${effKey(k)}::float8) AS r2_manuel_${k}`).join(',\n        ')}
+      FROM el LEFT JOIN ens ON ens.etab=el.etab LEFT JOIN man ON man.etab=el.etab`;
+    const [pers, ferme, etab] = await Promise.all([safe(qPers), safe(qFerme), safe(qEtab)]);
+    return { ...pers, ...ferme, ...etab };
+  }
+  const [extraDrenPub, extraDrenEns, extraMadaPub, extraMadaEns] = await Promise.all([
+    getPrimaireExtra(whereDren, 0), getPrimaireExtra(whereDren, null),
+    getPrimaireExtra(whereMada, 0), getPrimaireExtra(whereMada, null),
   ]);
 
   const [namesResult, adminCountsResult] = await Promise.all([
@@ -2893,12 +3170,15 @@ async function executeTdbDrenData(client: Client, codeDren: number, annee: numbe
   const names = namesResult.rows[0] || { DREN: '' };
   const adminCounts = adminCountsResult.rows[0] || {};
 
+  const spread = (s: any) => ({ ressources: s.ressources, personnel: s.personnel, sections: s.sections, places: s.places, cepe: s.cepe, caisse: s.caisse, manuels: s.manuels });
   return {
     version: VERSION, names, annee,
-    dren: { population: popDren, annee_suivante: nextDren, ...allDren, ressources: { ...resDren, ...adminCounts }, personnel: persDren, sections: secDren, places: plDren, cepe: cepeDren, caisse: ceDren, manuels: manDren },
-    mada: { population: popMada, annee_suivante: nextMada, ...allMada, ressources: resMada, personnel: persMada, sections: secMada, places: plMada, cepe: cepeMada, caisse: ceMada, manuels: manMada },
+    dren: { population: popDren, annee_suivante: nextDren, ...allDren, ...agesDren, ...spread(drenPub), ressources: { ...drenPub.ressources, ...adminCounts, ...fokDren } },
+    dren_prive: { annee_suivante: nextDrenPriv, ...spread(drenPriv) },
+    mada: { population: popMada, annee_suivante: nextMada, ...allMada, ...agesMada, ...spread(madaPub), ressources: { ...madaPub.ressources, ...fokMada } },
     efficience,
     efficienceDrens,
+    primaire_extra: { dren: { public: extraDrenPub, ensemble: extraDrenEns }, mada: { public: extraMadaPub, ensemble: extraMadaEns } },
   };
 }
 
@@ -2980,8 +3260,8 @@ async function executeTdbCiscoData(client: Client, codeCisco: number, codeDren: 
           SUM(${si('g1."T1_SECTION"')}+${si('g1."T2_SECTION"')}+${si('g1."T3_SECTION"')}+${si('g1."T4_SECTION"')}+${si('g1."T5_SECTION"')}) AS nbr_section,
           SUM(${si('j1."SDC_PRIMAIRE_BON_ETAT"')}+${si('j1."SDC_PRIMAIRE_MAUVAIS_ETAT"')}) AS nbr_sdc
         FROM fpe_a1 a1
-        LEFT JOIN fpe_g1 g1 ON g1."CODE_ETAB"=a1."CODE_ETAB" AND g1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE"
-        LEFT JOIN fpe_j1 j1 ON j1."CODE_ETAB"=a1."CODE_ETAB" AND j1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE"
+        LEFT JOIN fpe_g1 g1 ON g1."CODE_ETAB"=a1."CODE_ETAB" AND g1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND g1."SECTEUR"=a1."SECTEUR"
+        LEFT JOIN fpe_j1 j1 ON j1."CODE_ETAB"=a1."CODE_ETAB" AND j1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND j1."SECTEUR"=a1."SECTEUR"
         WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 ${where}
       `;
       return (await client.queryObject(q)).rows[0] || {};
@@ -3004,15 +3284,15 @@ async function executeTdbCiscoData(client: Client, codeCisco: number, codeDren: 
               ${si('j2."WC_LATRINES_GARCONS_BON_ETAT"')}+${si('j2."WC_LATRINES_GARCONS_MAUVAIS_ETAT"')}) AS latrines,
           SUM(${si('j2."WC_LATRINES_FILLES_BON_ETAT"')}+${si('j2."WC_LATRINES_FILLES_MAUVAIS_ETAT"')}) AS latrines_fille
         FROM fpe_a1 a1
-        LEFT JOIN fpe_k1 k1 ON k1."CODE_ETAB"=a1."CODE_ETAB" AND k1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE"
-        LEFT JOIN fpe_j2 j2 ON j2."CODE_ETAB"=a1."CODE_ETAB" AND j2."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE"
+        LEFT JOIN fpe_k1 k1 ON k1."CODE_ETAB"=a1."CODE_ETAB" AND k1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND k1."SECTEUR"=a1."SECTEUR"
+        LEFT JOIN fpe_j2 j2 ON j2."CODE_ETAB"=a1."CODE_ETAB" AND j2."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND j2."SECTEUR"=a1."SECTEUR"
         WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 ${where}
       `;
       return (await client.queryObject(q)).rows[0] || {};
     } catch(e) { console.error('getPlaces error:', e); return { places_assises: 0, latrines: 0, latrines_fille: 0 }; }
   }
 
-  async function getCepe(where: string) {
+  async function getCepe(where: string, secteur: 0 | 1 | null = 0) {
     try {
       // Use examen_cepe table exclusively - it has per-school aggregated data
       // Weighted averages: SUM(score * Nbre) / SUM(Nbre)
@@ -3078,7 +3358,7 @@ async function executeTdbCiscoData(client: Client, codeCisco: number, codeDren: 
           SUM(${si('l1."MATHS_T1"')}+${si('l1."MATHS_T2"')}+${si('l1."MATHS_T3"')}+${si('l1."MATHS_T4"')}+${si('l1."MATHS_T5"')}) AS maths,
           SUM(${si('l1."FRANCAIS_T1"')}+${si('l1."FRANCAIS_T2"')}+${si('l1."FRANCAIS_T3"')}+${si('l1."FRANCAIS_T4"')}+${si('l1."FRANCAIS_T5"')}) AS francais
         FROM fpe_l1 l1
-        INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=l1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=l1."ANNEE_SCOLAIRE"
+        INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=l1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=l1."ANNEE_SCOLAIRE" AND l1."SECTEUR"=a1."SECTEUR"
         WHERE l1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 ${where}
       `;
       return (await client.queryObject(q)).rows[0] || {};
@@ -3259,8 +3539,8 @@ async function executeTdbZapData(client: Client, codeZap: number, codeCisco: num
           SUM(${si('g1."T1_SECTION"')}+${si('g1."T2_SECTION"')}+${si('g1."T3_SECTION"')}+${si('g1."T4_SECTION"')}+${si('g1."T5_SECTION"')}) AS nbr_section,
           SUM(${si('j1."SDC_PRIMAIRE_BON_ETAT"')}+${si('j1."SDC_PRIMAIRE_MAUVAIS_ETAT"')}) AS nbr_sdc
         FROM fpe_a1 a1
-        LEFT JOIN fpe_g1 g1 ON g1."CODE_ETAB"=a1."CODE_ETAB" AND g1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE"
-        LEFT JOIN fpe_j1 j1 ON j1."CODE_ETAB"=a1."CODE_ETAB" AND j1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE"
+        LEFT JOIN fpe_g1 g1 ON g1."CODE_ETAB"=a1."CODE_ETAB" AND g1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND g1."SECTEUR"=a1."SECTEUR"
+        LEFT JOIN fpe_j1 j1 ON j1."CODE_ETAB"=a1."CODE_ETAB" AND j1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND j1."SECTEUR"=a1."SECTEUR"
         WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 ${where}
       `;
       return (await client.queryObject(q)).rows[0] || {};
@@ -3283,15 +3563,15 @@ async function executeTdbZapData(client: Client, codeZap: number, codeCisco: num
               ${si('j2."WC_LATRINES_GARCONS_BON_ETAT"')}+${si('j2."WC_LATRINES_GARCONS_MAUVAIS_ETAT"')}) AS latrines,
           SUM(${si('j2."WC_LATRINES_FILLES_BON_ETAT"')}+${si('j2."WC_LATRINES_FILLES_MAUVAIS_ETAT"')}) AS latrines_fille
         FROM fpe_a1 a1
-        LEFT JOIN fpe_k1 k1 ON k1."CODE_ETAB"=a1."CODE_ETAB" AND k1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE"
-        LEFT JOIN fpe_j2 j2 ON j2."CODE_ETAB"=a1."CODE_ETAB" AND j2."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE"
+        LEFT JOIN fpe_k1 k1 ON k1."CODE_ETAB"=a1."CODE_ETAB" AND k1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND k1."SECTEUR"=a1."SECTEUR"
+        LEFT JOIN fpe_j2 j2 ON j2."CODE_ETAB"=a1."CODE_ETAB" AND j2."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND j2."SECTEUR"=a1."SECTEUR"
         WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 ${where}
       `;
       return (await client.queryObject(q)).rows[0] || {};
     } catch(e) { console.error('getPlaces error:', e); return { places_assises: 0, latrines: 0, latrines_fille: 0 }; }
   }
 
-  async function getCepe(where: string) {
+  async function getCepe(where: string, secteur: 0 | 1 | null = 0) {
     try {
       const q = `
         SELECT 
@@ -3354,7 +3634,7 @@ async function executeTdbZapData(client: Client, codeZap: number, codeCisco: num
           SUM(${si('l1."MATHS_T1"')}+${si('l1."MATHS_T2"')}+${si('l1."MATHS_T3"')}+${si('l1."MATHS_T4"')}+${si('l1."MATHS_T5"')}) AS maths,
           SUM(${si('l1."FRANCAIS_T1"')}+${si('l1."FRANCAIS_T2"')}+${si('l1."FRANCAIS_T3"')}+${si('l1."FRANCAIS_T4"')}+${si('l1."FRANCAIS_T5"')}) AS francais
         FROM fpe_l1 l1
-        INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=l1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=l1."ANNEE_SCOLAIRE"
+        INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=l1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=l1."ANNEE_SCOLAIRE" AND l1."SECTEUR"=a1."SECTEUR"
         WHERE l1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 ${where}
       `;
       return (await client.queryObject(q)).rows[0] || {};
@@ -3526,14 +3806,14 @@ async function executeTdbEcoleCollegeData(client: Client, codeEtab: number, code
       SUM(CASE WHEN p1."CODE_STATUT"='3' THEN 1 ELSE 0 END) AS sub,
       SUM(CASE WHEN p1."CODE_STATUT"='4' THEN 1 ELSE 0 END) AS non_sub,
       SUM(CASE WHEN COALESCE(p1."DIPLOME_PEDAGOGIQUE",'')='' THEN 1 ELSE 0 END) AS sans_diplome_ped
-      FROM fpe_p1 p1 INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=p1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=p1."ANNEE_SCOLAIRE"
+      FROM fpe_p1 p1 INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=p1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=p1."ANNEE_SCOLAIRE" AND p1."SECTEUR"=a1."SECTEUR"
       WHERE p1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_COLLEGE"=1 AND a1."SECTEUR"=0 AND p1."NIVEAU_TENU_COLLEGE"='1' ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
   }
   async function getSections(where: string) {
-    try { const q = `SELECT SUM(${si('g1."T6_SECTION"')}+${si('g1."T7_SECTION"')}+${si('g1."T8_SECTION"')}+${si('g1."T9_SECTION"')}) AS nbr_section, SUM(${si('j1."SDC_COLLEGE_BON_ETAT"')}+${si('j1."SDC_COLLEGE_MAUVAIS_ETAT"')}) AS nbr_sdc FROM fpe_a1 a1 LEFT JOIN fpe_g1 g1 ON g1."CODE_ETAB"=a1."CODE_ETAB" AND g1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" LEFT JOIN fpe_j1 j1 ON j1."CODE_ETAB"=a1."CODE_ETAB" AND j1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_COLLEGE"=1 AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return { nbr_section: 0, nbr_sdc: 0 }; }
+    try { const q = `SELECT SUM(${si('g1."T6_SECTION"')}+${si('g1."T7_SECTION"')}+${si('g1."T8_SECTION"')}+${si('g1."T9_SECTION"')}) AS nbr_section, SUM(${si('j1."SDC_COLLEGE_BON_ETAT"')}+${si('j1."SDC_COLLEGE_MAUVAIS_ETAT"')}) AS nbr_sdc FROM fpe_a1 a1 LEFT JOIN fpe_g1 g1 ON g1."CODE_ETAB"=a1."CODE_ETAB" AND g1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND g1."SECTEUR"=a1."SECTEUR" LEFT JOIN fpe_j1 j1 ON j1."CODE_ETAB"=a1."CODE_ETAB" AND j1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND j1."SECTEUR"=a1."SECTEUR" WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_COLLEGE"=1 AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return { nbr_section: 0, nbr_sdc: 0 }; }
   }
   async function getPlaces(where: string) {
-    try { const q = `SELECT SUM((${si('k1."COLLEGE_TABLES_BANCS_1PL_BON_ETAT"')}+${si('k1."COLLEGE_TABLES_BANCS_1PL_MAUVAIS_ETAT"')})+(${si('k1."COLLEGE_TABLES_BANCS_2PL_BON_ETAT"')}+${si('k1."COLLEGE_TABLES_BANCS_2PL_MAUVAIS_ETAT"')})*2+(${si('k1."COLLEGE_TABLES_BANCS_3PL_BON_ETAT"')}+${si('k1."COLLEGE_TABLES_BANCS_3PL_MAUVAIS_ETAT"')})*3+(${si('k1."COLLEGE_TABLES_BANCS_4PL_BON_ETAT"')}+${si('k1."COLLEGE_TABLES_BANCS_4PL_MAUVAIS_ETAT"')})*4+(${si('k1."COLLEGE_TABLES_BANCS_5PL_PLUS_BON_ETAT"')}+${si('k1."COLLEGE_TABLES_BANCS_5PL_PLUS_MAUVAIS_ETAT"')})*5) AS places_assises, SUM(${si('j2."WC_LATRINES_COMMUNES_BON_ETAT"')}+${si('j2."WC_LATRINES_COMMUNES_MAUVAIS_ETAT"')}+${si('j2."WC_LATRINES_FILLES_BON_ETAT"')}+${si('j2."WC_LATRINES_FILLES_MAUVAIS_ETAT"')}+${si('j2."WC_LATRINES_GARCONS_BON_ETAT"')}+${si('j2."WC_LATRINES_GARCONS_MAUVAIS_ETAT"')}) AS latrines, SUM(${si('j2."WC_LATRINES_FILLES_BON_ETAT"')}+${si('j2."WC_LATRINES_FILLES_MAUVAIS_ETAT"')}) AS latrines_fille FROM fpe_a1 a1 LEFT JOIN fpe_k1 k1 ON k1."CODE_ETAB"=a1."CODE_ETAB" AND k1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" LEFT JOIN fpe_j2 j2 ON j2."CODE_ETAB"=a1."CODE_ETAB" AND j2."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_COLLEGE"=1 AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
+    try { const q = `SELECT SUM((${si('k1."COLLEGE_TABLES_BANCS_1PL_BON_ETAT"')}+${si('k1."COLLEGE_TABLES_BANCS_1PL_MAUVAIS_ETAT"')})+(${si('k1."COLLEGE_TABLES_BANCS_2PL_BON_ETAT"')}+${si('k1."COLLEGE_TABLES_BANCS_2PL_MAUVAIS_ETAT"')})*2+(${si('k1."COLLEGE_TABLES_BANCS_3PL_BON_ETAT"')}+${si('k1."COLLEGE_TABLES_BANCS_3PL_MAUVAIS_ETAT"')})*3+(${si('k1."COLLEGE_TABLES_BANCS_4PL_BON_ETAT"')}+${si('k1."COLLEGE_TABLES_BANCS_4PL_MAUVAIS_ETAT"')})*4+(${si('k1."COLLEGE_TABLES_BANCS_5PL_PLUS_BON_ETAT"')}+${si('k1."COLLEGE_TABLES_BANCS_5PL_PLUS_MAUVAIS_ETAT"')})*5) AS places_assises, SUM(${si('j2."WC_LATRINES_COMMUNES_BON_ETAT"')}+${si('j2."WC_LATRINES_COMMUNES_MAUVAIS_ETAT"')}+${si('j2."WC_LATRINES_FILLES_BON_ETAT"')}+${si('j2."WC_LATRINES_FILLES_MAUVAIS_ETAT"')}+${si('j2."WC_LATRINES_GARCONS_BON_ETAT"')}+${si('j2."WC_LATRINES_GARCONS_MAUVAIS_ETAT"')}) AS latrines, SUM(${si('j2."WC_LATRINES_FILLES_BON_ETAT"')}+${si('j2."WC_LATRINES_FILLES_MAUVAIS_ETAT"')}) AS latrines_fille FROM fpe_a1 a1 LEFT JOIN fpe_k1 k1 ON k1."CODE_ETAB"=a1."CODE_ETAB" AND k1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND k1."SECTEUR"=a1."SECTEUR" LEFT JOIN fpe_j2 j2 ON j2."CODE_ETAB"=a1."CODE_ETAB" AND j2."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND j2."SECTEUR"=a1."SECTEUR" WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_COLLEGE"=1 AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
   }
   async function getCaisse(where: string) {
     try { const q = `SELECT SUM(COALESCE(ce."FCE",0)) AS total_fce, SUM(COALESCE(ce."TOTAL_A_DOTER",0)) AS total_a_doter, 0 AS autres FROM ${CE_SRC} ce INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=ce."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=${annee} WHERE ce."ANNEE_SCOLAIRE"=(SELECT MAX("ANNEE_SCOLAIRE") FROM ${CE_SRC} cx WHERE "ANNEE_SCOLAIRE"<=${annee}) AND a1."EXISTE_COLLEGE"=1 AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { console.error('college getCaisse error', e); return {}; }
@@ -3589,31 +3869,33 @@ async function executeTdbEcoleData(client: Client, codeEtab: number, codeZap: nu
     WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."SECTEUR"=0 AND a1."EXISTE_PRIMAIRE"=1 ${where}`;
     return (await client.queryObject(q)).rows[0] || {};
   }
-  async function getPersonnel(where: string) {
+  async function getPersonnel(where: string, secteur: 0 | 1 | null = 0) {
     const q = `SELECT SUM(CASE WHEN p1."CODE_STATUT" IN ('1','2','3','4') THEN 1 ELSE 0 END) AS nbr_pers,
       SUM(CASE WHEN p1."CODE_STATUT" IN ('1','2','3','4') AND ${si('p1."EN_SALLE"')}=1 THEN 1 ELSE 0 END) AS pers_en_classe,
       SUM(CASE WHEN p1."CODE_STATUT" IN ('1','2') THEN 1 ELSE 0 END) AS fonctionnaire,
       SUM(CASE WHEN p1."CODE_STATUT"='3' THEN 1 ELSE 0 END) AS sub,
       SUM(CASE WHEN p1."CODE_STATUT"='4' THEN 1 ELSE 0 END) AS non_sub,
+      SUM(CASE WHEN p1."CODE_STATUT" IN ('1','2','3','4') AND ${si('p1."EN_SALLE"')}=1 AND COALESCE(p1."DIPLOME_PEDAGOGIQUE",'')<>'' AND upper(p1."DIPLOME_PEDAGOGIQUE")<>'AUTRES' THEN 1 ELSE 0 END) AS qualifies_classe,
       SUM(CASE WHEN COALESCE(p1."DIPLOME_PEDAGOGIQUE",'')='' THEN 1 ELSE 0 END) AS sans_diplome_ped
-    FROM fpe_p1 p1 INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=p1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=p1."ANNEE_SCOLAIRE"
-    WHERE p1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 AND p1."NIVEAU_TENU_PRIMAIRE"='1' ${where}`;
-    return (await client.queryObject(q)).rows[0] || {};
+    FROM fpe_p1 p1 INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=p1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=p1."ANNEE_SCOLAIRE" AND p1."SECTEUR"=a1."SECTEUR"
+    WHERE p1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND ${secteur === null ? '1=1' : `a1."SECTEUR"=${secteur}`} AND p1."NIVEAU_TENU_PRIMAIRE"='1' ${where}`;
+    try { return (await client.queryObject(q)).rows[0] || {}; }
+    catch (e) { console.error('DREN personnel unavailable', e); return {}; }
   }
-  async function getSections(where: string) {
-    try { const q = `SELECT SUM(${si('g1."T1_SECTION"')}+${si('g1."T2_SECTION"')}+${si('g1."T3_SECTION"')}+${si('g1."T4_SECTION"')}+${si('g1."T5_SECTION"')}) AS nbr_section, SUM(${si('j1."SDC_PRIMAIRE_BON_ETAT"')}+${si('j1."SDC_PRIMAIRE_MAUVAIS_ETAT"')}) AS nbr_sdc FROM fpe_a1 a1 LEFT JOIN fpe_g1 g1 ON g1."CODE_ETAB"=a1."CODE_ETAB" AND g1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" LEFT JOIN fpe_j1 j1 ON j1."CODE_ETAB"=a1."CODE_ETAB" AND j1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return { nbr_section: 0, nbr_sdc: 0 }; }
+  async function getSections(where: string, secteur: 0 | 1 | null = 0) {
+    try { const q = `SELECT SUM(${si('g1."T1_SECTION"')}+${si('g1."T2_SECTION"')}+${si('g1."T3_SECTION"')}+${si('g1."T4_SECTION"')}+${si('g1."T5_SECTION"')}) AS nbr_section, SUM(${si('j1."SDC_PRIMAIRE_BON_ETAT"')}+${si('j1."SDC_PRIMAIRE_MAUVAIS_ETAT"')}) AS nbr_sdc FROM fpe_a1 a1 LEFT JOIN fpe_g1 g1 ON g1."CODE_ETAB"=a1."CODE_ETAB" AND g1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND g1."SECTEUR"=a1."SECTEUR" LEFT JOIN fpe_j1 j1 ON j1."CODE_ETAB"=a1."CODE_ETAB" AND j1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND j1."SECTEUR"=a1."SECTEUR" WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND ${secteur === null ? '1=1' : `a1."SECTEUR"=${secteur}`} ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return { nbr_section: 0, nbr_sdc: 0 }; }
   }
-  async function getPlaces(where: string) {
-    try { const q = `SELECT SUM((${si('k1."PRIMAIRE_TABLES_BANCS_1PL_BON_ETAT"')}+${si('k1."PRIMAIRE_TABLES_BANCS_1PL_MAUVAIS_ETAT"')})+(${si('k1."PRIMAIRE_TABLES_BANCS_2PL_BON_ETAT"')}+${si('k1."PRIMAIRE_TABLES_BANCS_2PL_MAUVAIS_ETAT"')})*2+(${si('k1."PRIMAIRE_TABLES_BANCS_3PL_BON_ETAT"')}+${si('k1."PRIMAIRE_TABLES_BANCS_3PL_MAUVAIS_ETAT"')})*3+(${si('k1."PRIMAIRE_TABLES_BANCS_4PL_BON_ETAT"')}+${si('k1."PRIMAIRE_TABLES_BANCS_4PL_MAUVAIS_ETAT"')})*4+(${si('k1."PRIMAIRE_TABLES_BANCS_5PL_PLUS_BON_ETAT"')}+${si('k1."PRIMAIRE_TABLES_BANCS_5PL_PLUS_MAUVAIS_ETAT"')})*5) AS places_assises, SUM(${si('j2."WC_LATRINES_COMMUNES_BON_ETAT"')}+${si('j2."WC_LATRINES_COMMUNES_MAUVAIS_ETAT"')}+${si('j2."WC_LATRINES_FILLES_BON_ETAT"')}+${si('j2."WC_LATRINES_FILLES_MAUVAIS_ETAT"')}+${si('j2."WC_LATRINES_GARCONS_BON_ETAT"')}+${si('j2."WC_LATRINES_GARCONS_MAUVAIS_ETAT"')}) AS latrines, SUM(${si('j2."WC_LATRINES_FILLES_BON_ETAT"')}+${si('j2."WC_LATRINES_FILLES_MAUVAIS_ETAT"')}) AS latrines_fille FROM fpe_a1 a1 LEFT JOIN fpe_k1 k1 ON k1."CODE_ETAB"=a1."CODE_ETAB" AND k1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" LEFT JOIN fpe_j2 j2 ON j2."CODE_ETAB"=a1."CODE_ETAB" AND j2."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return { places_assises: 0, latrines: 0, latrines_fille: 0 }; }
+  async function getPlaces(where: string, secteur: 0 | 1 | null = 0) {
+    try { const q = `SELECT SUM((${si('k1."PRIMAIRE_TABLES_BANCS_1PL_BON_ETAT"')}+${si('k1."PRIMAIRE_TABLES_BANCS_1PL_MAUVAIS_ETAT"')})+(${si('k1."PRIMAIRE_TABLES_BANCS_2PL_BON_ETAT"')}+${si('k1."PRIMAIRE_TABLES_BANCS_2PL_MAUVAIS_ETAT"')})*2+(${si('k1."PRIMAIRE_TABLES_BANCS_3PL_BON_ETAT"')}+${si('k1."PRIMAIRE_TABLES_BANCS_3PL_MAUVAIS_ETAT"')})*3+(${si('k1."PRIMAIRE_TABLES_BANCS_4PL_BON_ETAT"')}+${si('k1."PRIMAIRE_TABLES_BANCS_4PL_MAUVAIS_ETAT"')})*4+(${si('k1."PRIMAIRE_TABLES_BANCS_5PL_PLUS_BON_ETAT"')}+${si('k1."PRIMAIRE_TABLES_BANCS_5PL_PLUS_MAUVAIS_ETAT"')})*5) AS places_assises, SUM(${si('j2."WC_LATRINES_COMMUNES_BON_ETAT"')}+${si('j2."WC_LATRINES_COMMUNES_MAUVAIS_ETAT"')}+${si('j2."WC_LATRINES_FILLES_BON_ETAT"')}+${si('j2."WC_LATRINES_FILLES_MAUVAIS_ETAT"')}+${si('j2."WC_LATRINES_GARCONS_BON_ETAT"')}+${si('j2."WC_LATRINES_GARCONS_MAUVAIS_ETAT"')}) AS latrines, SUM(${si('j2."WC_LATRINES_FILLES_BON_ETAT"')}+${si('j2."WC_LATRINES_FILLES_MAUVAIS_ETAT"')}) AS latrines_fille, COUNT(DISTINCT CASE WHEN ${si('j2."WC_LATRINES_FILLES_BON_ETAT"')}+${si('j2."WC_LATRINES_FILLES_MAUVAIS_ETAT"')} > 0 THEN a1."CODE_ETAB" END) AS etab_latrine_f, COUNT(DISTINCT CASE WHEN ${ACCES_ESH_COLS.map((col) => si(`j2."${col}"`)).join('+')} > 0 THEN a1."CODE_ETAB" END) AS etab_handicap FROM fpe_a1 a1 LEFT JOIN fpe_k1 k1 ON k1."CODE_ETAB"=a1."CODE_ETAB" AND k1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND k1."SECTEUR"=a1."SECTEUR" LEFT JOIN fpe_j2 j2 ON j2."CODE_ETAB"=a1."CODE_ETAB" AND j2."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND j2."SECTEUR"=a1."SECTEUR" WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND ${secteur === null ? '1=1' : `a1."SECTEUR"=${secteur}`} ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return { places_assises: 0, latrines: 0, latrines_fille: 0 }; }
   }
-  async function getCepe(where: string) {
-    try { const q = `SELECT SUM(COALESCE(c."Nbre",0)) AS total_candidats, SUM(COALESCE(c."nbrG",0)) AS nbr_g, SUM(COALESCE(c."nbrF",0)) AS nbr_f, SUM(COALESCE(c."admisG",0)) AS admis_g, SUM(COALESCE(c."admisF",0)) AS admis_f, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."mlg"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."ml_fahazoana_lahatsoratra"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg_fahazoana, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."ml_fitsipika"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg_fitsipika, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."ml_fanazarana_hanoratra"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg_fanazarana, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."frs"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."fr_comprehension"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs_comprehension, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."fr_grammaire"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs_grammaire, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."fr_expression_ecrite"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs_expression, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."operation"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mths_operation, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."probleme"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mths_probleme, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM((COALESCE(c."operation",0)+COALESCE(c."probleme",0))/2.0*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mths, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."moyenne"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_total, SUM(COALESCE(c."malagasy_sup_10",0)) AS mlg_sup10, SUM(COALESCE(c."malagasy_compo_sup_10",0)) AS mlg_compo_sup10, SUM(COALESCE(c."malagasy_gram_sup_10",0)) AS mlg_gram_sup10, SUM(COALESCE(c."malagasy_exp_10",0)) AS mlg_exp_sup10, SUM(COALESCE(c."francais_sup_10",0)) AS frs_sup10, SUM(COALESCE(c."francais_compo_sup_10",0)) AS frs_compo_sup10, SUM(COALESCE(c."francais_gram_sup_10",0)) AS frs_gram_sup10, SUM(COALESCE(c."francais_exp_10",0)) AS frs_exp_sup10, SUM(COALESCE(c."math_sup_10",0)) AS mths_sup10, SUM(COALESCE(c."op_sup_10",0)) AS op_sup10, SUM(COALESCE(c."probleme_sup_10",0)) AS prob_sup10, SUM(COALESCE(c."autres_sup_10",0)) AS autres_sup10 FROM examen_cepe c INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=c."code_etab" AND a1."ANNEE_SCOLAIRE"=c."id_annee_scolaire" WHERE c."id_annee_scolaire"=${annee} AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
+  async function getCepe(where: string, secteur: 0 | 1 | null = 0) {
+    try { const q = `SELECT SUM(COALESCE(c."Nbre",0)) AS total_candidats, SUM(COALESCE(c."nbrG",0)) AS nbr_g, SUM(COALESCE(c."nbrF",0)) AS nbr_f, SUM(COALESCE(c."admisG",0)) AS admis_g, SUM(COALESCE(c."admisF",0)) AS admis_f, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."mlg"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."ml_fahazoana_lahatsoratra"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg_fahazoana, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."ml_fitsipika"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg_fitsipika, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."ml_fanazarana_hanoratra"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mlg_fanazarana, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."frs"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."fr_comprehension"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs_comprehension, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."fr_grammaire"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs_grammaire, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."fr_expression_ecrite"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_frs_expression, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."operation"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mths_operation, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."probleme"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mths_probleme, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM((COALESCE(c."operation",0)+COALESCE(c."probleme",0))/2.0*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_mths, CASE WHEN SUM(COALESCE(c."Nbre",0))>0 THEN ROUND((SUM(c."moyenne"*c."Nbre")/SUM(c."Nbre"))::numeric,1) END AS sm_total, SUM(COALESCE(c."malagasy_sup_10",0)) AS mlg_sup10, SUM(COALESCE(c."malagasy_compo_sup_10",0)) AS mlg_compo_sup10, SUM(COALESCE(c."malagasy_gram_sup_10",0)) AS mlg_gram_sup10, SUM(COALESCE(c."malagasy_exp_10",0)) AS mlg_exp_sup10, SUM(COALESCE(c."francais_sup_10",0)) AS frs_sup10, SUM(COALESCE(c."francais_compo_sup_10",0)) AS frs_compo_sup10, SUM(COALESCE(c."francais_gram_sup_10",0)) AS frs_gram_sup10, SUM(COALESCE(c."francais_exp_10",0)) AS frs_exp_sup10, SUM(COALESCE(c."math_sup_10",0)) AS mths_sup10, SUM(COALESCE(c."op_sup_10",0)) AS op_sup10, SUM(COALESCE(c."probleme_sup_10",0)) AS prob_sup10, SUM(COALESCE(c."autres_sup_10",0)) AS autres_sup10 FROM examen_cepe c INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=c."code_etab" AND a1."ANNEE_SCOLAIRE"=c."id_annee_scolaire" WHERE c."id_annee_scolaire"=${annee} AND ${secteur === null ? '1=1' : `a1."SECTEUR"=${secteur}`} ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
   }
   async function getCaisseEcole(where: string) {
     try { const q = `SELECT SUM(COALESCE(ce."FCE",0)) AS total_fce, SUM(COALESCE(ce."TOTAL_A_DOTER",0)) AS total_a_doter FROM ${CE_SRC} ce INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=ce."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=${annee} WHERE ce."ANNEE_SCOLAIRE"=(SELECT MAX("ANNEE_SCOLAIRE") FROM ${CE_SRC} cx WHERE "ANNEE_SCOLAIRE"<=${annee}) AND a1."EXISTE_PRIMAIRE"=1 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
   }
-  async function getManuels(where: string) {
-    try { const q = `SELECT SUM(${si('l1."MALAGASY_T1"')}+${si('l1."MALAGASY_T2"')}+${si('l1."MALAGASY_T3"')}+${si('l1."MALAGASY_T4"')}+${si('l1."MALAGASY_T5"')}) AS malagasy, SUM(${si('l1."MATHS_T1"')}+${si('l1."MATHS_T2"')}+${si('l1."MATHS_T3"')}+${si('l1."MATHS_T4"')}+${si('l1."MATHS_T5"')}) AS maths, SUM(${si('l1."FRANCAIS_T1"')}+${si('l1."FRANCAIS_T2"')}+${si('l1."FRANCAIS_T3"')}+${si('l1."FRANCAIS_T4"')}+${si('l1."FRANCAIS_T5"')}) AS francais FROM fpe_l1 l1 INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=l1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=l1."ANNEE_SCOLAIRE" WHERE l1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
+  async function getManuels(where: string, secteur: 0 | 1 | null = 0) {
+    try { const q = `SELECT SUM(${si('l1."MALAGASY_T1"')}+${si('l1."MALAGASY_T2"')}+${si('l1."MALAGASY_T3"')}+${si('l1."MALAGASY_T4"')}+${si('l1."MALAGASY_T5"')}) AS malagasy, SUM(${si('l1."MATHS_T1"')}+${si('l1."MATHS_T2"')}+${si('l1."MATHS_T3"')}+${si('l1."MATHS_T4"')}+${si('l1."MATHS_T5"')}) AS maths, SUM(${si('l1."FRANCAIS_T1"')}+${si('l1."FRANCAIS_T2"')}+${si('l1."FRANCAIS_T3"')}+${si('l1."FRANCAIS_T4"')}+${si('l1."FRANCAIS_T5"')}) AS francais, SUM(${si('l1."MALAGASY_T1"')}+${si('l1."MATHS_T1"')}+${si('l1."FRANCAIS_T1"')}+${si('l1."MALAGASY_T2"')}+${si('l1."MATHS_T2"')}+${si('l1."FRANCAIS_T2"')}) AS manuel_t1_t2, SUM(${si('l1."MALAGASY_T3"')}+${si('l1."MATHS_T3"')}+${si('l1."FRANCAIS_T3"')}) AS manuel_t3, SUM(${si('l1."MALAGASY_T4"')}+${si('l1."MATHS_T4"')}+${si('l1."FRANCAIS_T4"')}+${si('l1."MALAGASY_T5"')}+${si('l1."MATHS_T5"')}+${si('l1."FRANCAIS_T5"')}) AS manuel_t4_t5 FROM fpe_l1 l1 INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=l1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=l1."ANNEE_SCOLAIRE" AND l1."SECTEUR"=a1."SECTEUR" WHERE l1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND ${secteur === null ? '1=1' : `a1."SECTEUR"=${secteur}`} ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { return {}; }
   }
   async function getRessourcesFin(where: string) {
     try { const q = `SELECT 0 AS fram, SUM(COALESCE(ce."FCE",0)) AS subvention, 0 AS autres, SUM(COALESCE(ce."FCE",0)) AS total, SUM(COALESCE(ce."FCE",0)) AS total_fce, SUM(COALESCE(ce."TOTAL_A_DOTER",0)) AS total_a_doter FROM ${CE_SRC} ce INNER JOIN fpe_a1 a1 ON a1."CODE_ETAB"=ce."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=${annee} WHERE ce."ANNEE_SCOLAIRE"=(SELECT MAX("ANNEE_SCOLAIRE") FROM ${CE_SRC} cx WHERE "ANNEE_SCOLAIRE"<=${annee}) AND a1."EXISTE_PRIMAIRE"=1 AND a1."SECTEUR"=0 ${where}`; return (await client.queryObject(q)).rows[0] || {}; } catch(e) { console.error('ecole getCaisseEcole error', e); return {}; }

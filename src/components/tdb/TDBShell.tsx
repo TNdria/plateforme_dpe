@@ -1,4 +1,5 @@
-import { ReactNode } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -25,6 +26,8 @@ interface TDBShellProps {
   /** Identifiant (ex: nom DREN, code) */
   entityName?: string;
   entityCode?: string | number;
+  /** Identity of the loaded report, independent of pending filter changes. */
+  downloadEntityCode?: string | number;
   /** Année scolaire affichée */
   annee?: string;
   /** Filtres en haut (selects) */
@@ -62,6 +65,7 @@ export function TDBShell({
   title,
   entityName,
   entityCode,
+  downloadEntityCode,
   annee,
   filters,
   primaryAction,
@@ -78,8 +82,31 @@ export function TDBShell({
   scoreSlot,
   hideIdentificationBar = false,
 }: TDBShellProps) {
-  const { user } = useAuth();
+  const { user, authorizeTdbDownload } = useAuth();
   const isAdmin = !!user?.is_superuser || !!user?.is_staff;
+  const [downloadAllowed, setDownloadAllowed] = useState(false);
+  const [checkingDownload, setCheckingDownload] = useState(false);
+  useEffect(() => {
+    let active = true;
+    setDownloadAllowed(false);
+    if (user && hasData && downloadEntityCode != null && !loading) {
+      authorizeTdbDownload(level, downloadEntityCode).then(allowed => { if (active) setDownloadAllowed(allowed); });
+    }
+    return () => { active = false; };
+  }, [user, hasData, loading, level, downloadEntityCode, authorizeTdbDownload]);
+  const runExport = async (callback: () => void) => {
+    if (!downloadAllowed || checkingDownload || loading || downloadEntityCode == null) return;
+    setCheckingDownload(true);
+    try {
+      if (!await authorizeTdbDownload(level, downloadEntityCode)) {
+        setDownloadAllowed(false);
+        toast.error('Téléchargement non autorisé pour ce compte.');
+        return;
+      }
+      await callback();
+    } finally { setCheckingDownload(false); }
+  };
+  const downloadDisabled = !hasData || loading || !downloadAllowed || checkingDownload;
   const computedTitle = title ?? `Tableau de Bord ${cycle} — ${level}`;
 
   return (
@@ -112,18 +139,18 @@ export function TDBShell({
                 {onDownloadPdf && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button size="sm" variant="secondary" onClick={onDownloadPdf} disabled={!hasData || generatingPdf} className="bg-primary text-primary-foreground hover:bg-primary/90 shadow">
+                      <Button aria-label="Télécharger PDF" size="sm" variant="secondary" onClick={() => runExport(onDownloadPdf)} disabled={downloadDisabled || generatingPdf} className="bg-primary text-primary-foreground hover:bg-primary/90 shadow">
                         {generatingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
                         <span className="hidden sm:inline">Télécharger PDF</span>
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>Export PDF fidèle au format ministériel</TooltipContent>
+                    <TooltipContent>{!user ? 'Connexion requise pour télécharger' : !downloadAllowed ? 'Téléchargement réservé au TDB de votre compte' : 'Télécharger le TDB autorisé'}</TooltipContent>
                   </Tooltip>
                 )}
                 {onPrint && !isAdmin && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Button size="sm" variant="outline" onClick={onPrint} disabled={!hasData} className="text-primary border-primary/30 hover:bg-primary/10 hover:text-primary">
+                      <Button aria-label="Imprimer" size="sm" variant="outline" onClick={() => runExport(onPrint)} disabled={downloadDisabled || generatingPdf} className="text-primary border-primary/30 hover:bg-primary/10 hover:text-primary">
                         <Printer className="h-4 w-4" />
                       </Button>
                     </TooltipTrigger>

@@ -734,7 +734,7 @@ const Home = () => {
                             linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
         }
       `}</style>
-    </div>
+w    </div>
   );
 };
 

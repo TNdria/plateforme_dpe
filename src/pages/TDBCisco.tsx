@@ -69,6 +69,7 @@ const TDBCisco = () => {
   const [selectedAnnee, setSelectedAnnee] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [tdbData, setTdbData] = useState<TdbData | null>(null);
+  const [downloadEntityCode, setDownloadEntityCode] = useState<string>();
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewName, setPreviewName] = useState('');
@@ -109,6 +110,7 @@ const TDBCisco = () => {
       } catch { toast.warning('Les points de comparaison sont indisponibles.'); }
       if (!Array.isArray(data.efficience)) data.efficience = [];
       setTdbData(data);
+      setDownloadEntityCode(selectedCisco);
       toast.success('Tableau de bord chargé');
     } catch (err) { console.error(err); toast.error('Erreur lors du chargement du TDB'); }
     finally { setLoading(false); }
@@ -652,6 +654,7 @@ const TDBCisco = () => {
         title="Tableau de Bord — CISCO"
         entityName={ciscoName}
         entityCode={selectedCisco !== '0' ? selectedCisco : undefined}
+        downloadEntityCode={downloadEntityCode}
         annee={anneeLabel}
         loading={loading}
         hasData={!!tdbData}

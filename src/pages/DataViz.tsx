@@ -663,6 +663,33 @@ const DataViz = () => {
         backgroundColor: "#ffffff",
         logging: false,
         scale: 2,
+        scrollX: 0,
+        scrollY: -window.scrollY,
+        windowWidth: document.documentElement.clientWidth,
+        windowHeight: document.documentElement.clientHeight,
+        // html2canvas rend mal les translate3d de Leaflet → décalage.
+        // On convertit chaque translation en left/top dans le clone.
+        onclone: (doc, cloned) => {
+          const sel =
+            ".leaflet-map-pane, .leaflet-tile, .leaflet-tile-container, .leaflet-marker-icon, .leaflet-marker-shadow, .leaflet-tooltip, .leaflet-popup, .leaflet-zoom-animated, .leaflet-pane > svg, .leaflet-pane > canvas";
+          const orig = Array.from(node.querySelectorAll<HTMLElement>(sel));
+          const copies = Array.from(cloned.querySelectorAll<HTMLElement>(sel));
+          orig.forEach((el, i) => {
+            const c = copies[i];
+            if (!c) return;
+            const t = window.getComputedStyle(el).transform;
+            if (!t || t === "none") return;
+            const m = new DOMMatrixReadOnly(t);
+            if (Math.abs(m.a - 1) > 1e-3 || Math.abs(m.d - 1) > 1e-3) return;
+            const cs = window.getComputedStyle(el);
+            const left = (parseFloat(cs.left) || 0) + m.e;
+            const top = (parseFloat(cs.top) || 0) + m.f;
+            c.style.transform = "none";
+            c.style.left = `${left}px`;
+            c.style.top = `${top}px`;
+          });
+          void doc;
+        },
       });
       const link = document.createElement("a");
       const themeLabel = THEMES.find((t) => t.value === appliedTheme)?.label || "carte";

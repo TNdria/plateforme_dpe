@@ -18,7 +18,7 @@ const HEADERS = {
   Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
 };
 
-const FLEXIBLE_TDB_TABLES = new Set(["tdb_ecole", "tdb_zap", "tdb_cisco", "tdb_dren", "tdb_mada", "tdb_ref", "examen_cepe_candidates", "examen_bepc_candidates"]);
+const FLEXIBLE_TDB_TABLES = new Set(["tdb_ecole", "tdb_zap", "tdb_cisco", "tdb_dren", "tdb_mada", "tdb_ref", "tdb_ueas", "examen_cepe_candidates", "examen_bepc_candidates"]);
 const EXAM_TABLES = new Set(["examen_cepe_candidates", "examen_bepc_candidates"]);
 
 const normalizeHeader = (value: unknown) => String(value ?? "")

@@ -37,3 +37,10 @@ describe('TDB DREN niveaux', () => {
   it('disparité réussite : ratio supérieur à 1 défavorise garçons', () => expect(disparite(101, 100, true)).toBe('G'));
   it('disparité aux dépens des filles quand leur redoublement est plus élevé', () => expect(disparite(12, 8, false)).toBe('F'));
 });
+
+import { retentionCohort } from './tdbDrenNiveaux';
+describe('retentionCohort', () => {
+  const mk = (e1: number, r1: number, e2: number, r2: number) => ({ '0': { eff1_g: e1, eff1_f: 0, red1_g: r1, red1_f: 0, eff2_g: e2, eff2_f: 0, red2_g: r2, red2_f: 0 }, '1': {} }) as any;
+  it('R2 = 100 × passants T2 (n) ÷ passants T1 (n-1)', () => expect(retentionCohort(mk(200, 0, 0, 0), mk(0, 0, 180, 30), '0', 2)[1]).toBeCloseTo(75, 5));
+  it('ne remonte jamais au-dessus du niveau précédent', () => expect(retentionCohort(mk(100, 0, 0, 0), mk(0, 0, 150, 0), '0', 2)[1]).toBe(100));
+});

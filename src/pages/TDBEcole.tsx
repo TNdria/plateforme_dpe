@@ -81,6 +81,7 @@ const TDBEcole = () => {
   const [selectedNiveau, setSelectedNiveau] = useState<'primaire' | 'college' | 'lycee'>('primaire');
   const [loading, setLoading] = useState(false);
   const [tdbData, setTdbData] = useState<any>(null);
+  const [downloadEntityCode, setDownloadEntityCode] = useState<string>();
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewName, setPreviewName] = useState('');
@@ -158,6 +159,7 @@ const TDBEcole = () => {
         data.efficience = [];
       }
       setTdbData(data);
+      setDownloadEntityCode(selectedEcole);
       toast.success('Tableau de bord École chargé');
     } catch (err) { console.error(err); toast.error('Erreur lors du chargement du TDB École'); }
     finally { setLoading(false); }
@@ -627,6 +629,7 @@ const TDBEcole = () => {
         title={`Tableau de Bord — ${selectedNiveau === 'college' ? 'CEG' : selectedNiveau === 'lycee' ? 'Lycée' : 'École'}`}
         entityName={ecoleName}
         entityCode={selectedEcole !== '0' ? selectedEcole : undefined}
+        downloadEntityCode={downloadEntityCode}
         annee={anneeLabel}
         loading={loading}
         hasData={!!tdbData}

@@ -5,7 +5,7 @@
 // + `data jsonb` qui conserve TOUTES les colonnes du fichier importé + `imported_at`.
 // Les lectures aplatissent `data` puis les colonnes, comme getLatestImportedTdbRow.
 
-export const TDB_TABLES = ['tdb_ecole', 'tdb_zap', 'tdb_cisco', 'tdb_dren', 'tdb_mada', 'tdb_ref'] as const;
+export const TDB_TABLES = ['tdb_ecole', 'tdb_zap', 'tdb_cisco', 'tdb_dren', 'tdb_mada', 'tdb_ref', 'tdb_ueas'] as const;
 export type TdbTable = (typeof TDB_TABLES)[number];
 
 type ColType = 'integer' | 'text';
@@ -31,6 +31,15 @@ const STRUCT: Record<TdbTable, StructCol[]> = {
   tdb_dren: [{ name: 'CODE_DREN', type: 'integer' }, { name: 'DREN', type: 'text' }],
   tdb_mada: [{ name: 'CODE_MADA', type: 'integer' }],
   tdb_ref: [{ name: 'CODE_ETAB', type: 'integer' }],
+  // Évaluation nationale des acquis scolaires : une ligne par niveau × matière ×
+  // secteur. `CODE_DREN = 0` porte la ligne nationale (MADA). Les résultats eux-mêmes
+  // (moyenne, écart-type, % ≥ 50) restent dans `data`.
+  tdb_ueas: [
+    { name: 'CODE_DREN', type: 'integer' },
+    { name: 'NIVEAU', type: 'text' },
+    { name: 'MATIERE', type: 'text' },
+    { name: 'SECTEUR', type: 'text' },
+  ],
 };
 
 /** Colonne qui identifie une entité : une réimportation remplace ses anciennes lignes. */
@@ -41,6 +50,7 @@ export const TDB_KEY_COL: Record<TdbTable, string> = {
   tdb_dren: 'CODE_DREN',
   tdb_mada: 'CODE_MADA',
   tdb_ref: 'CODE_ETAB',
+  tdb_ueas: 'CODE_DREN',
 };
 
 export const isTdbTable = (table: string): table is TdbTable =>

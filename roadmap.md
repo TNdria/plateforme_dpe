@@ -1,5 +1,8 @@
 # Roadmap
 
+- [x] Restreindre le téléchargement et l’impression TDB : invité interdit, compte limité à son affectation, administrateurs autorisés partout ; validation serveur déployée, 15 tests réussis et invité vérifié sur ATSINANANA 2025.
+- [ ] Vérifier le téléchargement avec un compte CISCO/DREN et administrateur connecté dans l’interface ; en attente d’une session utilisateur disponible (connexion Django distincte du Cloud).
+
 - [x] Redéployer le service db-query à la demande de l’utilisateur et vérifier sa réponse.
 
 - [x] Corriger les zéros injustifiés dans les TDB DREN : lectures CEPE et pourcentages corrigés, valeurs absentes distinguées des zéros ; 53 tests réussis, quatre réponses réelles vérifiées et affichage primaire confirmé après Appliquer.
