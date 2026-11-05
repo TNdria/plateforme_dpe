@@ -1,5 +1,9 @@
  # Architecture rules
 
+- Normalize school-level context presence in `src/utils/tdbEcoleContext.ts`, retaining missing values; aggregate comparison columns remain percentages.
+
+- Keep the primary DREN manuals seven-column layout in the renderer; source each subject/class-group cell from its matching API aggregate and never spread a whole-cycle total across class groups.
+
 - Preserve the AuthContext identity in Vite hot-module data so mounted providers and refreshed consumers stay connected during preview updates without weakening missing-provider checks.
 
 - Gate all TDB download and print controls through server-validated signed login credentials kept only in memory; re-read authoritative account permissions at each export and use the loaded report identity, not pending filters, because client storage and filter values cannot authorize downloads. This gates application actions, not extraction of intentionally public report data.

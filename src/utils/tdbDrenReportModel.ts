@@ -1144,7 +1144,7 @@ function buildPrimary(raw: any): DrenReportModel {
       label,
       meta,
       cells: [
-        toCell(ev, null, meta, ev === null ? { na: true } : {}),
+        toCell(ev, null, meta, { na: !['section_salle', 'eleves_place', 'moins_2km'].includes(code) }),
         toCell(dv, mv, meta),
         toCell(mv, null, meta),
       ],

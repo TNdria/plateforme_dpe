@@ -12,6 +12,7 @@ import { TDBShell } from '@/components/tdb/TDBShell';
 import { TDBImportDialog } from '@/components/tdb/TDBImportDialog';
 import { EfficienceGrid, efficienceScores } from '@/components/tdb/EfficienceGrid';
 import { tdbEntityName } from '@/utils/tdbEfficience';
+import { TDBDiagnosticReport } from '@/components/tdb/TDBDiagnosticReport';
 import { pctSansDiplome } from '@/components/tdb/GoulotBars';
 import { DisparityIcon } from '@/components/score/DisparityIcon';
 import DataActionsBar from '@/components/admin/DataActionsBar';
@@ -695,6 +696,12 @@ const TDBZap = () => {
               dangerouslySetInnerHTML={{ __html: line.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>') }} />
           ))}
         </div>
+        <TDBDiagnosticReport
+          entityLabel="ZAP"
+          parentLabel="CISCO"
+          score={efficienceScores(z, 'primaire', 'zap')}
+          parentScore={efficienceScores(c, 'primaire', 'cisco')}
+        />
       </div>
     );
   };

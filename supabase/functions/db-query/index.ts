@@ -3114,7 +3114,12 @@ async function executeTdbDrenData(client: Client, codeDren: number, annee: numbe
       fr_12: T(['FRANCAIS_T1', 'FRANCAIS_T2']),
       fr_3: T(['FRANCAIS_T3']),
       fr_45: T(['FRANCAIS_T4', 'FRANCAIS_T5']),
-      autres: T([1, 2, 3, 4, 5].flatMap((k) => [`RAKIBOLANA_T${k}`, `HISTOIRE_T${k}`, `GEOGRAPHIE_T${k}`, `SVT_T${k}`])),
+      // Les manuels des « autres matières » ont leurs propres colonnes dans
+      // fpe_l1 : RAKIBOLANA/HISTOIRE/GEOGRAPHIE/SVT sont vides au primaire.
+      autres_12: T(['AUTRES_MANUELS_T1', 'AUTRES_MANUELS_T2']),
+      autres_3: T(['AUTRES_MANUELS_T3']),
+      autres_45: T(['AUTRES_MANUELS_T4', 'AUTRES_MANUELS_T5']),
+      autres: T(['AUTRES_MANUELS_T1', 'AUTRES_MANUELS_T2', 'AUTRES_MANUELS_T3', 'AUTRES_MANUELS_T4', 'AUTRES_MANUELS_T5']),
     };
     const EFF: Record<string, string> = { '12': eff([1, 2]), '3': eff([3]), '45': eff([4, 5]), tot: eff([1, 2, 3, 4, 5]) };
     const effKey = (k: string) => (k === 'autres' ? 'tot' : k.split('_')[1]);

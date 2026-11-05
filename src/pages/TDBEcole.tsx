@@ -12,6 +12,8 @@ import { TDBImportDialog } from '@/components/tdb/TDBImportDialog';
 import { DisparityIcon } from '@/components/score/DisparityIcon';
 import { EfficienceGrid, efficienceScores } from '@/components/tdb/EfficienceGrid';
 import { tdbEntityName } from '@/utils/tdbEfficience';
+import { schoolPresence } from '@/utils/tdbEcoleContext';
+import { TDBDiagnosticReport } from '@/components/tdb/TDBDiagnosticReport';
 import { pctSansDiplome } from '@/components/tdb/GoulotBars';
 
 
@@ -547,14 +549,15 @@ const TDBEcole = () => {
                 <tbody>
                   {(selectedNiveau === 'college' ? [
                     ['Salles & équipements TICE', [pct(e.ressources?.etab_tice, e.ressources?.nbr_etab, 0), pct(z.ressources?.etab_tice, z.ressources?.nbr_etab, 0), pct(c.ressources?.etab_tice, c.ressources?.nbr_etab, 0)]],
-                    ["Points d'eau fonctionnels", [pct(e.ressources?.etab_eau, e.ressources?.nbr_etab, 0), pct(z.ressources?.etab_eau, z.ressources?.nbr_etab, 0), pct(c.ressources?.etab_eau, c.ressources?.nbr_etab, 0)]],
-                    ['Électricité', [pct(e.ressources?.etab_elec, e.ressources?.nbr_etab, 0), pct(z.ressources?.etab_elec, z.ressources?.nbr_etab, 0), pct(c.ressources?.etab_elec, c.ressources?.nbr_etab, 0)]],
+                    ["Existence de point d'eau / Pourcentage d'écoles avec point d'eau", [schoolPresence(e.ressources?.etab_eau), pct(z.ressources?.etab_eau, z.ressources?.nbr_etab), pct(c.ressources?.etab_eau, c.ressources?.nbr_etab)]],
+                    ["Existence de l'électricité / Pourcentage d'écoles avec électricité", [schoolPresence(e.ressources?.etab_elec), pct(z.ressources?.etab_elec, z.ressources?.nbr_etab), pct(c.ressources?.etab_elec, c.ressources?.nbr_etab)]],
                     ['Bibliothèque fonctionnelle', [pct(e.ressources?.etab_biblio, e.ressources?.nbr_etab, 0), pct(z.ressources?.etab_biblio, z.ressources?.nbr_etab, 0), pct(c.ressources?.etab_biblio, c.ressources?.nbr_etab, 0)]],
                   ] : [
-                    ['Écoles continues', [pct(e.ressources?.ecole_continue, e.ressources?.nbr_etab), pct(z.ressources?.ecole_continue, z.ressources?.nbr_etab), pct(c.ressources?.ecole_continue, c.ressources?.nbr_etab)]],
-                    ['Élèves < 2km', [pct(Number(e.ressources?.nbr_eleve || 0) - Number(e.ressources?.eleve_2km || 0), e.ressources?.nbr_eleve), pct(Number(z.ressources?.nbr_eleve || 0) - Number(z.ressources?.eleve_2km || 0), z.ressources?.nbr_eleve), pct(Number(c.ressources?.nbr_eleve || 0) - Number(c.ressources?.eleve_2km || 0), c.ressources?.nbr_eleve)]],
-                    ['Point d\'eau', [pct(e.ressources?.etab_eau, e.ressources?.nbr_etab, 0), pct(z.ressources?.etab_eau, z.ressources?.nbr_etab, 0), pct(c.ressources?.etab_eau, c.ressources?.nbr_etab, 0)]],
-                    ['Électricité', [pct(e.ressources?.etab_elec, e.ressources?.nbr_etab, 0), pct(z.ressources?.etab_elec, z.ressources?.nbr_etab, 0), pct(c.ressources?.etab_elec, c.ressources?.nbr_etab, 0)]],
+                    ["Écoles continues / Pourcentage d'écoles continues", [schoolPresence(e.ressources?.ecole_continue), pct(z.ressources?.ecole_continue, z.ressources?.nbr_etab), pct(c.ressources?.ecole_continue, c.ressources?.nbr_etab)]],
+                    ['Pourcentage d’élèves vivant à moins de 2km de leur école', [pct(Number(e.ressources?.nbr_eleve || 0) - Number(e.ressources?.eleve_2km || 0), e.ressources?.nbr_eleve), pct(Number(z.ressources?.nbr_eleve || 0) - Number(z.ressources?.eleve_2km || 0), z.ressources?.nbr_eleve), pct(Number(c.ressources?.nbr_eleve || 0) - Number(c.ressources?.eleve_2km || 0), c.ressources?.nbr_eleve)]],
+                    ["Existence de point d'eau / Pourcentage d'écoles avec point d'eau", [schoolPresence(e.ressources?.etab_eau), pct(z.ressources?.etab_eau, z.ressources?.nbr_etab), pct(c.ressources?.etab_eau, c.ressources?.nbr_etab)]],
+                    ["Existence de l'électricité / Pourcentage d'écoles avec électricité", [schoolPresence(e.ressources?.etab_elec), pct(z.ressources?.etab_elec, z.ressources?.nbr_etab), pct(c.ressources?.etab_elec, c.ressources?.nbr_etab)]],
+                    ["Nombre d'enfants déscolarisés et non scolarisés", ['-', '-', '-']],
                   ]).map(([label, vals]: any) => (
                     <tr key={label}><td style={s.td}>{label}</td>{vals.map((v: string, i: number) => <td key={i} style={{ ...s.td, textAlign: 'right', ...manq(v) }}>{v}</td>)}</tr>
                   ))}
@@ -610,6 +613,12 @@ const TDBEcole = () => {
             parentPoint={{ name: `ZAP ${tdbData.names?.ZAP || ''}`.trim(), ...efficienceScores(z, selectedNiveau, 'zap') }}
           />
         </div>
+        <TDBDiagnosticReport
+          entityLabel={selectedNiveau === 'college' ? 'CEG' : selectedNiveau === 'lycee' ? 'Lycée' : 'École'}
+          parentLabel="ZAP"
+          score={efficienceScores(e, selectedNiveau as any)}
+          parentScore={efficienceScores(z, selectedNiveau as any, 'zap')}
+        />
 
       </div>
 

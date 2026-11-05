@@ -13,6 +13,7 @@ import { DisparityIcon } from '@/components/score/DisparityIcon';
 import { EfficienceGrid, efficienceScores } from '@/components/tdb/EfficienceGrid';
 import { tdbEntityName } from '@/utils/tdbEfficience';
 import { GoulotBars, buildGoulotItems, pctSansDiplome } from '@/components/tdb/GoulotBars';
+import { TDBDiagnosticReport } from '@/components/tdb/TDBDiagnosticReport';
 import DataActionsBar from '@/components/admin/DataActionsBar';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -634,6 +635,13 @@ const TDBCisco = () => {
             parentPoint={{ name: `DREN ${tdbData.names?.DREN || ''}`.trim(), ...efficienceScores(d, 'primaire', 'dren') }}
           />
         </div>
+        <TDBDiagnosticReport
+          entityLabel="CISCO"
+          parentLabel="DREN"
+          score={efficienceScores(c, 'primaire', 'cisco')}
+          parentScore={efficienceScores(d, 'primaire', 'dren')}
+          goulots={buildGoulotItems(c, 'cepe', 't5').map(g => ({ label: g.name, value: g.value }))}
+        />
 
 
           </div>

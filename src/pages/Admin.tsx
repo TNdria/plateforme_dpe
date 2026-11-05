@@ -1466,11 +1466,12 @@ const Admin = () => {
             <div className="rounded-lg border border-primary/40 bg-primary/5 p-4 space-y-3">
               <div>
                 <h3 className="text-sm font-semibold">Données de référence du TDB</h3>
-                <p className="text-xs text-muted-foreground">Caisse école (feuilles PRIMAIRE / COLLEGE / LYCEE) et population par DREN et par âge.</p>
+                <p className="text-xs text-muted-foreground">Caisse école (feuilles PRIMAIRE / COLLEGE / LYCEE) et population par âge (DREN et CISCO).</p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button onClick={() => setRefKind('caisse')}><FileSpreadsheet className="w-4 h-4 mr-1" />Importer la Caisse école</Button>
                 <Button variant="secondary" onClick={() => setRefKind('population')}><FileSpreadsheet className="w-4 h-4 mr-1" />Importer la population DREN</Button>
+                <Button variant="secondary" onClick={() => setRefKind('population_cisco')}><FileSpreadsheet className="w-4 h-4 mr-1" />Importer la population CISCO</Button>
               </div>
               <ReferenceImportDialog kind={refKind ?? 'caisse'} open={!!refKind} adminUsername={user?.username || ''}
                 onOpenChange={(o) => { if (!o) setRefKind(null); }} />

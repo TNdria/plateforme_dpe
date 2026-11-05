@@ -903,6 +903,15 @@
 .tdb-cols-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.4mm; align-items: start; }
 .tdb-cols-55-45 { display: grid; grid-template-columns: minmax(0, 55fr) minmax(0, 45fr); gap: 1.6mm; align-items: start; }
 .tdb-cols-2 > *, .tdb-cols-3 > *, .tdb-cols-55-45 > * { min-width: 0; }
+.tdb-results-row > div { display: flex; flex-direction: column; gap: 1.6mm; }
+@media screen and (max-width: 1024px) {
+  .tdb-cols-3 { grid-template-columns: 1fr 1fr; }
+}
+@media screen and (max-width: 720px) {
+  .tdb-cols-2, .tdb-cols-3, .tdb-cols-55-45 { grid-template-columns: 1fr; }
+  .tdb-table-block { overflow-x: auto; }
+  .tdb-table-block > .tdb-table { min-width: 560px; }
+}
 .tdb-sheet-continuous .tdb-table th,
 .tdb-sheet-continuous .tdb-table td { font-size: 11px; padding: 3px 4px; }
 .tdb-sheet-continuous .tdb-banner { font-size: 12px; padding: 5px; margin-top: 10px; }
@@ -983,6 +992,52 @@
 .tdb-cell-na { background: #C8C8C8 !important; color: transparent; }
 .tdb-cell-icon { text-align: center !important; padding: .2mm !important; }
 .tdb-cell-icon img { height: 4.2mm; }
+
+/* CEPE results table: reference 9-column layout. */
+.tdb-exam .tdb-table.tdb-cepe { table-layout: fixed; color: #000; }
+.tdb-table.tdb-cepe th:first-child { width: auto; }
+.tdb-cepe .tdb-cepe-label { width: 28%; }
+.tdb-cepe .tdb-cepe-value { width: 9%; }
+.tdb-cepe thead th { background: #e0e0e0; text-align: center; vertical-align: middle; font-weight: 700; }
+.tdb-cepe thead th.tdb-cepe-title { background: #f2f2f2; }
+.tdb-cepe td { text-align: center; vertical-align: middle; background: #fff; }
+.tdb-cepe .tdb-row-label { text-align: left; }
+.tdb-cepe td.tdb-cepe-sm-red { background: #f4b6b6; }
+.tdb-cepe td.tdb-cepe-sm-blue { background: #bdd7ee; }
+
+/* Administrative manual inventory: isolated from every other report table. */
+.tdb-manuals {
+  --manuals-paper: #fff;
+  --manuals-heading: #ededed;
+  --manuals-ink: #000;
+  table-layout: fixed;
+  border-spacing: 0;
+  color: var(--manuals-ink);
+}
+.tdb-manuals-subject { width: 39%; }
+.tdb-manuals-value { width: calc(61% / 6); }
+.tdb-table.tdb-manuals th:first-child { width: auto; }
+.tdb-table.tdb-manuals th,
+.tdb-table.tdb-manuals td {
+  border: 1px solid var(--manuals-ink);
+  vertical-align: middle;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.tdb-table.tdb-manuals thead th,
+.tdb-table.tdb-manuals .tdb-manuals-subhead > * {
+  background: var(--manuals-heading);
+  text-align: center;
+  font-weight: 700;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+.tdb-table.tdb-manuals tbody tr:not(.tdb-manuals-subhead) > * {
+  background: var(--manuals-paper) !important;
+  color: var(--manuals-ink);
+}
+.tdb-table.tdb-manuals td { text-align: center; }
 .tdb-dash { color: #777; }
 .tdb-subhead th {
   background: #ededed;

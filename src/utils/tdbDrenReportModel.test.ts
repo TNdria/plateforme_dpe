@@ -171,6 +171,40 @@ describe('statuts des cellules', () => {
 
 describe('rapport primaire', () => {
   const model = buildDrenReport(primaryRaw, 'primaire');
+  it('réserve Ensemble aux classes par salle, élèves par place et distance de 2 km', () => {
+    const applicable = ['section_salle', 'eleves_place', 'moins_2km'];
+    expect(model.other.rows.filter(r => r.cells[0].status !== 'na').map(r => r.meta?.code)).toEqual(applicable);
+    for (const row of model.other.rows.filter(r => !applicable.includes(r.meta?.code ?? ''))) {
+      expect(row.cells[0].value).toBeNull();
+    }
+  });
+  it('garde les trois cellules Ensemble applicables lorsque leurs données sont absentes', () => {
+    const report = buildDrenReport({ annee: 2025, dren: {}, mada: {} }, 'primaire');
+    for (const code of ['section_salle', 'eleves_place', 'moins_2km']) {
+      expect(report.other.rows.find(r => r.meta?.code === code)?.cells[0].status).toBe('missing');
+    }
+  });
+  it('raccorde les autres matières à leurs agrégats DREN et MADA par classe', () => {
+    const extra = { eleves_12: 200, eleves_3: 300, eleves_45: 400,
+      manuel_autres_12: 50, manuel_autres_3: 100, manuel_autres_45: 200,
+      r2_manuel_autres_12: 0.2, r2_manuel_autres_3: 0.4, r2_manuel_autres_45: 0.6 };
+    const report = buildDrenReport({ ...primaryRaw, primaire_extra: {
+      dren: { ensemble: extra }, mada: { ensemble: { ...extra, manuel_autres_12: 100, manuel_autres_3: 150, manuel_autres_45: 400 } },
+    } }, 'primaire');
+    const rows = report.manuals?.rows.filter(r => r.label.startsWith('Autres matières')) ?? [];
+    expect(rows).toHaveLength(3);
+    expect(rows.map(r => r.cells[0].value)).toEqual([4, 3, 2]);
+    expect(rows.map(r => r.cells[1].value)).toEqual([2, 2, 1]);
+    rows.forEach((r, i) => expect(r.cells[2].value).toBeCloseTo([80, 60, 40][i]));
+  });
+  it('ne répartit pas le total global autres entre les groupes sans source', () => {
+    const report = buildDrenReport({ ...primaryRaw, primaire_extra: {
+      dren: { ensemble: { eleves: 1000, manuel_autres: 200, r2_manuel_autres: 0.8 } },
+    } }, 'primaire');
+    const rows = report.manuals?.rows.filter(r => r.label.startsWith('Autres matières')) ?? [];
+    expect(rows).toHaveLength(3);
+    expect(rows.every(r => r.cells.every(c => c.status === 'missing'))).toBe(true);
+  });
   it('affiche les sections et les 13 goulots', () => {
     expect(model.title).toBe('PRIMAIRE');
     expect(model.anneeLabel).toBe('2024 - 2025');
@@ -339,10 +373,11 @@ describe('rapport primaire avec les deux secteurs', () => {
 
   it('calcule les indicateurs de ressources avec les nouveaux agrégats', () => {
     const model = buildDrenReport(withPrivate(), 'primaire');
-    const value = (label: string) => model.other.rows.find((r) => r.label === label)!.cells[0].value;
-    expect(value('Pourcentage d’établissements avec cantine scolaire')).toBeCloseTo(2.5, 1);
-    expect(value('Pourcentage d’établissements accueillant des élèves en situation de handicap')).toBeCloseTo(0.5, 1);
-    expect(value('Pourcentage d’établissements avec latrine pour filles')).toBeCloseTo(4, 1);
+    for (const label of ['Pourcentage d’établissements avec cantine scolaire', 'Pourcentage d’établissements accueillant des élèves en situation de handicap', 'Pourcentage d’établissements avec latrine pour filles']) {
+      const cell = model.other.rows.find((r) => r.label === label)?.cells[0];
+      expect(cell?.status).toBe('na');
+      expect(cell?.value).toBeNull();
+    }
     const manuals = model.bottlenecks.find((b) => b.label === 'Nombre de manuels par élève T1-T2')!;
     expect(manuals.raw).toBeCloseTo(0.6, 2);
   });

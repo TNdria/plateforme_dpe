@@ -17,6 +17,10 @@ export async function ensureRefTables(client: any) {
     await client.queryObject(`CREATE TABLE IF NOT EXISTS public.tdb_population_dren (
       id BIGSERIAL PRIMARY KEY, annee INTEGER NOT NULL, code_dren INTEGER NOT NULL, dren TEXT,
       ${ageCols}, imported_at TIMESTAMPTZ DEFAULT now())`);
+    await client.queryObject(`CREATE TABLE IF NOT EXISTS public.tdb_population_cisco (
+      id BIGSERIAL PRIMARY KEY, annee INTEGER NOT NULL, code_dren INTEGER, dren TEXT, code_cisco INTEGER NOT NULL, cisco TEXT,
+      ${ageCols}, imported_at TIMESTAMPTZ DEFAULT now())`);
+    await client.queryObject(`CREATE INDEX IF NOT EXISTS tdb_population_cisco_annee_idx ON public.tdb_population_cisco (annee, code_cisco)`);
     ready = true;
   } catch (e) { console.error('ensureRefTables', e); }
 }
@@ -26,12 +30,29 @@ export const CE_SRC = `(SELECT "CODE_ETAB","ANNEE_SCOLAIRE","FCE","TOTAL_A_DOTER
    WHERE NOT EXISTS (SELECT 1 FROM tdb_caisse_ecole_import i WHERE i."NIVEAU"='PRIMAIRE' AND i."CODE_ETAB"=c0."CODE_ETAB" AND i."ANNEE_SCOLAIRE"=c0."ANNEE_SCOLAIRE")
    UNION ALL SELECT "CODE_ETAB","ANNEE_SCOLAIRE","TOTAL" AS "FCE",NULL::numeric AS "TOTAL_A_DOTER" FROM tdb_caisse_ecole_import WHERE "NIVEAU"='PRIMAIRE')`;
 
+/** Sous-requête population par CISCO (code_cisco, code_dren, pop_N_ans…) pour l'année, ou null. */
+export async function popCiscoSource(client: any, annee: number): Promise<string | null> {
+  try {
+    await ensureRefTables(client);
+    const r = await client.queryObject(`SELECT COUNT(*)::int AS n FROM tdb_population_cisco WHERE annee=${Number(annee)}`);
+    if (!((r.rows[0] as any)?.n > 0)) return null;
+    const cols = AGES.map((a) => `t_${a} AS pop_${a}_ans, g_${a} AS pop_${a}_ans_g, f_${a} AS pop_${a}_ans_f`).join(', ');
+    return `(SELECT code_cisco, code_dren, ${cols}, (${AGES.map((a) => `COALESCE(t_${a},0)`).join('+')}) AS pop_total FROM tdb_population_cisco WHERE annee=${Number(annee)})`;
+  } catch { return null; }
+}
+
 /** Sous-requête population compatible population_2025 (code_dren, pop_N_ans, pop_total) pour l'année demandée, ou null. */
 export async function popSource(client: any, annee: number): Promise<string | null> {
   try {
     await ensureRefTables(client);
     const r = await client.queryObject(`SELECT COUNT(*)::int AS n FROM tdb_population_dren WHERE annee=${Number(annee)}`);
-    if (!((r.rows[0] as any)?.n > 0)) return null;
+    if (!((r.rows[0] as any)?.n > 0)) {
+      // Repli : somme des CISCO importées pour reconstituer la DREN.
+      const c = await client.queryObject(`SELECT COUNT(*)::int AS n FROM tdb_population_cisco WHERE annee=${Number(annee)}`);
+      if (!((c.rows[0] as any)?.n > 0)) return null;
+      const sc = AGES.map((a) => `SUM(t_${a}) AS pop_${a}_ans, SUM(g_${a}) AS pop_${a}_ans_g, SUM(f_${a}) AS pop_${a}_ans_f`).join(', ');
+      return `(SELECT code_dren, ${sc}, SUM(${AGES.map((a) => `COALESCE(t_${a},0)`).join('+')}) AS pop_total FROM tdb_population_cisco WHERE annee=${Number(annee)} GROUP BY code_dren)`;
+    }
     const cols = AGES.map((a) => `t_${a} AS pop_${a}_ans, g_${a} AS pop_${a}_ans_g, f_${a} AS pop_${a}_ans_f`).join(', ');
     return `(SELECT code_dren, ${cols}, (${AGES.map((a) => `COALESCE(t_${a},0)`).join('+')}) AS pop_total FROM tdb_population_dren WHERE annee=${Number(annee)})`;
   } catch { return null; }
@@ -45,12 +66,12 @@ const num = (v: any) => {
 
 export async function importReference(client: any, body: any) {
   await ensureRefTables(client);
-  const { kind, rows, adminUsername, fileName } = body as { kind: 'caisse' | 'population'; rows: any[]; adminUsername?: string; fileName?: string };
+  const { kind, rows, adminUsername, fileName } = body as { kind: 'caisse' | 'population' | 'population_cisco'; rows: any[]; adminUsername?: string; fileName?: string };
   if (!Array.isArray(rows) || rows.length === 0) return { success: false, error: 'Aucune ligne à importer' };
   await client.queryObject('BEGIN');
   try {
     await client.queryObject("SET LOCAL statement_timeout = '45s'");
-    const lock = await client.queryObject('SELECT pg_try_advisory_xact_lock(736241, $1) AS locked', [kind === 'caisse' ? 1 : 2]);
+    const lock = await client.queryObject('SELECT pg_try_advisory_xact_lock(736241, $1) AS locked', [kind === 'caisse' ? 1 : kind === 'population' ? 2 : 3]);
     if (!lock.rows[0]?.locked) {
       await client.queryObject('ROLLBACK');
       return { success: false, retryable: true, error: 'Un import est déjà en cours. Nouvelle tentative dans quelques secondes.' };
@@ -82,6 +103,19 @@ export async function importReference(client: any, body: any) {
         [JSON.stringify(clean.map((r) => ({ annee: r.annee, code_dren: r.code_dren,
           dren: r.dren ? String(r.dren) : null, ...Object.fromEntries(cols.map((c) => [c, num(r[c])])) })))]);
       inserted = clean.length;
+    } else if (kind === 'population_cisco') {
+      const cols = AGES.flatMap((a) => [`g_${a}`, `f_${a}`, `t_${a}`]);
+      const clean = rows.map((r) => ({ ...r, annee: Math.trunc(num(r.annee) ?? 0), code_cisco: Math.trunc(num(r.code_cisco) ?? 0), code_dren: Math.trunc(num(r.code_dren) ?? 0) || null }))
+        .filter((r) => r.annee > 1990 && r.code_cisco > 0);
+      const years = Array.from(new Set(clean.map((r) => r.annee)));
+      if (years.length) await client.queryObject(`DELETE FROM tdb_population_cisco WHERE annee = ANY($1)`, [years]);
+      const all = ['annee', 'code_dren', 'dren', 'code_cisco', 'cisco', ...cols];
+      const typedCols = ['annee integer', 'code_dren integer', 'dren text', 'code_cisco integer', 'cisco text', ...cols.map((c) => `${c} numeric`)];
+      await client.queryObject(`INSERT INTO tdb_population_cisco (${all.join(',')})
+        SELECT ${all.join(',')} FROM jsonb_to_recordset($1::jsonb) AS r(${typedCols.join(',')})`,
+        [JSON.stringify(clean.map((r) => ({ annee: r.annee, code_dren: r.code_dren, dren: r.dren ? String(r.dren) : null,
+          code_cisco: r.code_cisco, cisco: r.cisco ? String(r.cisco) : null, ...Object.fromEntries(cols.map((c) => [c, num(r[c])])) })))]);
+      inserted = clean.length;
     } else {
       throw new Error('Type d\'import inconnu');
     }
@@ -90,7 +124,7 @@ export async function importReference(client: any, body: any) {
     await client.queryObject(`INSERT INTO public.tdb_import_batches (id, table_name, file_name, row_count, imported_by, batch_ts_start, batch_ts_end, status)
       VALUES ($1, $2, $3, $4, $5, $6::timestamptz, $6::timestamptz, 'completed')
       ON CONFLICT (id) DO UPDATE SET row_count = EXCLUDED.row_count, imported_by = EXCLUDED.imported_by, batch_ts_start = LEAST(public.tdb_import_batches.batch_ts_start, EXCLUDED.batch_ts_start), batch_ts_end = GREATEST(public.tdb_import_batches.batch_ts_end, EXCLUDED.batch_ts_end), status = 'completed'`,
-      [batchId, kind === 'caisse' ? 'tdb_caisse_ecole_import' : 'tdb_population_dren', fileName || null, inserted, adminUsername || 'admin', batchTs]);
+      [batchId, kind === 'caisse' ? 'tdb_caisse_ecole_import' : kind === 'population' ? 'tdb_population_dren' : 'tdb_population_cisco', fileName || null, inserted, adminUsername || 'admin', batchTs]);
     await client.queryObject('COMMIT');
     return { success: true, inserted, total: rows.length, batchId };
   } catch (e: any) {

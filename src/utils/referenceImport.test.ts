@@ -34,7 +34,7 @@ describe('atomic reference replacement', () => {
     const rows = Array.from({ length: 26418 }, (_, i) => ({ annee: 2026, niveau: 'PRIMAIRE', code: 503140006 + i, total: '2 565 500,5' }));
     const result = await importReference(db, { kind: 'caisse', rows });
     expect(result.inserted).toBe(26418);
-    const inserts = db.queryObject.mock.calls.filter(([sql]) => sql.startsWith('INSERT'));
+    const inserts = db.queryObject.mock.calls.filter(([sql]) => sql.startsWith('INSERT') && !sql.includes('tdb_import_batches'));
     expect(inserts).toHaveLength(1);
     const data = JSON.parse(inserts[0][1][0]);
     expect(data).toHaveLength(26418);

@@ -13,7 +13,7 @@ import { toast } from 'sonner';
 import { Loader2, Upload, FileSpreadsheet } from 'lucide-react';
 import { sendReferenceImport } from '@/utils/referenceImport';
 
-export type RefKind = 'caisse' | 'population';
+export type RefKind = 'caisse' | 'population' | 'population_cisco';
 
 const API = `https://${import.meta.env.VITE_SUPABASE_PROJECT_ID}.supabase.co/functions/v1/db-query?action=importReference`;
 const norm = (v: unknown) => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '');
@@ -53,14 +53,17 @@ export function parseCaisse(XLSX: any, wb: any, defaultYear: number) {
   return out;
 }
 
-export function parsePopulation(XLSX: any, wb: any) {
-  const name = wb.SheetNames.find((n: string) => norm(n).includes('parage')) ?? wb.SheetNames[0];
-  return sheetObjects(XLSX, wb.Sheets[name]).filter((o) => firstValue(o, ['codedren', 'code_dren', 'code_dren', 'codedren_annee'])).map((o) => {
+export function parsePopulation(XLSX: any, wb: any, cisco = false) {
+  const name = wb.SheetNames.find((n: string) => norm(n).includes('parage') && (!cisco || norm(n).includes('cisco')))
+    ?? wb.SheetNames.find((n: string) => norm(n).includes('parage')) ?? wb.SheetNames[0];
+  const key = cisco ? 'codecisco' : 'codedren';
+  return sheetObjects(XLSX, wb.Sheets[name]).filter((o) => firstValue(o, [key])).map((o) => {
     const r: Record<string, any> = {
       annee: firstValue(o, ['annee', 'anneescolaire', 'annee_scolaire']),
       code_dren: firstValue(o, ['codedren', 'code_dren']),
       dren: firstValue(o, ['dren', 'nom_dren']),
     };
+    if (cisco) { r.code_cisco = firstValue(o, ['codecisco']); r.cisco = firstValue(o, ['cisco', 'nomcisco']); }
     for (let a = 3; a <= 17; a++) {
       for (const s of ['g', 'f', 't']) {
         r[`${s}_${a}`] = firstValue(o, [`${s}${a}ans`, `${s}_${a}_ans`, `${s}${a}`, `${s}_${a}`]) ?? null;
@@ -87,7 +90,7 @@ export default function ReferenceImportDialog({ kind, open, onOpenChange, adminU
     try {
       const XLSX = await import('xlsx');
       const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
-      const data = isCaisse ? parseCaisse(XLSX, wb, Number(y)) : parsePopulation(XLSX, wb);
+      const data = isCaisse ? parseCaisse(XLSX, wb, Number(y)) : parsePopulation(XLSX, wb, kind === 'population_cisco');
       setRows(data);
       if (isCaisse) {
         setSummary(NIVEAUX.map((n) => {
@@ -97,7 +100,7 @@ export default function ReferenceImportDialog({ kind, open, onOpenChange, adminU
         }));
       } else {
         const yrs = [...new Set(data.map((r) => r.annee))].sort();
-        setSummary([`${data.length} lignes DREN`, `Années : ${yrs.join(', ')}`]);
+        setSummary([`${data.length} lignes ${kind === 'population_cisco' ? 'CISCO' : 'DREN'}`, `Années : ${yrs.join(', ')}`]);
       }
       if (!data.length) toast.error('Aucune donnée reconnue dans ce fichier');
     } catch (e: any) { toast.error(`Lecture impossible : ${e.message}`); }
@@ -122,11 +125,13 @@ export default function ReferenceImportDialog({ kind, open, onOpenChange, adminU
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileSpreadsheet className="w-5 h-5 text-primary" />
-            {isCaisse ? 'Importer la Caisse école' : 'Importer la population par DREN'}
+            {isCaisse ? 'Importer la Caisse école' : kind === 'population_cisco' ? 'Importer la population par CISCO' : 'Importer la population par DREN'}
           </DialogTitle>
           <DialogDescription>
             {isCaisse
               ? 'Classeur Excel avec les feuilles PRIMAIRE, COLLEGE et LYCEE (colonnes Code et Total, Annee facultative). Les montants de la même année et du même niveau sont remplacés.'
+              : kind === 'population_cisco'
+              ? 'Classeur Excel (.xlsx ou .xlsb) avec la feuille pop_cisco_par_age : annee, code_dren, dren, code_cisco, cisco, puis G/F/T de 3 à 17 ans. Les années présentes dans le fichier sont remplacées.'
               : 'Classeur Excel (.xlsx ou .xlsb) avec la feuille pop_dren_par_age : annee, code_dren, dren, puis G/F/T de 3 à 17 ans. Les années présentes dans le fichier sont remplacées.'}
           </DialogDescription>
         </DialogHeader>

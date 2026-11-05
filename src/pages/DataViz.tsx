@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef, type PointerEvent as ReactPointerEvent } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -393,6 +393,18 @@ const DataViz = () => {
   );
   const [showDownloadModal, setShowDownloadModal] = useState(false);
 
+  /** Mode "capture" : l'utilisateur trace la zone de la carte à télécharger */
+  const [captureMode, setCaptureMode] = useState(false);
+  const [captureSelection, setCaptureSelection] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const [captureDragging, setCaptureDragging] = useState(false);
+  const [captureBusy, setCaptureBusy] = useState(false);
+  const captureStartRef = useRef<{ x: number; y: number } | null>(null);
+
   const [sliderRange, setSliderRange] = useState<[number, number]>([0, 100]);
   const [sliderValue, setSliderValue] = useState<[number, number]>([25, 75]);
 
@@ -652,58 +664,171 @@ const DataViz = () => {
     setRecap({ zone: "", total: 0, low: 0, medium: 0, high: 0 });
   }, []);
 
-  const handleCaptureMap = useCallback(async () => {
+  // ── Capture PNG : l'utilisateur trace la zone à télécharger ─────────────
+
+  /** Point du curseur exprimé en coordonnées relatives au conteneur de la carte */
+  const mapPointFromEvent = (event: ReactPointerEvent<HTMLDivElement>) => {
     const node = mapContainerRef.current;
-    if (!node) return;
+    if (!node) return { x: 0, y: 0 };
+    const rect = node.getBoundingClientRect();
+    return {
+      x: Math.min(Math.max(event.clientX - rect.left, 0), rect.width),
+      y: Math.min(Math.max(event.clientY - rect.top, 0), rect.height),
+    };
+  };
+
+  const startMapCapture = useCallback(() => {
+    setShowDownloadModal(false);
     setContextMenu(null);
-    try {
-      const canvas = await html2canvas(node, {
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: "#ffffff",
-        logging: false,
-        scale: 2,
-        scrollX: 0,
-        scrollY: -window.scrollY,
-        windowWidth: document.documentElement.clientWidth,
-        windowHeight: document.documentElement.clientHeight,
-        // html2canvas rend mal les translate3d de Leaflet → décalage.
-        // On convertit chaque translation en left/top dans le clone.
-        onclone: (doc, cloned) => {
-          const sel =
-            ".leaflet-map-pane, .leaflet-tile, .leaflet-tile-container, .leaflet-marker-icon, .leaflet-marker-shadow, .leaflet-tooltip, .leaflet-popup, .leaflet-zoom-animated, .leaflet-pane > svg, .leaflet-pane > canvas";
-          const orig = Array.from(node.querySelectorAll<HTMLElement>(sel));
-          const copies = Array.from(cloned.querySelectorAll<HTMLElement>(sel));
-          orig.forEach((el, i) => {
-            const c = copies[i];
-            if (!c) return;
-            const t = window.getComputedStyle(el).transform;
-            if (!t || t === "none") return;
-            const m = new DOMMatrixReadOnly(t);
-            if (Math.abs(m.a - 1) > 1e-3 || Math.abs(m.d - 1) > 1e-3) return;
-            const cs = window.getComputedStyle(el);
-            const left = (parseFloat(cs.left) || 0) + m.e;
-            const top = (parseFloat(cs.top) || 0) + m.f;
-            c.style.transform = "none";
-            c.style.left = `${left}px`;
-            c.style.top = `${top}px`;
-          });
-          void doc;
-        },
-      });
-      const link = document.createElement("a");
-      const themeLabel = THEMES.find((t) => t.value === appliedTheme)?.label || "carte";
-      const slug = `${themeSlugFor(themeLabel)}_${niveauSlugFor(niveau)}`;
-      const date = new Date().toISOString().slice(0, 10);
-      link.download = `${slug}_${date}.png`;
-      link.href = canvas.toDataURL("image/png");
-      link.click();
-      toast.success("Carte téléchargée");
-    } catch (err) {
-      console.error("Capture error:", err);
-      toast.error("Impossible de capturer la carte");
+    setCaptureSelection(null);
+    setCaptureMode(true);
+  }, []);
+
+  const cancelMapCapture = useCallback(() => {
+    setCaptureMode(false);
+    setCaptureSelection(null);
+    captureStartRef.current = null;
+    setCaptureDragging(false);
+  }, []);
+
+  const handleCapturePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    // Empêche Leaflet de démarrer un déplacement de carte sous l'overlay.
+    event.stopPropagation();
+    event.preventDefault();
+    if (event.button !== 0 || captureBusy) return;
+    const point = mapPointFromEvent(event);
+    captureStartRef.current = point;
+    setCaptureSelection({ x: point.x, y: point.y, width: 0, height: 0 });
+    setCaptureDragging(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handleCapturePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.stopPropagation();
+    if (!captureDragging) return;
+    const start = captureStartRef.current;
+    if (!start) return;
+    const point = mapPointFromEvent(event);
+    setCaptureSelection({
+      x: Math.min(start.x, point.x),
+      y: Math.min(start.y, point.y),
+      width: Math.abs(point.x - start.x),
+      height: Math.abs(point.y - start.y),
+    });
+  };
+
+  const handleCapturePointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.stopPropagation();
+    if (!captureDragging) return;
+    setCaptureDragging(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
     }
-  }, [appliedTheme, niveau]);
+    setCaptureSelection((current) =>
+      current && current.width >= 16 && current.height >= 16 ? current : null,
+    );
+  };
+
+  useEffect(() => {
+    if (!captureMode) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") cancelMapCapture();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [captureMode, cancelMapCapture]);
+
+  const handleCaptureMap = useCallback(
+    async (selection?: { x: number; y: number; width: number; height: number } | null) => {
+      const node = mapContainerRef.current;
+      if (!node) return;
+      setContextMenu(null);
+      setCaptureBusy(true);
+      try {
+        // ⚠️ Dans html2canvas, x/y sont relatifs à l'élément (le canvas est déjà
+        // ancré sur son coin haut-gauche) et width/height découpent la zone.
+        // Ajouter rect.left/top ici décalait toute la capture.
+        const crop =
+          selection && selection.width >= 1 && selection.height >= 1 ? selection : null;
+        const canvas = await html2canvas(node, {
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: "#ffffff",
+          logging: false,
+          scale: 2,
+          x: crop ? Math.round(crop.x) : 0,
+          y: crop ? Math.round(crop.y) : 0,
+          width: crop ? Math.round(crop.width) : node.clientWidth,
+          height: crop ? Math.round(crop.height) : node.clientHeight,
+          scrollX: -window.scrollX,
+          scrollY: -window.scrollY,
+          windowWidth: document.documentElement.clientWidth,
+          windowHeight: document.documentElement.clientHeight,
+          // html2canvas rend mal les translate3d de Leaflet → décalage.
+          // On convertit chaque translation en left/top dans le clone.
+          onclone: (doc, cloned) => {
+            // Le bandeau de sélection ne doit jamais apparaître sur l'export.
+            cloned.querySelectorAll<HTMLElement>("[data-capture-ui]").forEach((el) => el.remove());
+            const sel =
+              ".leaflet-map-pane, .leaflet-tile, .leaflet-tile-container, .leaflet-marker-icon, .leaflet-marker-shadow, .leaflet-tooltip, .leaflet-popup, .leaflet-zoom-animated, .leaflet-pane > svg, .leaflet-pane > canvas";
+            const orig = Array.from(node.querySelectorAll<HTMLElement>(sel));
+            const copies = Array.from(cloned.querySelectorAll<HTMLElement>(sel));
+            // Positions lues depuis la mise en page réelle (getBoundingClientRect),
+            // identiques quel que soit le navigateur (Firefox renvoie des matrices
+            // et des left/top différents de Chrome).
+            const plan = orig.map((el, i) => {
+              const c = copies[i];
+              const t = window.getComputedStyle(el).transform;
+              if (!c || !t || t === "none") return null;
+              const m = new DOMMatrixReadOnly(t);
+              if (Math.abs(m.a - 1) > 1e-3 || Math.abs(m.d - 1) > 1e-3) return null;
+              const parent = (el.offsetParent as HTMLElement | null) ?? (el.parentElement as HTMLElement | null);
+              if (!parent) return null;
+              const r = el.getBoundingClientRect();
+              const pr = parent.getBoundingClientRect();
+              const cs = window.getComputedStyle(el);
+              return {
+                c,
+                left: r.left - pr.left - parent.clientLeft - (parseFloat(cs.marginLeft) || 0),
+                top: r.top - pr.top - parent.clientTop - (parseFloat(cs.marginTop) || 0),
+              };
+            });
+            plan.forEach((p) => {
+              if (!p) return;
+              // html2canvas sérialise le SVG en image avec tout le style calculé.
+              // Dans Firefox, ce style (dont width/height CSS) décale le dessin
+              // de l'origine du viewBox : on repart d'un style minimal identique
+              // aux deux navigateurs pour que polygones et fond restent alignés.
+              if (p.c.tagName.toLowerCase() === "svg") p.c.removeAttribute("style");
+              p.c.style.transform = "none";
+              p.c.style.translate = "none";
+              p.c.style.left = `${p.left}px`;
+              p.c.style.top = `${p.top}px`;
+            });
+            void doc;
+          },
+        });
+
+        const link = document.createElement("a");
+        const themeLabel = THEMES.find((t) => t.value === appliedTheme)?.label || "carte";
+        const slug = `${themeSlugFor(themeLabel)}_${niveauSlugFor(niveau)}`;
+        const date = new Date().toISOString().slice(0, 10);
+        const suffix = crop ? "_zone" : "";
+        link.download = `${slug}${suffix}_${date}.png`;
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+        setCaptureMode(false);
+        setCaptureSelection(null);
+        toast.success(crop ? "Zone de la carte téléchargée" : "Carte téléchargée");
+      } catch (err) {
+        console.error("Capture error:", err);
+        toast.error("Impossible de capturer la carte");
+      } finally {
+        setCaptureBusy(false);
+      }
+    },
+    [appliedTheme, niveau],
+  );
 
   // ── Export dataset ──────────────────────────────────────────────────────
 
@@ -1527,8 +1652,8 @@ const DataViz = () => {
                         <em>Commune</em> ou par <em>Établissement</em>.
                       </li>
                       <li>
-                        Utilisez <em>Capturer la carte</em> pour télécharger une image PNG de la
-                        vue.
+                        Utilisez <em>Capturer</em>, puis tracez un rectangle sur la carte pour
+                        télécharger uniquement la zone choisie en PNG.
                       </li>
                     </ul>
                   </div>
@@ -1703,6 +1828,92 @@ const DataViz = () => {
 
             <FitBounds data={activeBoundsData} />
           </MapContainer>
+
+          {/* Mode capture : tracé de la zone à télécharger */}
+          {captureMode && (
+            <div
+              data-capture-ui
+              data-html2canvas-ignore="true"
+              className="absolute inset-0 z-[2500] cursor-crosshair select-none touch-none"
+              onPointerDown={handleCapturePointerDown}
+              onPointerMove={handleCapturePointerMove}
+              onPointerUp={handleCapturePointerUp}
+              onPointerCancel={handleCapturePointerUp}
+              onContextMenu={(event) => event.preventDefault()}
+            >
+              {captureSelection &&
+              captureSelection.width > 0 &&
+              captureSelection.height > 0 ? (
+                <div
+                  className="absolute pointer-events-none border-2 border-dashed border-primary bg-primary/10 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]"
+                  style={{
+                    left: captureSelection.x,
+                    top: captureSelection.y,
+                    width: captureSelection.width,
+                    height: captureSelection.height,
+                  }}
+                />
+              ) : (
+                <div className="absolute inset-0 bg-black/35 pointer-events-none" />
+              )}
+
+              <div className="pointer-events-none absolute top-3 left-1/2 z-10 w-[min(92%,520px)] -translate-x-1/2 rounded-xl border bg-background/95 px-4 py-3 text-center shadow-lg backdrop-blur">
+                <p className="text-sm font-semibold">Tracez la zone de la carte à télécharger</p>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  Cliquez-glissez pour délimiter la zone, puis cliquez sur « Télécharger la zone ».
+                  Appuyez sur Échap pour annuler.
+                </p>
+              </div>
+
+              <div
+                className="absolute bottom-4 left-1/2 z-10 flex flex-wrap items-center justify-center gap-2 rounded-xl border bg-background/95 px-3 py-2 shadow-lg backdrop-blur"
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                <Button
+                  size="sm"
+                  onClick={() => handleCaptureMap(captureSelection)}
+                  disabled={
+                    captureBusy ||
+                    !captureSelection ||
+                    captureSelection.width < 16 ||
+                    captureSelection.height < 16
+                  }
+                >
+                  {captureBusy ? (
+                    <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="mr-1 h-4 w-4" />
+                  )}
+                  Télécharger la zone
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleCaptureMap(null)}
+                  disabled={captureBusy}
+                >
+                  <FileImage className="mr-1 h-4 w-4" />
+                  Toute la carte
+                </Button>
+                {captureSelection && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={captureBusy}
+                    onClick={() => {
+                      captureStartRef.current = null;
+                      setCaptureSelection(null);
+                    }}
+                  >
+                    Recommencer
+                  </Button>
+                )}
+                <Button size="sm" variant="ghost" onClick={cancelMapCapture} disabled={captureBusy}>
+                  Annuler
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
 
         <button
@@ -2008,14 +2219,18 @@ const DataViz = () => {
             <div>
               <p className="text-sm font-medium text-muted-foreground mb-3">IMAGE DE LA CARTE</p>
               <Button
-                onClick={handleCaptureMap}
+                onClick={startMapCapture}
                 variant="default"
                 className="w-full h-16 gap-2"
                 disabled={loading}
               >
                 <FileImage className="h-5 w-5" />
-                Capturer la carte (PNG)
+                Choisir une zone à capturer (PNG)
               </Button>
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                Vous tracerez ensuite un rectangle sur la carte : seul cet emplacement sera
+                téléchargé.
+              </p>
             </div>
           </div>
 

@@ -174,7 +174,9 @@ export const DREN_MANUELS: { label: string; key: string; eleves: string }[] = [
   { label: 'Français T1-T2', key: 'fr_12', eleves: 'eleves_12' },
   { label: 'Français T3', key: 'fr_3', eleves: 'eleves_3' },
   { label: 'Français T4-T5', key: 'fr_45', eleves: 'eleves_45' },
-  { label: 'Autres matières (Rakibolana, Histoire, Géographie, SVT)', key: 'autres', eleves: 'eleves' },
+  { label: 'Autres matières T1-T2', key: 'autres_12', eleves: 'eleves_12' },
+  { label: 'Autres matières T3', key: 'autres_3', eleves: 'eleves_3' },
+  { label: 'Autres matières T4-T5', key: 'autres_45', eleves: 'eleves_45' },
 ];
 
 /** Ratio élèves / manuel et % de manuels mal répartis pour une ligne. */

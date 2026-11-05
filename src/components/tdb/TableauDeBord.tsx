@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import DisparityIcon from '@/components/score/DisparityIcon';
 import { EfficienceGrid } from './EfficienceGrid';
+import { TDBDiagnosticReport } from '@/components/tdb/TDBDiagnosticReport';
 import logoMen from '@/assets/logoMen.jpg';
 import {
   buildDrenReport,
@@ -86,7 +87,61 @@ function Cell({ cell, onClick }: { cell: ReportCell; onClick?: (meta?: Indicator
   );
 }
 
-function DataTable({ table, onMeta, dense }: { table: ReportTable; onMeta: (meta?: IndicatorMeta) => void; dense?: boolean }) {
+function DataTable({ table, onMeta, dense, manuals = false }: { table: ReportTable; onMeta: (meta?: IndicatorMeta) => void; dense?: boolean; manuals?: boolean }) {
+  if (manuals) {
+    // Presentation only: retain each existing cell, its display and indicator action.
+    const subject = (label: string) => label.replace(/ T(?:1-T2|3|4-T5)$/, '');
+    return (
+      <div className="tdb-table-block">
+        <table className="tdb-table tdb-manuals">
+          <colgroup>
+            <col className="tdb-manuals-subject" />
+            {Array.from({ length: 6 }, (_, i) => <col key={i} className="tdb-manuals-value" />)}
+          </colgroup>
+          <thead>
+            <tr>
+              <th scope="col">Manuels Scolaires utilisables dotés par l'État et les Partenaires (public)</th>
+              <th scope="colgroup" colSpan={3}>Votre DREN</th>
+              <th scope="colgroup" colSpan={3}>MADA</th>
+            </tr>
+            <tr>
+              {['Ratio élève-manuel', 'T1-T2', 'T3', 'T4-T5', 'T1-T2', 'T3', 'T4-T5'].map((label, i) => <th key={i} scope="col">{label}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {[0, 2].map((offset) => (
+              <Fragment key={offset}>
+                {offset === 2 && (
+                  <tr className="tdb-manuals-subhead">
+                    <th scope="rowgroup">Pourcentage des manuels qui ne sont pas repartis en fonction de Nombre d'élèves</th>
+                    {Array.from({ length: 6 }, (_, i) => <td key={i} />)}
+                  </tr>
+                )}
+                {table.rows.map((row, ri) => {
+                  const label = subject(row.label);
+                  if (ri > 0 && subject(table.rows[ri - 1].label) === label) return null;
+                  const group = table.rows.slice(ri, ri + 3).filter((item) => subject(item.label) === label);
+                  return (
+                    <tr key={`${row.label}-${ri}`} className={row.bold ? 'tdb-row-bold' : undefined}>
+                      <th scope="row" className="tdb-row-label">
+                        {row.meta ? <button type="button" className="tdb-label" onClick={() => onMeta(row.meta)} title="Voir la fiche de l’indicateur">{label}</button> : label}
+                      </th>
+                      {[offset, offset + 1].map((ci) => (
+                        <Fragment key={ci}>
+                          {group.map((item, gi) => <Cell key={gi} cell={item.cells[ci]} onClick={onMeta} />)}
+                        </Fragment>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+        {table.note && <div className="tdb-note">{table.note}</div>}
+      </div>
+    );
+  }
   return (
     <div className="tdb-table-block">
       {table.title && <div className="tdb-table-title">{table.title}</div>}
@@ -122,7 +177,74 @@ function DataTable({ table, onMeta, dense }: { table: ReportTable; onMeta: (meta
   );
 }
 
+function CepeTable({ block, onMeta }: { block: ExamBlock; onMeta: (meta?: IndicatorMeta) => void }) {
+  // Presentation only: same rows/cells as the model, 9-column reference layout.
+  const smClass = (ci: number) => (ci === 0 || ci === 4 ? ' tdb-cepe-sm-red' : ci === 2 ? ' tdb-cepe-sm-blue' : '');
+  return (
+    <div className="tdb-table-block tdb-exam">
+      <div className="tdb-table-title">{block.title}</div>
+      <table className="tdb-table tdb-cepe">
+        <colgroup>
+          <col className="tdb-cepe-label" />
+          {Array.from({ length: 8 }, (_, i) => <col key={i} className="tdb-cepe-value" />)}
+        </colgroup>
+        <thead>
+          <tr>
+            <th colSpan={9} className="tdb-cepe-title">
+              Score moyen(SM) sur 20 et pourcentage d'élèves ayant obtenu une note supérieure ou égale 10/20 CEPE
+            </th>
+          </tr>
+          <tr>
+            <th rowSpan={3} scope="col">Matières</th>
+            <th colSpan={6} scope="colgroup">Votre DREN</th>
+            <th colSpan={2} rowSpan={2} scope="colgroup">Mada</th>
+          </tr>
+          <tr>
+            <th colSpan={2} scope="colgroup">PUBLIC</th>
+            <th colSpan={2} scope="colgroup">PRIVÉ</th>
+            <th colSpan={2} scope="colgroup">Ensemble</th>
+          </tr>
+          <tr>
+            {Array.from({ length: 4 }, (_, i) => (
+              <Fragment key={i}><th scope="col">SM</th><th scope="col">% ≥ 10</th></Fragment>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {block.subjectRows.map((row, ri) => (
+            <tr key={`${row.label}-${ri}`} className={row.bold ? 'tdb-row-bold' : undefined}>
+              <th scope="row" className="tdb-row-label">
+                <button type="button" className="tdb-label" onClick={() => onMeta(row.meta)}>{row.label}</button>
+              </th>
+              {row.cells.map((cell, ci) => (
+                <td
+                  key={ci}
+                  className={`${cellClass(cell)}${cell.status === 'ok' ? smClass(ci) : ''}`}
+                  onClick={() => onMeta(cell.meta)}
+                  title={cell.meta?.label}
+                >
+                  {cell.display}
+                </td>
+              ))}
+            </tr>
+          ))}
+          {block.admissionRows.map((row, ri) => (
+            <tr key={`a${ri}`}>
+              <th scope="row" className="tdb-row-label">
+                {ri === 0 ? block.admissionTitle || row.label : row.label}
+              </th>
+              {row.cells.map((cell, ci) => <Cell key={ci} cell={{ ...cell, span: 2 }} onClick={onMeta} />)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {block.note && <div className="tdb-note">{block.note}</div>}
+    </div>
+  );
+}
+
 function ExamTable({ block, onMeta }: { block: ExamBlock; onMeta: (meta?: IndicatorMeta) => void }) {
+  if (block.title === 'RÉSULTAT AU CEPE') return <CepeTable block={block} onMeta={onMeta} />;
   const total = 1 + block.groups.slice(1).reduce((sum, group) => sum + group.span, 0);
   return (
     <div className="tdb-table-block tdb-exam">
@@ -348,12 +470,17 @@ export function TableauDeBord({ data, niveau, codeDren }: Props) {
         <DataTable table={report.coverage} onMeta={openFiche} />
         {niveau !== 'presco' && <RetentionChart model={report} />}
       </div>
-      {examPage1.length > 0 && (
+      {!lycee && examPage1.length > 0 && report.ueas.length > 0 ? (
+        <div className="tdb-cols-55-45 tdb-results-row">
+          <div>{examPage1.map((block, i) => <ExamTable key={i} block={block} onMeta={openFiche} />)}</div>
+          <div>{report.ueas.map((block, i) => <ExamTable key={`u${i}`} block={block} onMeta={openFiche} />)}</div>
+        </div>
+      ) : examPage1.length > 0 && (
         <div className={examPage1.length > 1 ? 'tdb-cols-2' : ''}>
           {examPage1.map((block, i) => <ExamTable key={i} block={block} onMeta={openFiche} />)}
         </div>
       )}
-      {!lycee && report.ueas.length > 0 && (
+      {!lycee && examPage1.length === 0 && report.ueas.length > 0 && (
         <div className="tdb-cols-2">
           {report.ueas.map((block, i) => <ExamTable key={`u${i}`} block={block} onMeta={openFiche} />)}
         </div>
@@ -384,7 +511,7 @@ export function TableauDeBord({ data, niveau, codeDren }: Props) {
       <div className="tdb-cols-2">
         <div>
           <DataTable table={report.human} onMeta={openFiche} />
-          {report.manuals && <DataTable table={report.manuals} onMeta={openFiche} />}
+          {report.manuals && <DataTable table={report.manuals} onMeta={openFiche} manuals={niveau === 'primaire'} />}
           {report.finance && <DataTable table={report.finance} onMeta={openFiche} />}
         </div>
         <div>
@@ -431,6 +558,12 @@ export function TableauDeBord({ data, niveau, codeDren }: Props) {
             </div>
           )}
           </div>
+        <TDBDiagnosticReport
+          entityLabel="DREN"
+          showDiagnostic={!report.efficiency}
+          score={{ x: report.efficiency?.x ?? null, y: report.efficiency?.y ?? null }}
+          goulots={report.bottlenecks.map(g => ({ label: g.label, value: g.value }))}
+        />
       </div>
 
       <Fiche meta={fiche} onClose={() => setFiche(null)} />

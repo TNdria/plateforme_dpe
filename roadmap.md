@@ -1,5 +1,12 @@
 # Roadmap
 
+- [x] Ajuster les libellés de contexte du TdB établissement et afficher OUI/NON pour l’école ; conserver les pourcentages ZAP/CISCO.
+- [ ] Alimenter le nombre d’enfants déscolarisés et non scolarisés du TdB établissement ; aucun champ correspondant disponible dans la réponse actuelle.
+
+- [ ] Corriger « Autres matières » sans fusion des cellules, vérifier ses sources API et griser Ensemble dans Autres ressources sauf les trois indicateurs demandés.
+
+- [x] Corriger uniquement la présentation du tableau des manuels DREN : sept colonnes, en-têtes fusionnés et bordures, sans modifier les données ; affichage réel ATSINANANA 2025 vérifié et 44 tests réussis.
+
 - [x] Restreindre le téléchargement et l’impression TDB : invité interdit, compte limité à son affectation, administrateurs autorisés partout ; validation serveur déployée, 15 tests réussis et invité vérifié sur ATSINANANA 2025.
 - [ ] Vérifier le téléchargement avec un compte CISCO/DREN et administrateur connecté dans l’interface ; en attente d’une session utilisateur disponible (connexion Django distincte du Cloud).
 
