@@ -11,6 +11,7 @@
 - Resolve DREN exam values from nested CEPE blocks and derive threshold percentages from candidate counts; show unavailable report values as missing rather than zero to avoid misleading results.
 
 - Import reference spreadsheets through parameterized JSON recordsets in one atomic, advisory-locked transaction; retry the identical replacement payload to reduce remote round trips without duplicates or partial deletion.
+- Reference rows and batch history share the exact PostgreSQL transaction timestamp; recover legacy links only on an unambiguous exact timestamp and matching row count, never fuzzy time ranges or table-wide fallbacks.
 
 - Render DREN reports as one continuous content-driven sheet; let the shared A4 export paginate table groups naturally instead of reserving empty page heights.
 

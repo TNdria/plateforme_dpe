@@ -77,6 +77,10 @@ export async function importReference(client: any, body: any) {
       return { success: false, retryable: true, error: 'Un import est déjà en cours. Nouvelle tentative dans quelques secondes.' };
     }
     let inserted = 0;
+    // One exact timestamp for inserted rows and history, including DB clock precision.
+    const timestamp = await client.queryObject('SELECT now()::text AS batch_ts');
+    const batchTs = timestamp.rows[0]?.batch_ts;
+    if (!batchTs) throw new Error('Date du lot indisponible');
     if (kind === 'caisse') {
       const clean = rows.map((r) => ({ a: Math.trunc(num(r.annee) ?? 0), n: String(r.niveau || '').toUpperCase(), c: num(r.code), t: num(r.total) }))
         .filter((r) => r.a > 1990 && r.c && ['PRIMAIRE', 'COLLEGE', 'LYCEE'].includes(r.n));
@@ -86,9 +90,9 @@ export async function importReference(client: any, body: any) {
         await client.queryObject(`DELETE FROM tdb_caisse_ecole_import WHERE "ANNEE_SCOLAIRE"=$1 AND "NIVEAU"=$2`, [Number(a), n]);
       }
       // One database round trip rather than hundreds across the remote connection.
-      await client.queryObject(`INSERT INTO tdb_caisse_ecole_import ("ANNEE_SCOLAIRE","NIVEAU","CODE_ETAB","TOTAL")
-        SELECT a, n, c, t FROM jsonb_to_recordset($1::jsonb) AS r(a integer, n text, c bigint, t numeric)`,
-        [JSON.stringify(clean.map((r) => ({ ...r, c: Math.trunc(r.c ?? 0) })))]);
+      await client.queryObject(`INSERT INTO tdb_caisse_ecole_import ("ANNEE_SCOLAIRE","NIVEAU","CODE_ETAB","TOTAL",imported_at)
+        SELECT a, n, c, t, $2::timestamptz FROM jsonb_to_recordset($1::jsonb) AS r(a integer, n text, c bigint, t numeric)`,
+        [JSON.stringify(clean.map((r) => ({ ...r, c: Math.trunc(r.c ?? 0) }))), batchTs]);
       inserted = clean.length;
     } else if (kind === 'population') {
       const cols = AGES.flatMap((a) => [`g_${a}`, `f_${a}`, `t_${a}`]);
@@ -98,10 +102,10 @@ export async function importReference(client: any, body: any) {
       if (years.length) await client.queryObject(`DELETE FROM tdb_population_dren WHERE annee = ANY($1)`, [years]);
       const all = ['annee', 'code_dren', 'dren', ...cols];
       const typedCols = ['annee integer', 'code_dren integer', 'dren text', ...cols.map((c) => `${c} numeric`)];
-      await client.queryObject(`INSERT INTO tdb_population_dren (${all.join(',')})
-        SELECT ${all.join(',')} FROM jsonb_to_recordset($1::jsonb) AS r(${typedCols.join(',')})`,
+      await client.queryObject(`INSERT INTO tdb_population_dren (${all.join(',')},imported_at)
+        SELECT ${all.join(',')}, $2::timestamptz FROM jsonb_to_recordset($1::jsonb) AS r(${typedCols.join(',')})`,
         [JSON.stringify(clean.map((r) => ({ annee: r.annee, code_dren: r.code_dren,
-          dren: r.dren ? String(r.dren) : null, ...Object.fromEntries(cols.map((c) => [c, num(r[c])])) })))]);
+          dren: r.dren ? String(r.dren) : null, ...Object.fromEntries(cols.map((c) => [c, num(r[c])])) }))), batchTs]);
       inserted = clean.length;
     } else if (kind === 'population_cisco') {
       const cols = AGES.flatMap((a) => [`g_${a}`, `f_${a}`, `t_${a}`]);
@@ -111,16 +115,15 @@ export async function importReference(client: any, body: any) {
       if (years.length) await client.queryObject(`DELETE FROM tdb_population_cisco WHERE annee = ANY($1)`, [years]);
       const all = ['annee', 'code_dren', 'dren', 'code_cisco', 'cisco', ...cols];
       const typedCols = ['annee integer', 'code_dren integer', 'dren text', 'code_cisco integer', 'cisco text', ...cols.map((c) => `${c} numeric`)];
-      await client.queryObject(`INSERT INTO tdb_population_cisco (${all.join(',')})
-        SELECT ${all.join(',')} FROM jsonb_to_recordset($1::jsonb) AS r(${typedCols.join(',')})`,
+      await client.queryObject(`INSERT INTO tdb_population_cisco (${all.join(',')},imported_at)
+        SELECT ${all.join(',')}, $2::timestamptz FROM jsonb_to_recordset($1::jsonb) AS r(${typedCols.join(',')})`,
         [JSON.stringify(clean.map((r) => ({ annee: r.annee, code_dren: r.code_dren, dren: r.dren ? String(r.dren) : null,
-          code_cisco: r.code_cisco, cisco: r.cisco ? String(r.cisco) : null, ...Object.fromEntries(cols.map((c) => [c, num(r[c])])) })))]);
+          code_cisco: r.code_cisco, cisco: r.cisco ? String(r.cisco) : null, ...Object.fromEntries(cols.map((c) => [c, num(r[c])])) }))), batchTs]);
       inserted = clean.length;
     } else {
       throw new Error('Type d\'import inconnu');
     }
     const batchId = `${kind}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    const batchTs = new Date().toISOString();
     await client.queryObject(`INSERT INTO public.tdb_import_batches (id, table_name, file_name, row_count, imported_by, batch_ts_start, batch_ts_end, status)
       VALUES ($1, $2, $3, $4, $5, $6::timestamptz, $6::timestamptz, 'completed')
       ON CONFLICT (id) DO UPDATE SET row_count = EXCLUDED.row_count, imported_by = EXCLUDED.imported_by, batch_ts_start = LEAST(public.tdb_import_batches.batch_ts_start, EXCLUDED.batch_ts_start), batch_ts_end = GREATEST(public.tdb_import_batches.batch_ts_end, EXCLUDED.batch_ts_end), status = 'completed'`,

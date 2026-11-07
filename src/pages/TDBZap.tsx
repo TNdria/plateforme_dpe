@@ -278,256 +278,237 @@ const TDBZap = () => {
               {/* LEFT COLUMN */}
               <td style={{ width: '50%', verticalAlign: 'top', paddingRight: '4px' }}>
                 {/* Taux d'abandon + Redoublants side by side */}
-                <table style={{ width: '100%' }}><tbody><tr>
-                  <td style={{ width: '50%', verticalAlign: 'top', paddingRight: '2px' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }} border={1} cellPadding={1} cellSpacing={0}>
-                      <thead>
-                        <tr style={s.gris}><th colSpan={4} style={s.th}>Taux d'abandon</th></tr>
-                        <tr>
-                          <th style={{ ...s.th, width: '34%' }}>Classes</th>
-                          <th style={{ ...s.th, width: '22%', fontSize: '9px' }}>ZAP</th>
-                          <th style={{ ...s.th, width: '22%', fontSize: '9px' }}>CISCO</th>
-                          <th style={{ ...s.th, width: '22%', fontSize: '9px' }}>DREN</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {[['T1→T2','eff_t1','eff_t2','red_t1','red_t2'],['T2→T3','eff_t2','eff_t3','red_t2','red_t3'],['T3→T4','eff_t3','eff_t4','red_t3','red_t4'],['T4→T5','eff_t4','eff_t5','red_t4','red_t5']].map(([label, from, to, redFrom, redTo]) => {
-                          const ab = (lvl: any) => {
-                            const effFrom = Number(lvl.ressources[from]||0);
-                            const effTo = Number(lvl.ressources[to]||0);
-                            const rFrom = Number(lvl.ressources[redFrom]||0);
-                            const rTo = Number(lvl.ressources[redTo]||0);
-                            if (!effFrom) return '-';
-                            const abandon = (effFrom - effTo + rTo - rFrom) / effFrom * 100;
-                            return Math.max(0, abandon).toFixed(1) + '%';
-                          };
-                          const zapV = (() => {
-                            const effFrom = Number(z.ressources[from]||0);
-                            const effTo = Number(z.ressources[to]||0);
-                            const rFrom = Number(z.ressources[redFrom]||0);
-                            const rTo = Number(z.ressources[redTo]||0);
-                            return effFrom > 0 ? Math.max(0, (effFrom - effTo + rTo - rFrom) / effFrom * 100) : 0;
-                          })();
-                          const ciscoV = (() => {
-                            const effFrom = Number(c.ressources[from]||0);
-                            const effTo = Number(c.ressources[to]||0);
-                            const rFrom = Number(c.ressources[redFrom]||0);
-                            const rTo = Number(c.ressources[redTo]||0);
-                            return effFrom > 0 ? Math.max(0, (effFrom - effTo + rTo - rFrom) / effFrom * 100) : 0;
-                          })();
-                          const abZ = ab(z), abC = ab(c), abD = ab(d);
-                          return (
-                            <tr key={label}>
-                              <td style={s.td}>{label}</td>
-                              <td style={{ ...s.td, textAlign: 'right', ...manq(abZ), ...(zapV > ciscoV ? s.mena : {}) }}>{abZ}</td>
-                              <td style={{ ...s.td, textAlign: 'right', ...manq(abC) }}>{abC}</td>
-                              <td style={{ ...s.td, textAlign: 'right', ...manq(abD) }}>{abD}</td>
+                <table style={{ width: '100%' }}>
+                  <tbody>
+                    <tr>
+                      <td style={{ width: '50%', verticalAlign: 'top', paddingRight: '2px' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }} border={1} cellPadding={1} cellSpacing={0}>
+                          <thead>
+                            <tr style={s.gris}><th colSpan={4} style={s.th}>Taux d'abandon</th></tr>
+                            <tr>
+                              <th style={{ ...s.th, width: '34%' }}>Classes</th>
+                              <th style={{ ...s.th, width: '22%', fontSize: '9px' }}>ZAP</th>
+                              <th style={{ ...s.th, width: '22%', fontSize: '9px' }}>CISCO</th>
+                              <th style={{ ...s.th, width: '22%', fontSize: '9px' }}>DREN</th>
                             </tr>
-                          );
-                        })}
-                        <tr style={{ fontWeight: 'bold' }}>
-                          <td style={s.td}>Ensemble</td>
-                          {[z, c, d].map((lvl, i) => {
-                            const rates = [['eff_t1','eff_t2','red_t1','red_t2'],['eff_t2','eff_t3','red_t2','red_t3'],['eff_t3','eff_t4','red_t3','red_t4'],['eff_t4','eff_t5','red_t4','red_t5']];
-                            const vals = rates.map(([f,t,rf,rt]) => {
-                              const eF = Number(lvl.ressources[f]||0), eT = Number(lvl.ressources[t]||0);
-                              const rF = Number(lvl.ressources[rf]||0), rT = Number(lvl.ressources[rt]||0);
-                              return eF > 0 ? Math.max(0, (eF - eT + rT - rF) / eF * 100) : null;
-                            }).filter(v => v !== null);
-                            const val = vals.length > 0 ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) + '%' : '-';
-                            return <td key={i} style={{ ...s.td, textAlign: 'right', ...manq(val) }}>{val}</td>;
-                          })}
-                        </tr>
-                      </tbody>
-                    </table>
-                  </td>
-                  <td style={{ width: '50%', verticalAlign: 'top', paddingLeft: '2px' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }} border={1} cellPadding={1} cellSpacing={0}>
-                      <thead>
-                        <tr style={s.gris}><th colSpan={4} style={s.th}>Pourcentage des redoublants</th></tr>
-                        <tr>
-                          <th style={{ ...s.th, width: '34%' }}>Classes</th>
-                          <th style={{ ...s.th, width: '22%', fontSize: '9px' }}>ZAP</th>
-                          <th style={{ ...s.th, width: '22%', fontSize: '9px' }}>CISCO</th>
-                          <th style={{ ...s.th, width: '22%', fontSize: '9px' }}>DREN</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {[['T1→T2',1],['T2→T3',2],['T3→T4',3],['T4→T5',4]].map(([label, idx]: any) => {
-                          const k = `red_t${idx}`, ke = `eff_t${idx}`;
-                          const zapV = pctVal(z.ressources[k], z.ressources[ke]);
-                          const ciscoV = pctVal(c.ressources[k], c.ressources[ke]);
-                          const vZ = pct(z.ressources[k], z.ressources[ke], 1), vC = pct(c.ressources[k], c.ressources[ke], 1), vD = pct(d.ressources[k], d.ressources[ke], 1);
-                          return (
-                            <tr key={label}>
-                              <td style={s.td}>{label}</td>
-                              <td style={{ ...s.td, textAlign: 'right', ...manq(vZ), ...(zapV > ciscoV ? s.mena : {}) }}>{vZ}</td>
-                              <td style={{ ...s.td, textAlign: 'right', ...manq(vC) }}>{vC}</td>
-                              <td style={{ ...s.td, textAlign: 'right', ...manq(vD) }}>{vD}</td>
+                          </thead>
+                          <tbody>
+                            {[['T1→T2','eff_t1','eff_t2','red_t1','red_t2'],['T2→T3','eff_t2','eff_t3','red_t2','red_t3'],['T3→T4','eff_t3','eff_t4','red_t3','red_t4'],['T4→T5','eff_t4','eff_t5','red_t4','red_t5']].map(([label, from, to, redFrom, redTo]) => {
+                              const ab = (lvl: any) => {
+                                const effFrom = Number(lvl.ressources[from]||0);
+                                const effTo = Number(lvl.ressources[to]||0);
+                                const rFrom = Number(lvl.ressources[redFrom]||0);
+                                const rTo = Number(lvl.ressources[redTo]||0);
+                                if (!effFrom) return '-';
+                                const abandon = (effFrom - effTo + rTo - rFrom) / effFrom * 100;
+                                return Math.max(0, abandon).toFixed(1) + '%';
+                              };
+                              const zapV = (() => {
+                                const effFrom = Number(z.ressources[from]||0);
+                                const effTo = Number(z.ressources[to]||0);
+                                const rFrom = Number(z.ressources[redFrom]||0);
+                                const rTo = Number(z.ressources[redTo]||0);
+                                return effFrom > 0 ? Math.max(0, (effFrom - effTo + rTo - rFrom) / effFrom * 100) : 0;
+                              })();
+                              const ciscoV = (() => {
+                                const effFrom = Number(c.ressources[from]||0);
+                                const effTo = Number(c.ressources[to]||0);
+                                const rFrom = Number(c.ressources[redFrom]||0);
+                                const rTo = Number(c.ressources[redTo]||0);
+                                return effFrom > 0 ? Math.max(0, (effFrom - effTo + rTo - rFrom) / effFrom * 100) : 0;
+                              })();
+                              const abZ = ab(z), abC = ab(c), abD = ab(d);
+                              return (
+                                <tr key={label}>
+                                  <td style={s.td}>{label}</td>
+                                  <td style={{ ...s.td, textAlign: 'right', ...manq(abZ), ...(zapV > ciscoV ? s.mena : {}) }}>{abZ}</td>
+                                  <td style={{ ...s.td, textAlign: 'right', ...manq(abC) }}>{abC}</td>
+                                  <td style={{ ...s.td, textAlign: 'right', ...manq(abD) }}>{abD}</td>
+                                </tr>
+                              );
+                            })}
+                            <tr style={{ fontWeight: 'bold' }}>
+                              <td style={s.td}>Ensemble</td>
+                              {[z, c, d].map((lvl, i) => {
+                                const rates = [['eff_t1','eff_t2','red_t1','red_t2'],['eff_t2','eff_t3','red_t2','red_t3'],['eff_t3','eff_t4','red_t3','red_t4'],['eff_t4','eff_t5','red_t4','red_t5']];
+                                const vals = rates.map(([f,t,rf,rt]) => {
+                                  const eF = Number(lvl.ressources[f]||0), eT = Number(lvl.ressources[t]||0);
+                                  const rF = Number(lvl.ressources[rf]||0), rT = Number(lvl.ressources[rt]||0);
+                                  return eF > 0 ? Math.max(0, (eF - eT + rT - rF) / eF * 100) : null;
+                                }).filter(v => v !== null);
+                                const val = vals.length > 0 ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) + '%' : '-';
+                                return <td key={i} style={{ ...s.td, textAlign: 'right', ...manq(val) }}>{val}</td>;
+                              })}
                             </tr>
-                          );
-                        })}
-                        <tr style={{ fontWeight: 'bold' }}>
-                          <td style={s.td}>Ensemble</td>
-                          {[z, c, d].map((lvl, i) => {
-                            const totalRed = [1,2,3,4].reduce((acc, idx) => acc + Number(lvl.ressources[`red_t${idx}`]||0), 0);
-                            const totalEff = [1,2,3,4].reduce((acc, idx) => acc + Number(lvl.ressources[`eff_t${idx}`]||0), 0);
-                            const val = totalEff > 0 ? (totalRed / totalEff * 100).toFixed(1) + '%' : '-';
-                            return <td key={i} style={{ ...s.td, textAlign: 'right', ...manq(val) }}>{val}</td>;
-                          })}
-                        </tr>
-                      </tbody>
-                    </table>
-                  </td>
-                </tr></tbody></table>
+                          </tbody>
+                        </table>
+                      </td>
+
+                      <td style={{ width: '50%', verticalAlign: 'top', paddingLeft: '2px' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }} border={1} cellPadding={1} cellSpacing={0}>
+                          <thead>
+                            <tr style={s.gris}><th colSpan={4} style={s.th}>Pourcentage des redoublants</th></tr>
+                            <tr>
+                              <th style={{ ...s.th, width: '34%' }}>Classes</th>
+                              <th style={{ ...s.th, width: '22%', fontSize: '9px' }}>ZAP</th>
+                              <th style={{ ...s.th, width: '22%', fontSize: '9px' }}>CISCO</th>
+                              <th style={{ ...s.th, width: '22%', fontSize: '9px' }}>DREN</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {[['T1→T2',1],['T2→T3',2],['T3→T4',3],['T4→T5',4]].map(([label, idx]: any) => {
+                              const k = `red_t${idx}`, ke = `eff_t${idx}`;
+                              const zapV = pctVal(z.ressources[k], z.ressources[ke]);
+                              const ciscoV = pctVal(c.ressources[k], c.ressources[ke]);
+                              const vZ = pct(z.ressources[k], z.ressources[ke], 1), vC = pct(c.ressources[k], c.ressources[ke], 1), vD = pct(d.ressources[k], d.ressources[ke], 1);
+                              return (
+                                <tr key={label}>
+                                  <td style={s.td}>{label}</td>
+                                  <td style={{ ...s.td, textAlign: 'right', ...manq(vZ), ...(zapV > ciscoV ? s.mena : {}) }}>{vZ}</td>
+                                  <td style={{ ...s.td, textAlign: 'right', ...manq(vC) }}>{vC}</td>
+                                  <td style={{ ...s.td, textAlign: 'right', ...manq(vD) }}>{vD}</td>
+                                </tr>
+                              );
+                            })}
+                            <tr style={{ fontWeight: 'bold' }}>
+                              <td style={s.td}>Ensemble</td>
+                              {[z, c, d].map((lvl, i) => {
+                                const totalRed = [1,2,3,4].reduce((acc, idx) => acc + Number(lvl.ressources[`red_t${idx}`]||0), 0);
+                                const totalEff = [1,2,3,4].reduce((acc, idx) => acc + Number(lvl.ressources[`eff_t${idx}`]||0), 0);
+                                const val = totalEff > 0 ? (totalRed / totalEff * 100).toFixed(1) + '%' : '-';
+                                return <td key={i} style={{ ...s.td, textAlign: 'right', ...manq(val) }}>{val}</td>;
+                              })}
+                            </tr>
+                          </tbody>
+                        </table>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
 
                 {/* Retention + Redoublants par genre */}
-                <table style={{ width: '100%', marginTop: '4px' }}><tbody><tr>
-                  <td style={{ width: '50%', verticalAlign: 'top', paddingRight: '2px' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }} border={1} cellPadding={1} cellSpacing={0}>
-                      <thead><tr style={s.gris}><th colSpan={4} style={s.th}>Taux de rétention</th></tr></thead>
-                      <tbody>
-                        {(() => {
-                          const retG = (lvl: any) => {
-                            const t5g = Number(lvl.ressources?.eff_t5_g||0);
-                            const t1g = Number(lvl.ressources?.eff_t1_g||0);
-                            return t1g > 0 ? (t5g / t1g * 100).toFixed(1) + '%' : '-';
-                          };
-                          const retF = (lvl: any) => {
-                            const t5f = Number(lvl.ressources?.eff_t5_f||0);
-                            const t1f = Number(lvl.ressources?.eff_t1_f||0);
-                            return t1f > 0 ? (t5f / t1f * 100).toFixed(1) + '%' : '-';
-                          };
-                          const retE = (lvl: any) => {
-                            const t5 = Number(lvl.ressources?.eff_t5||0);
-                            const t1 = Number(lvl.ressources?.eff_t1||0);
-                            return t1 > 0 ? (t5 / t1 * 100).toFixed(1) + '%' : '-';
-                          };
-                          const rGz = retG(z), rGc = retG(c), rGd = retG(d);
-                          const rFz = retF(z), rFc = retF(c), rFd = retF(d);
-                          const rEz = retE(z), rEc = retE(c), rEd = retE(d);
-                          const dispRet = (lvl: any): 'f' | 'g' | null => {
-                            const t5g = Number(lvl.ressources?.eff_t5_g||0), t1g = Number(lvl.ressources?.eff_t1_g||0);
-                            const t5f = Number(lvl.ressources?.eff_t5_f||0), t1f = Number(lvl.ressources?.eff_t1_f||0);
-                            const g = t1g > 0 ? t5g / t1g * 100 : 0;
-                            const f = t1f > 0 ? t5f / t1f * 100 : 0;
-                            if (g == null || f == null || (isNaN(g) && isNaN(f)) || (g === 0 && f === 0)) return null; if (Math.abs(g - f) < 0.01) return null;
-                            return f < g ? 'f' : 'g';
-                          };
-                          return (<>
-                            <tr><td style={{ ...s.td, width: '34%' }}>Garçons</td><td style={{ ...s.td, textAlign: 'right', ...manq(rGz) }}>{rGz}</td><td style={{ ...s.td, textAlign: 'right', ...manq(rGc) }}>{rGc}</td><td style={{ ...s.td, textAlign: 'right', ...manq(rGd) }}>{rGd}</td></tr>
-                            <tr><td style={s.td}>Filles</td><td style={{ ...s.td, textAlign: 'right', ...manq(rFz) }}>{rFz}</td><td style={{ ...s.td, textAlign: 'right', ...manq(rFc) }}>{rFc}</td><td style={{ ...s.td, textAlign: 'right', ...manq(rFd) }}>{rFd}</td></tr>
-                            <tr><td style={s.td}>Ensemble</td><td style={{ ...s.td, textAlign: 'right', ...manq(rEz) }}>{rEz}</td><td style={{ ...s.td, textAlign: 'right', ...manq(rEc) }}>{rEc}</td><td style={{ ...s.td, textAlign: 'right', ...manq(rEd) }}>{rEd}</td></tr>
-                            <tr><td style={s.td}>Disparité aux dépens des</td>{[z, c, d].map((lvl, i) => <td key={i} style={{ ...s.td, textAlign: 'center', padding: 2 }}><DisparityIcon kind={dispRet(lvl)} /></td>)}</tr>
-                          </>);
-                        })()}
-                      </tbody>
-                    </table>
-                  </td>
-                  <td style={{ width: '50%', verticalAlign: 'top', paddingLeft: '2px' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }} border={1} cellPadding={1} cellSpacing={0}>
-                      <thead><tr style={s.gris}><th colSpan={4} style={s.th}>Redoublants par genre</th></tr></thead>
-                      <tbody>
-                        {(() => {
-                          const rG = (lvl: any) => pct(lvl.ressources?.red_g, lvl.ressources?.nbr_eleve_g, 1);
-                          const rF = (lvl: any) => pct(lvl.ressources?.red_f, lvl.ressources?.nbr_eleve_f, 1);
-                          const rE = (lvl: any) => pct(Number(lvl.ressources?.red_g||0)+Number(lvl.ressources?.red_f||0), lvl.ressources?.nbr_eleve, 1);
-                          const isMenaG = pctVal(z.ressources?.red_g, z.ressources?.nbr_eleve_g) > pctVal(c.ressources?.red_g, c.ressources?.nbr_eleve_g);
-                          const isMenaF = pctVal(z.ressources?.red_f, z.ressources?.nbr_eleve_f) > pctVal(c.ressources?.red_f, c.ressources?.nbr_eleve_f);
-                          const isMenaE = redZap > redCisco;
-                          const gZ = rG(z), gC = rG(c), gD = rG(d);
-                          const fZ = rF(z), fC = rF(c), fD = rF(d);
-                          const eZ = rE(z), eC = rE(c), eD = rE(d);
-                          const dispRed = (lvl: any): 'f' | 'g' | null => {
-                            const g = pctVal(lvl.ressources?.red_g, lvl.ressources?.nbr_eleve_g);
-                            const f = pctVal(lvl.ressources?.red_f, lvl.ressources?.nbr_eleve_f);
-                            if (g == null || f == null || (isNaN(g) && isNaN(f)) || (g === 0 && f === 0)) return null; if (Math.abs(g - f) < 0.01) return null;
-                            return f > g ? 'f' : 'g';
-                          };
-                          return (<>
-                            <tr><td style={{ ...s.td, width: '34%' }}>Garçons</td><td style={{ ...s.td, textAlign: 'right', ...manq(gZ), ...(isMenaG ? s.mena : {}) }}>{gZ}</td><td style={{ ...s.td, textAlign: 'right', ...manq(gC) }}>{gC}</td><td style={{ ...s.td, textAlign: 'right', ...manq(gD) }}>{gD}</td></tr>
-                            <tr><td style={s.td}>Filles</td><td style={{ ...s.td, textAlign: 'right', ...manq(fZ), ...(isMenaF ? s.mena : {}) }}>{fZ}</td><td style={{ ...s.td, textAlign: 'right', ...manq(fC) }}>{fC}</td><td style={{ ...s.td, textAlign: 'right', ...manq(fD) }}>{fD}</td></tr>
-                            <tr><td style={s.td}>Ensemble</td><td style={{ ...s.td, textAlign: 'right', ...manq(eZ), ...(isMenaE ? s.mena : {}) }}>{eZ}</td><td style={{ ...s.td, textAlign: 'right', ...manq(eC) }}>{eC}</td><td style={{ ...s.td, textAlign: 'right', ...manq(eD) }}>{eD}</td></tr>
-                            <tr><td style={s.td}>Disparité aux dépens des</td>{[z, c, d].map((lvl, i) => <td key={i} style={{ ...s.td, textAlign: 'center', padding: 2 }}><DisparityIcon kind={dispRed(lvl)} /></td>)}</tr>
-                          </>);
-                        })()}
-                      </tbody>
-                    </table>
-                  </td>
-                </tr></tbody></table>
+                <table style={{ width: '100%', marginTop: '4px' }}>
+                  <tbody>
+                    <tr>
+                      <td style={{ width: '50%', verticalAlign: 'top', paddingRight: '2px' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }} border={1} cellPadding={1} cellSpacing={0}>
+                          <thead><tr style={s.gris}><th colSpan={4} style={s.th}>Taux de rétention</th></tr></thead>
+                          <tbody>
+                            {(() => {
+                              const retG = (lvl: any) => {
+                                const t5g = Number(lvl.ressources?.eff_t5_g||0);
+                                const t1g = Number(lvl.ressources?.eff_t1_g||0);
+                                return t1g > 0 ? (t5g / t1g * 100).toFixed(1) + '%' : '-';
+                              };
+                              const retF = (lvl: any) => {
+                                const t5f = Number(lvl.ressources?.eff_t5_f||0);
+                                const t1f = Number(lvl.ressources?.eff_t1_f||0);
+                                return t1f > 0 ? (t5f / t1f * 100).toFixed(1) + '%' : '-';
+                              };
+                              const retE = (lvl: any) => {
+                                const t5 = Number(lvl.ressources?.eff_t5||0);
+                                const t1 = Number(lvl.ressources?.eff_t1||0);
+                                return t1 > 0 ? (t5 / t1 * 100).toFixed(1) + '%' : '-';
+                              };
+                              const rGz = retG(z), rGc = retG(c), rGd = retG(d);
+                              const rFz = retF(z), rFc = retF(c), rFd = retF(d);
+                              const rEz = retE(z), rEc = retE(c), rEd = retE(d);
+                              const dispRet = (lvl: any): 'f' | 'g' | null => {
+                                const t5g = Number(lvl.ressources?.eff_t5_g||0), t1g = Number(lvl.ressources?.eff_t1_g||0);
+                                const t5f = Number(lvl.ressources?.eff_t5_f||0), t1f = Number(lvl.ressources?.eff_t1_f||0);
+                                const g = t1g > 0 ? t5g / t1g * 100 : 0;
+                                const f = t1f > 0 ? t5f / t1f * 100 : 0;
+                                if (g == null || f == null || (isNaN(g) && isNaN(f)) || (g === 0 && f === 0)) return null; if (Math.abs(g - f) < 0.01) return null;
+                                return f < g ? 'f' : 'g';
+                              };
+                              return (<>
+                                <tr><td style={{ ...s.td, width: '34%' }}>Garçons</td><td style={{ ...s.td, textAlign: 'right', ...manq(rGz) }}>{rGz}</td><td style={{ ...s.td, textAlign: 'right', ...manq(rGc) }}>{rGc}</td><td style={{ ...s.td, textAlign: 'right', ...manq(rGd) }}>{rGd}</td></tr>
+                                <tr><td style={s.td}>Filles</td><td style={{ ...s.td, textAlign: 'right', ...manq(rFz) }}>{rFz}</td><td style={{ ...s.td, textAlign: 'right', ...manq(rFc) }}>{rFc}</td><td style={{ ...s.td, textAlign: 'right', ...manq(rFd) }}>{rFd}</td></tr>
+                                <tr><td style={s.td}>Ensemble</td><td style={{ ...s.td, textAlign: 'right', ...manq(rEz) }}>{rEz}</td><td style={{ ...s.td, textAlign: 'right', ...manq(rEc) }}>{rEc}</td><td style={{ ...s.td, textAlign: 'right', ...manq(rEd) }}>{rEd}</td></tr>
+                                <tr><td style={s.td}>Disparité aux dépens des</td>{[z, c, d].map((lvl, i) => <td key={i} style={{ ...s.td, textAlign: 'center', padding: 2 }}><DisparityIcon kind={dispRet(lvl)} /></td>)}</tr>
+                              </>);
+                            })()}
+                          </tbody>
+                        </table>
+                      </td>
 
-                {/* Enfants 10ans déscolarisés / jamais scolarisés */}
-                <table style={{ width: '100%', marginTop: '4px' }}><tbody><tr>
-                  <td style={{ width: '50%', verticalAlign: 'top', paddingRight: '2px' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }} border={1} cellPadding={1} cellSpacing={0}>
-                      <thead>
-                        <tr style={s.gris}><th colSpan={4} style={s.th}>Enfants 10ans déscolarisés</th></tr>
-                      </thead>
-                      <tbody>
-                        <tr><td style={s.td}>Garçons</td><td style={{ ...s.td, textAlign: 'center' }}>0%</td><td style={{ ...s.td, textAlign: 'center' }}>0%</td><td style={{ ...s.td, textAlign: 'center' }}>0%</td></tr>
-                        <tr><td style={s.td}>Filles</td><td style={{ ...s.td, textAlign: 'center' }}>0%</td><td style={{ ...s.td, textAlign: 'center' }}>0%</td><td style={{ ...s.td, textAlign: 'center' }}>0%</td></tr>
-                        <tr><td style={s.td}>Ensemble</td><td style={{ ...s.td, textAlign: 'center' }}>0%</td><td style={{ ...s.td, textAlign: 'center' }}>0%</td><td style={{ ...s.td, textAlign: 'center' }}>0%</td></tr>
-                      </tbody>
-                    </table>
-                  </td>
-                  <td style={{ width: '50%', verticalAlign: 'top', paddingLeft: '2px' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }} border={1} cellPadding={1} cellSpacing={0}>
-                      <thead>
-                        <tr style={s.gris}><th colSpan={4} style={s.th}>Enfants 10ans jamais scolarisés</th></tr>
-                      </thead>
-                      <tbody>
-                        <tr><td style={s.td}>Garçons</td><td style={{ ...s.td, textAlign: 'center' }}>0%</td><td style={{ ...s.td, textAlign: 'center' }}>0%</td><td style={{ ...s.td, textAlign: 'center' }}>0%</td></tr>
-                        <tr><td style={s.td}>Filles</td><td style={{ ...s.td, textAlign: 'center' }}>0%</td><td style={{ ...s.td, textAlign: 'center' }}>0%</td><td style={{ ...s.td, textAlign: 'center' }}>0%</td></tr>
-                        <tr><td style={s.td}>Ensemble</td><td style={{ ...s.td, textAlign: 'center' }}>0%</td><td style={{ ...s.td, textAlign: 'center' }}>0%</td><td style={{ ...s.td, textAlign: 'center' }}>0%</td></tr>
-                      </tbody>
-                    </table>
-                  </td>
-                </tr></tbody></table>
+                      <td style={{ width: '50%', verticalAlign: 'top', paddingLeft: '2px' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }} border={1} cellPadding={1} cellSpacing={0}>
+                          <thead><tr style={s.gris}><th colSpan={4} style={s.th}>Redoublants par genre</th></tr></thead>
+                          <tbody>
+                            {(() => {
+                              const rG = (lvl: any) => pct(lvl.ressources?.red_g, lvl.ressources?.nbr_eleve_g, 1);
+                              const rF = (lvl: any) => pct(lvl.ressources?.red_f, lvl.ressources?.nbr_eleve_f, 1);
+                              const rE = (lvl: any) => pct(Number(lvl.ressources?.red_g||0)+Number(lvl.ressources?.red_f||0), lvl.ressources?.nbr_eleve, 1);
+                              const isMenaG = pctVal(z.ressources?.red_g, z.ressources?.nbr_eleve_g) > pctVal(c.ressources?.red_g, c.ressources?.nbr_eleve_g);
+                              const isMenaF = pctVal(z.ressources?.red_f, z.ressources?.nbr_eleve_f) > pctVal(c.ressources?.red_f, c.ressources?.nbr_eleve_f);
+                              const isMenaE = redZap > redCisco;
+                              const gZ = rG(z), gC = rG(c), gD = rG(d);
+                              const fZ = rF(z), fC = rF(c), fD = rF(d);
+                              const eZ = rE(z), eC = rE(c), eD = rE(d);
+                              const dispRed = (lvl: any): 'f' | 'g' | null => {
+                                const g = pctVal(lvl.ressources?.red_g, lvl.ressources?.nbr_eleve_g);
+                                const f = pctVal(lvl.ressources?.red_f, lvl.ressources?.nbr_eleve_f);
+                                if (g == null || f == null || (isNaN(g) && isNaN(f)) || (g === 0 && f === 0)) return null; if (Math.abs(g - f) < 0.01) return null;
+                                return f > g ? 'f' : 'g';
+                              };
+                              return (<>
+                                <tr><td style={{ ...s.td, width: '34%' }}>Garçons</td><td style={{ ...s.td, textAlign: 'right', ...manq(gZ), ...(isMenaG ? s.mena : {}) }}>{gZ}</td><td style={{ ...s.td, textAlign: 'right', ...manq(gC) }}>{gC}</td><td style={{ ...s.td, textAlign: 'right', ...manq(gD) }}>{gD}</td></tr>
+                                <tr><td style={s.td}>Filles</td><td style={{ ...s.td, textAlign: 'right', ...manq(fZ), ...(isMenaF ? s.mena : {}) }}>{fZ}</td><td style={{ ...s.td, textAlign: 'right', ...manq(fC) }}>{fC}</td><td style={{ ...s.td, textAlign: 'right', ...manq(fD) }}>{fD}</td></tr>
+                                <tr><td style={s.td}>Ensemble</td><td style={{ ...s.td, textAlign: 'right', ...manq(eZ), ...(isMenaE ? s.mena : {}) }}>{eZ}</td><td style={{ ...s.td, textAlign: 'right', ...manq(eC) }}>{eC}</td><td style={{ ...s.td, textAlign: 'right', ...manq(eD) }}>{eD}</td></tr>
+                                <tr><td style={s.td}>Disparité aux dépens des</td>{[z, c, d].map((lvl, i) => <td key={i} style={{ ...s.td, textAlign: 'center', padding: 2 }}><DisparityIcon kind={dispRed(lvl)} /></td>)}</tr>
+                              </>);
+                            })()}
+                          </tbody>
+                        </table>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </td>
 
               {/* RIGHT COLUMN - CEPE */}
               <td style={{ width: '50%', verticalAlign: 'top', paddingLeft: '4px' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }} border={1} cellPadding={1} cellSpacing={0}>
-                  <thead>
-                    <tr style={s.gris}>
-                      <th colSpan={8} style={{ ...s.th, fontSize: '9px' }}>
-                        Score moyen (SM) sur 20 et pourcentage d'élèves ayant obtenu une note ≥ 10/20
-                        <br />Résultats CEPE : {anneeDisplay}
-                      </th>
-                    </tr>
-                    <tr>
-                      <th style={{ ...s.th, width: '22%' }} rowSpan={2} colSpan={2}>Matières</th>
-                      <th style={s.th} colSpan={2}>ZAP</th>
-                      <th style={s.th} colSpan={2}>CISCO</th>
-                      <th style={s.th} colSpan={2}>DREN</th>
-                    </tr>
-                    <tr>
-                      <td style={{ ...s.td, textAlign: 'center' }}><b>SM</b></td>
-                      <td style={{ ...s.td, textAlign: 'center' }}><b>≥ 10</b></td>
-                      <td style={{ ...s.td, textAlign: 'center' }}><b>SM</b></td>
-                      <td style={{ ...s.td, textAlign: 'center' }}><b>≥ 10</b></td>
-                      <td style={{ ...s.td, textAlign: 'center' }}><b>SM</b></td>
-                      <td style={{ ...s.td, textAlign: 'center' }}><b>≥ 10</b></td>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(() => {
-                      const smFmt = (v: any) => { const n = Number(v); return isNaN(n) || n === 0 ? '-' : n.toFixed(1); };
-                      const noteFmt = (sup: any, examData: any) => {
-                        const sv = Number(sup);
-                        if (isNaN(sv) || sv === 0) return '-';
-                        const t = Number(examData?.total_candidats) || (Number(examData?.nbr_g || 0) + Number(examData?.nbr_f || 0));
-                        if (t > 0) return Math.min(100, sv / t * 100).toFixed(1) + '%';
-                        if (sv > 0 && sv <= 100) return sv.toFixed(1) + '%';
-                        return '-';
-                      };
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }} border={1} cellPadding={1} cellSpacing={0}>
+                    <thead>
+                      <tr style={s.gris}>
+                        <th colSpan={8} style={{ ...s.th, fontSize: '9px' }}>
+                          Score moyen (SM) sur 20 et pourcentage d'élèves ayant obtenu une note ≥ 10/20
+                          <br />Résultats CEPE : {anneeDisplay}
+                        </th>
+                      </tr>
+                      <tr>
+                        <th style={{ ...s.th, width: '22%' }} rowSpan={2} colSpan={2}>Matières</th>
+                        <th style={s.th} colSpan={2}>ZAP</th>
+                        <th style={s.th} colSpan={2}>CISCO</th>
+                        <th style={s.th} colSpan={2}>DREN</th>
+                      </tr>
+                      <tr>
+                        <td style={{ ...s.td, textAlign: 'center' }}><b>SM</b></td>
+                        <td style={{ ...s.td, textAlign: 'center' }}><b>≥ 10</b></td>
+                        <td style={{ ...s.td, textAlign: 'center' }}><b>SM</b></td>
+                        <td style={{ ...s.td, textAlign: 'center' }}><b>≥ 10</b></td>
+                        <td style={{ ...s.td, textAlign: 'center' }}><b>SM</b></td>
+                        <td style={{ ...s.td, textAlign: 'center' }}><b>≥ 10</b></td>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(() => {
+                        const smFmt = (v: any) => { const n = Number(v); return isNaN(n) || n === 0 ? '-' : n.toFixed(1); };
+                        const noteFmt = (sup: any, examData: any) => {
+                          const sv = Number(sup);
+                          if (isNaN(sv) || sv === 0) return '-';
+                          const t = Number(examData?.total_candidats) || (Number(examData?.nbr_g || 0) + Number(examData?.nbr_f || 0));
+                          if (t > 0) return Math.min(100, sv / t * 100).toFixed(1) + '%';
+                          if (sv > 0 && sv <= 100) return sv.toFixed(1) + '%';
+                          return '-';
+                        };
                         const cepeRow = (label: string, smKey: string, noteKey: string, isSub = false) => {
                           const zSm = smFmt(z.cepe?.[smKey]), cSm = smFmt(c.cepe?.[smKey]), dSm = smFmt(d.cepe?.[smKey]);
                           const zN = noteFmt(z.cepe?.[noteKey], z.cepe), cN = noteFmt(c.cepe?.[noteKey], c.cepe), dN = noteFmt(d.cepe?.[noteKey], d.cepe);
                           return (
                             <tr key={label}>
-                              {isSub ? <td colSpan={2} style={{ ...s.td, paddingLeft: '10px' }}>{label}</td>
-                                : <th colSpan={2} style={{ ...s.td, textAlign: 'left', fontWeight: 'bold' }}>{label}</th>}
+                              {isSub ? <td colSpan={2} style={{ ...s.td, paddingLeft: '10px' }}>{label}</td> : <th colSpan={2} style={{ ...s.td, textAlign: 'left', fontWeight: 'bold' }}>{label}</th>}
                               <td style={{ ...s.td, textAlign: 'center', ...manq(zSm) }}>{zSm}</td>
                               <td style={{ ...s.td, textAlign: 'center', ...manq(zN) }}>{zN}</td>
                               <td style={{ ...s.td, textAlign: 'center', ...manq(cSm) }}>{cSm}</td>
@@ -537,57 +518,57 @@ const TDBZap = () => {
                             </tr>
                           );
                         };
-                      return (<>
-                        {cepeRow('Malagasy', 'sm_mlg', 'mlg_sup10')}
-                        {cepeRow('Français', 'sm_frs', 'frs_sup10')}
-                        {cepeRow('Mathématiques', 'sm_mths', 'mths_sup10')}
-                        {cepeRow('-Opération', 'sm_mths_operation', 'op_sup10', true)}
-                        {cepeRow('-Problème', 'sm_mths_probleme', 'prob_sup10', true)}
-                        {cepeRow('Histoire', 'sm_histoire', 'histoire_sup10')}
-                        {cepeRow('Géographie', 'sm_geographie', 'geographie_sup10')}
-                        {cepeRow('SVT', 'sm_svt', 'svt_sup10')}
-                      </>);
-                    })()}
-                  </tbody>
-                </table>
+                        return (<>
+                          {cepeRow('Malagasy', 'sm_mlg', 'mlg_sup10')}
+                          {cepeRow('Français', 'sm_frs', 'frs_sup10')}
+                          {cepeRow('Mathématiques', 'sm_mths', 'mths_sup10')}
+                          {cepeRow('-Opération', 'sm_mths_operation', 'op_sup10', true)}
+                          {cepeRow('-Problème', 'sm_mths_probleme', 'prob_sup10', true)}
+                          {cepeRow('Histoire', 'sm_histoire', 'histoire_sup10')}
+                          {cepeRow('Géographie', 'sm_geographie', 'geographie_sup10')}
+                          {cepeRow('SVT', 'sm_svt', 'svt_sup10')}
+                        </>);
+                      })()}
+                    </tbody>
+                  </table>
 
-                {/* Pourcentage des admis au CEPE */}
-                <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '4px' }} border={1} cellPadding={1} cellSpacing={0}>
-                  <thead><tr style={s.gris}><th colSpan={4} style={s.th}>Pourcentage des admis au CEPE</th></tr></thead>
-                  <tbody>
-                    {(() => {
-                      const pctDirect = (lvl: any, key: string, numKey: string, denKey: string) => {
-                        const direct = Number(lvl.cepe?.[key]);
-                        if (!isNaN(direct) && direct > 0) return `${direct.toFixed(1)}%`;
-                        return pct(lvl.cepe?.[numKey], lvl.cepe?.[denKey]);
-                      };
-                      const pctEns = (lvl: any) => {
-                        const direct = Number(lvl.cepe?.tx_admis);
-                        if (!isNaN(direct) && direct > 0) return `${direct.toFixed(1)}%`;
-                        return pct(Number(lvl.cepe?.admis_g||0)+Number(lvl.cepe?.admis_f||0), Number(lvl.cepe?.nbr_g||0)+Number(lvl.cepe?.nbr_f||0));
-                      };
-                      const gZ = pctDirect(z, 'tx_admis_g', 'admis_g', 'nbr_g'), gC = pctDirect(c, 'tx_admis_g', 'admis_g', 'nbr_g'), gD = pctDirect(d, 'tx_admis_g', 'admis_g', 'nbr_g');
-                      const fZ = pctDirect(z, 'tx_admis_f', 'admis_f', 'nbr_f'), fC = pctDirect(c, 'tx_admis_f', 'admis_f', 'nbr_f'), fD = pctDirect(d, 'tx_admis_f', 'admis_f', 'nbr_f');
-                      const eZ = pctEns(z), eC = pctEns(c), eD = pctEns(d);
-                      const disp = (lvl: any): 'f' | 'g' | null => {
-                        const g = pctVal(lvl.cepe?.admis_g, lvl.cepe?.nbr_g);
-                        const f = pctVal(lvl.cepe?.admis_f, lvl.cepe?.nbr_f);
-                        if (g == null || f == null || (isNaN(g) && isNaN(f)) || (g === 0 && f === 0)) return null; if (Math.abs(g - f) < 0.01) return null;
-                        return f < g ? 'f' : 'g';
-                      };
-                      return (<>
-                        <tr><td style={s.td}>Garçons</td><td style={{ ...s.td, textAlign: 'center', ...manq(gZ) }}>{gZ}</td><td style={{ ...s.td, textAlign: 'center', ...manq(gC) }}>{gC}</td><td style={{ ...s.td, textAlign: 'center', ...manq(gD) }}>{gD}</td></tr>
-                        <tr><td style={s.td}>Filles</td><td style={{ ...s.td, textAlign: 'center', ...manq(fZ) }}>{fZ}</td><td style={{ ...s.td, textAlign: 'center', ...manq(fC) }}>{fC}</td><td style={{ ...s.td, textAlign: 'center', ...manq(fD) }}>{fD}</td></tr>
-                        <tr><td style={s.td}>Ensemble</td><td style={{ ...s.td, textAlign: 'center', ...manq(eZ) }}>{eZ}</td><td style={{ ...s.td, textAlign: 'center', ...manq(eC) }}>{eC}</td><td style={{ ...s.td, textAlign: 'center', ...manq(eD) }}>{eD}</td></tr>
-                        <tr><td style={s.td}>Disparité aux dépens des</td>{[z, c, d].map((lvl, i) => <td key={i} style={{ ...s.td, textAlign: 'center', padding: 2 }}><DisparityIcon kind={disp(lvl)} /></td>)}</tr>
-                      </>);
-                    })()}
-                  </tbody>
-                </table>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+                  {/* Pourcentage des admis au CEPE */}
+                  <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '4px' }} border={1} cellPadding={1} cellSpacing={0}>
+                    <thead><tr style={s.gris}><th colSpan={4} style={s.th}>Pourcentage des admis au CEPE</th></tr></thead>
+                    <tbody>
+                      {(() => {
+                        const pctDirect = (lvl: any, key: string, numKey: string, denKey: string) => {
+                          const direct = Number(lvl.cepe?.[key]);
+                          if (!isNaN(direct) && direct > 0) return `${direct.toFixed(1)}%`;
+                          return pct(lvl.cepe?.[numKey], lvl.cepe?.[denKey]);
+                        };
+                        const pctEns = (lvl: any) => {
+                          const direct = Number(lvl.cepe?.tx_admis);
+                          if (!isNaN(direct) && direct > 0) return `${direct.toFixed(1)}%`;
+                          return pct(Number(lvl.cepe?.admis_g||0)+Number(lvl.cepe?.admis_f||0), Number(lvl.cepe?.nbr_g||0)+Number(lvl.cepe?.nbr_f||0));
+                        };
+                        const gZ = pctDirect(z, 'tx_admis_g', 'admis_g', 'nbr_g'), gC = pctDirect(c, 'tx_admis_g', 'admis_g', 'nbr_g'), gD = pctDirect(d, 'tx_admis_g', 'admis_g', 'nbr_g');
+                        const fZ = pctDirect(z, 'tx_admis_f', 'admis_f', 'nbr_f'), fC = pctDirect(c, 'tx_admis_f', 'admis_f', 'nbr_f'), fD = pctDirect(d, 'tx_admis_f', 'admis_f', 'nbr_f');
+                        const eZ = pctEns(z), eC = pctEns(c), eD = pctEns(d);
+                        const disp = (lvl: any): 'f' | 'g' | null => {
+                          const g = pctVal(lvl.cepe?.admis_g, lvl.cepe?.nbr_g);
+                          const f = pctVal(lvl.cepe?.admis_f, lvl.cepe?.nbr_f);
+                          if (g == null || f == null || (isNaN(g) && isNaN(f)) || (g === 0 && f === 0)) return null; if (Math.abs(g - f) < 0.01) return null;
+                          return f < g ? 'f' : 'g';
+                        };
+                        return (<>
+                          <tr><td style={s.td}>Garçons</td><td style={{ ...s.td, textAlign: 'center', ...manq(gZ) }}>{gZ}</td><td style={{ ...s.td, textAlign: 'center', ...manq(gC) }}>{gC}</td><td style={{ ...s.td, textAlign: 'center', ...manq(gD) }}>{gD}</td></tr>
+                          <tr><td style={s.td}>Filles</td><td style={{ ...s.td, textAlign: 'center', ...manq(fZ) }}>{fZ}</td><td style={{ ...s.td, textAlign: 'center', ...manq(fC) }}>{fC}</td><td style={{ ...s.td, textAlign: 'center', ...manq(fD) }}>{fD}</td></tr>
+                          <tr><td style={s.td}>Ensemble</td><td style={{ ...s.td, textAlign: 'center', ...manq(eZ) }}>{eZ}</td><td style={{ ...s.td, textAlign: 'center', ...manq(eC) }}>{eC}</td><td style={{ ...s.td, textAlign: 'center', ...manq(eD) }}>{eD}</td></tr>
+                          <tr><td style={s.td}>Disparité aux dépens des</td>{[z, c, d].map((lvl, i) => <td key={i} style={{ ...s.td, textAlign: 'center', padding: 2 }}><DisparityIcon kind={disp(lvl)} /></td>)}</tr>
+                        </>);
+                      })()}
+                    </tbody>
+                  </table>
+                </td>
+              </tr>
+            </tbody>
+          </table>
 
         {/* RESSOURCES SCOLAIRES */}
         <div style={s.titre}>RESSOURCES SCOLAIRES</div>

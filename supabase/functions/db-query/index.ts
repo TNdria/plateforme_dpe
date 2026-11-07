@@ -6,12 +6,13 @@ import { Client } from "https://deno.land/x/postgres@v0.17.0/mod.ts";
 import { executeDiagnosticDataset } from "./diagnostic.ts";
 import { executeTdbDrenNiveau, type NiveauDren } from "./tdbDrenNiveau.ts";
 import { ensureRefTables, CE_SRC, popSource, importReference } from "./refImport.ts";
+import { repairReferenceBatch } from "./refBatch.ts";
 import { canDownloadTdb, issueTdbSession, verifyTdbSession, passwordMatchesSession } from './tdbDownloadAuth.ts';
 import {
   importTdbRows, latestTdbRow, ensureTdbTables, isTdbTable, updateTdbRow, insertTdbRow, listTdbRows,
   type TdbTable,
 } from "./tdbStore.ts";
-const VERSION = "v61-20261104-dren-commentaires";
+const VERSION = "v62-20261107-reference-batch-timestamp";
 
 // Aménagements accessibles aux élèves en situation de handicap (fiche j2).
 const ACCES_ESH_COLS = [
@@ -2322,9 +2323,11 @@ serve(async (req: Request) => {
           await client.end();
           return new Response(JSON.stringify({ success: false, error: "Accès refusé" }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 403 });
         }
-        const allowedTablesGR = new Set(['tdb_ecole','tdb_zap','tdb_cisco','tdb_dren','tdb_mada','tdb_ref','examen_cepe_candidates','examen_bepc_candidates']);
+        const allowedTablesGR = new Set(['tdb_ecole','tdb_zap','tdb_cisco','tdb_dren','tdb_mada','tdb_ref','tdb_ueas','tdb_population_dren','tdb_population_cisco','tdb_caisse_ecole_import','examen_cepe_candidates','examen_bepc_candidates']);
         try {
           await ensureTdbTables(client);
+          const refBatch = await client.queryObject<{ table_name: string }>('SELECT table_name FROM public.tdb_import_batches WHERE id = $1', [batchId]);
+          if (refBatch.rows[0]) await repairReferenceBatch(client, refBatch.rows[0].table_name, batchId);
           const b = await client.queryObject<{ table_name: string; batch_ts_start: string; batch_ts_end: string }>(
             `SELECT table_name, batch_ts_start::text AS batch_ts_start, batch_ts_end::text AS batch_ts_end FROM public.tdb_import_batches WHERE id = $1`,
             [batchId],
@@ -2372,9 +2375,11 @@ serve(async (req: Request) => {
           await client.end();
           return new Response(JSON.stringify({ success: false, error: "Accès refusé" }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 403 });
         }
-        const allowedTables = new Set(['tdb_ecole','tdb_zap','tdb_cisco','tdb_dren','tdb_mada','tdb_ref','examen_cepe_candidates','examen_bepc_candidates']);
+        const allowedTables = new Set(['tdb_ecole','tdb_zap','tdb_cisco','tdb_dren','tdb_mada','tdb_ref','tdb_ueas','tdb_population_dren','tdb_population_cisco','tdb_caisse_ecole_import','examen_cepe_candidates','examen_bepc_candidates']);
         try {
           await ensureTdbTables(client);
+          const refBatch = await client.queryObject<{ table_name: string }>('SELECT table_name FROM public.tdb_import_batches WHERE id = $1', [batchId]);
+          if (refBatch.rows[0]) await repairReferenceBatch(client, refBatch.rows[0].table_name, batchId);
           const b = await client.queryObject<{ table_name: string; batch_ts_start: string; batch_ts_end: string }>(
             `SELECT table_name, batch_ts_start::text AS batch_ts_start, batch_ts_end::text AS batch_ts_end FROM public.tdb_import_batches WHERE id = $1`,
             [batchId],

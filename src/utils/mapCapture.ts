@@ -34,6 +34,20 @@ function getTransformMatrix(transform: string) {
   }
 }
 
+export function clampCapturePoint(
+  point: { x: number; y: number },
+  bounds: { width: number; height: number; leftInset?: number },
+): { x: number; y: number } {
+  const leftInset = Math.max(0, bounds.leftInset ?? 0);
+  const maxX = Math.max(leftInset, bounds.width);
+  const maxY = Math.max(0, bounds.height);
+
+  return {
+    x: Math.min(Math.max(point.x, leftInset), maxX),
+    y: Math.min(Math.max(point.y, 0), maxY),
+  };
+}
+
 export function flattenLeafletCaptureTransforms(root: ParentNode | null): void {
   if (!root) return;
 

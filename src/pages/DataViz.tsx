@@ -71,6 +71,7 @@ import {
 } from "./dataviz/dataviz-utils";
 import "leaflet/dist/leaflet.css";
 import DataActionsBar from "@/components/admin/DataActionsBar";
+import { clampCapturePoint } from "../utils/mapCapture";
 
 // ─── Composants carte auxiliaires ───────────────────────────────────────────
 
@@ -438,6 +439,7 @@ const DataViz = () => {
     layerBounds: L.LatLngBounds | null;
   } | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
+  const captureRootRef = useRef<HTMLDivElement>(null);
 
   // Init couches de base
   useEffect(() => {
@@ -666,15 +668,17 @@ const DataViz = () => {
 
   // ── Capture PNG : l'utilisateur trace la zone à télécharger ─────────────
 
-  /** Point du curseur exprimé en coordonnées relatives au conteneur de la carte */
+  /** Point du curseur exprimé en coordonnées relatives au conteneur de capture global */
   const mapPointFromEvent = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const node = mapContainerRef.current;
-    if (!node) return { x: 0, y: 0 };
-    const rect = node.getBoundingClientRect();
-    return {
-      x: Math.min(Math.max(event.clientX - rect.left, 0), rect.width),
-      y: Math.min(Math.max(event.clientY - rect.top, 0), rect.height),
-    };
+    const root = captureRootRef.current;
+    if (!root) return { x: 0, y: 0 };
+    const rect = root.getBoundingClientRect();
+    const leftPanel = document.querySelector<HTMLElement>("[data-sidebar-panel]");
+    const leftPadding = sidebarOpen && leftPanel ? leftPanel.offsetWidth : 0;
+    return clampCapturePoint(
+      { x: event.clientX - rect.left, y: event.clientY - rect.top },
+      { width: rect.width, height: rect.height, leftInset: leftPadding },
+    );
   };
 
   const startMapCapture = useCallback(() => {
@@ -741,16 +745,29 @@ const DataViz = () => {
   const handleCaptureMap = useCallback(
     async (selection?: { x: number; y: number; width: number; height: number } | null) => {
       const node = mapContainerRef.current;
-      if (!node) return;
+      const captureArea = captureRootRef.current;
+      if (!node || !captureArea) return;
       setContextMenu(null);
       setCaptureBusy(true);
       try {
-        // ⚠️ Dans html2canvas, x/y sont relatifs à l'élément (le canvas est déjà
-        // ancré sur son coin haut-gauche) et width/height découpent la zone.
-        // Ajouter rect.left/top ici décalait toute la capture.
+        const rootRect = captureArea.getBoundingClientRect();
+        const mapRect = node.getBoundingClientRect();
+        const rightPanel = document.querySelector<HTMLElement>("[data-right-panel]");
+        const captureIncludesLegend = rightPanelOpen && rightPanel && rightPanel.offsetWidth > 0;
+
         const crop =
-          selection && selection.width >= 1 && selection.height >= 1 ? selection : null;
-        const canvas = await html2canvas(node, {
+          selection && selection.width >= 1 && selection.height >= 1
+            ? selection
+            : captureIncludesLegend
+              ? {
+                  x: Math.max(0, mapRect.left - rootRect.left),
+                  y: 0,
+                  width: Math.round(mapRect.width + rightPanel.offsetWidth),
+                  height: Math.round(Math.max(mapRect.height, node.clientHeight)),
+                }
+              : null;
+
+        const canvas = await html2canvas(captureArea, {
           useCORS: true,
           allowTaint: true,
           backgroundColor: "#ffffff",
@@ -758,24 +775,18 @@ const DataViz = () => {
           scale: 2,
           x: crop ? Math.round(crop.x) : 0,
           y: crop ? Math.round(crop.y) : 0,
-          width: crop ? Math.round(crop.width) : node.clientWidth,
-          height: crop ? Math.round(crop.height) : node.clientHeight,
+          width: crop ? Math.round(crop.width) : captureArea.clientWidth,
+          height: crop ? Math.round(crop.height) : captureArea.clientHeight,
           scrollX: -window.scrollX,
           scrollY: -window.scrollY,
           windowWidth: document.documentElement.clientWidth,
           windowHeight: document.documentElement.clientHeight,
-          // html2canvas rend mal les translate3d de Leaflet → décalage.
-          // On convertit chaque translation en left/top dans le clone.
           onclone: (doc, cloned) => {
-            // Le bandeau de sélection ne doit jamais apparaître sur l'export.
             cloned.querySelectorAll<HTMLElement>("[data-capture-ui]").forEach((el) => el.remove());
             const sel =
               ".leaflet-map-pane, .leaflet-tile, .leaflet-tile-container, .leaflet-marker-icon, .leaflet-marker-shadow, .leaflet-tooltip, .leaflet-popup, .leaflet-zoom-animated, .leaflet-pane > svg, .leaflet-pane > canvas";
             const orig = Array.from(node.querySelectorAll<HTMLElement>(sel));
             const copies = Array.from(cloned.querySelectorAll<HTMLElement>(sel));
-            // Positions lues depuis la mise en page réelle (getBoundingClientRect),
-            // identiques quel que soit le navigateur (Firefox renvoie des matrices
-            // et des left/top différents de Chrome).
             const plan = orig.map((el, i) => {
               const c = copies[i];
               const t = window.getComputedStyle(el).transform;
@@ -795,10 +806,6 @@ const DataViz = () => {
             });
             plan.forEach((p) => {
               if (!p) return;
-              // html2canvas sérialise le SVG en image avec tout le style calculé.
-              // Dans Firefox, ce style (dont width/height CSS) décale le dessin
-              // de l'origine du viewBox : on repart d'un style minimal identique
-              // aux deux navigateurs pour que polygones et fond restent alignés.
               if (p.c.tagName.toLowerCase() === "svg") p.c.removeAttribute("style");
               p.c.style.transform = "none";
               p.c.style.translate = "none";
@@ -1495,15 +1502,16 @@ const DataViz = () => {
         </div>
       </div>
 
-      <div className="flex-1 relative flex gap-0 overflow-hidden">
+      <div ref={captureRootRef} className="flex-1 relative flex gap-0 overflow-hidden">
         {/* ═══ PANNEAU GAUCHE : Filtres + Guides ═══ */}
         <div
+          data-sidebar-panel
           className={
-            (sidebarOpen ? "w-[85vw] max-w-[280px] " : "w-0 ") +
+            (sidebarOpen ? "w-[85vw] max-w-[320px] " : "w-0 ") +
             "shrink-0 h-full bg-background border-r border-border overflow-hidden transition-[width] duration-300 ease-in-out"
           }
         >
-          <div className="w-[85vw] max-w-[280px] h-full space-y-3 overflow-y-auto p-3">
+          <div className="w-[85vw] max-w-[320px] h-full space-y-3 overflow-y-auto p-3">
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2">
@@ -1515,7 +1523,7 @@ const DataViz = () => {
                 <div className="space-y-2">
                   <Label className="text-xs font-medium">Niveau</Label>
                   <Select value={niveau} onValueChange={(v) => setNiveau(v as Niveau)}>
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -1531,7 +1539,7 @@ const DataViz = () => {
                 <div className="space-y-2">
                   <Label className="text-xs font-medium">Thème</Label>
                   <Select value={theme} onValueChange={setTheme}>
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="--Choisir un thème--" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1668,13 +1676,13 @@ const DataViz = () => {
           onClick={() => setSidebarOpen((v) => !v)}
           title={sidebarOpen ? "Réduire le panneau gauche" : "Développer le panneau gauche"}
           className="absolute top-1/2 -translate-y-1/2 z-[1500] bg-background border shadow-md rounded-full w-7 h-7 flex items-center justify-center hover:bg-muted transition-[left] duration-300 ease-in-out"
-          style={{ left: sidebarOpen ? "clamp(0px, 85vw, 280px)" : "0px" }}
+          style={{ left: sidebarOpen ? "clamp(0px, 85vw, 320px)" : "0px" }}
         >
           {sidebarOpen ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
         </button>
 
         {/* ═══ CENTRE : CARTE ═══ */}
-        <div className="flex-1 overflow-hidden relative" ref={mapContainerRef}>
+        <div className="flex-1 min-w-0 overflow-hidden relative" ref={mapContainerRef}>
           {loading && (
             <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-[1000] flex items-center justify-center">
               <div className="text-center">
@@ -1714,7 +1722,7 @@ const DataViz = () => {
           <MapContainer
             center={[-18.9189596, 47.5135653]}
             zoom={6}
-            className="h-full w-full"
+            className="h-full w-full min-w-0"
             scrollWheelZoom={false}
             doubleClickZoom={false}
           >
@@ -1829,99 +1837,100 @@ const DataViz = () => {
             <FitBounds data={activeBoundsData} />
           </MapContainer>
 
-          {/* Mode capture : tracé de la zone à télécharger */}
-          {captureMode && (
-            <div
-              data-capture-ui
-              data-html2canvas-ignore="true"
-              className="absolute inset-0 z-[2500] cursor-crosshair select-none touch-none"
-              onPointerDown={handleCapturePointerDown}
-              onPointerMove={handleCapturePointerMove}
-              onPointerUp={handleCapturePointerUp}
-              onPointerCancel={handleCapturePointerUp}
-              onContextMenu={(event) => event.preventDefault()}
-            >
-              {captureSelection &&
-              captureSelection.width > 0 &&
-              captureSelection.height > 0 ? (
-                <div
-                  className="absolute pointer-events-none border-2 border-dashed border-primary bg-primary/10 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]"
-                  style={{
-                    left: captureSelection.x,
-                    top: captureSelection.y,
-                    width: captureSelection.width,
-                    height: captureSelection.height,
-                  }}
-                />
-              ) : (
-                <div className="absolute inset-0 bg-black/35 pointer-events-none" />
-              )}
-
-              <div className="pointer-events-none absolute top-3 left-1/2 z-10 w-[min(92%,520px)] -translate-x-1/2 rounded-xl border bg-background/95 px-4 py-3 text-center shadow-lg backdrop-blur">
-                <p className="text-sm font-semibold">Tracez la zone de la carte à télécharger</p>
-                <p className="mt-0.5 text-[11px] text-muted-foreground">
-                  Cliquez-glissez pour délimiter la zone, puis cliquez sur « Télécharger la zone ».
-                  Appuyez sur Échap pour annuler.
-                </p>
-              </div>
-
-              <div
-                className="absolute bottom-4 left-1/2 z-10 flex flex-wrap items-center justify-center gap-2 rounded-xl border bg-background/95 px-3 py-2 shadow-lg backdrop-blur"
-                onPointerDown={(event) => event.stopPropagation()}
-              >
-                <Button
-                  size="sm"
-                  onClick={() => handleCaptureMap(captureSelection)}
-                  disabled={
-                    captureBusy ||
-                    !captureSelection ||
-                    captureSelection.width < 16 ||
-                    captureSelection.height < 16
-                  }
-                >
-                  {captureBusy ? (
-                    <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Download className="mr-1 h-4 w-4" />
-                  )}
-                  Télécharger la zone
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => handleCaptureMap(null)}
-                  disabled={captureBusy}
-                >
-                  <FileImage className="mr-1 h-4 w-4" />
-                  Toute la carte
-                </Button>
-                {captureSelection && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={captureBusy}
-                    onClick={() => {
-                      captureStartRef.current = null;
-                      setCaptureSelection(null);
-                    }}
-                  >
-                    Recommencer
-                  </Button>
-                )}
-                <Button size="sm" variant="ghost" onClick={cancelMapCapture} disabled={captureBusy}>
-                  Annuler
-                </Button>
-              </div>
-            </div>
-          )}
         </div>
+
+        {/* Mode capture : tracé de la zone à télécharger, sur l'ensemble de la zone visible (carte + légende) */}
+        {captureMode && (
+          <div
+            data-capture-ui
+            data-html2canvas-ignore="true"
+            className="absolute inset-0 z-[2500] cursor-crosshair select-none touch-none"
+            onPointerDown={handleCapturePointerDown}
+            onPointerMove={handleCapturePointerMove}
+            onPointerUp={handleCapturePointerUp}
+            onPointerCancel={handleCapturePointerUp}
+            onContextMenu={(event) => event.preventDefault()}
+          >
+            {captureSelection &&
+            captureSelection.width > 0 &&
+            captureSelection.height > 0 ? (
+              <div
+                className="absolute pointer-events-none border-2 border-dashed border-primary bg-primary/10 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]"
+                style={{
+                  left: captureSelection.x,
+                  top: captureSelection.y,
+                  width: captureSelection.width,
+                  height: captureSelection.height,
+                }}
+              />
+            ) : (
+              <div className="absolute inset-0 bg-black/35 pointer-events-none" />
+            )}
+
+            <div className="pointer-events-none absolute top-3 left-1/2 z-10 w-[min(92%,520px)] -translate-x-1/2 rounded-xl border bg-background/95 px-4 py-3 text-center shadow-lg backdrop-blur">
+              <p className="text-sm font-semibold">Tracez la zone de la carte à télécharger</p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                Cliquez-glissez pour délimiter la zone, puis cliquez sur « Télécharger la zone ».
+                Appuyez sur Échap pour annuler.
+              </p>
+            </div>
+
+            <div
+              className="absolute bottom-4 left-1/2 z-10 flex flex-wrap items-center justify-center gap-2 rounded-xl border bg-background/95 px-3 py-2 shadow-lg backdrop-blur"
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <Button
+                size="sm"
+                onClick={() => handleCaptureMap(captureSelection)}
+                disabled={
+                  captureBusy ||
+                  !captureSelection ||
+                  captureSelection.width < 16 ||
+                  captureSelection.height < 16
+                }
+              >
+                {captureBusy ? (
+                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="mr-1 h-4 w-4" />
+                )}
+                Télécharger la zone
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handleCaptureMap(null)}
+                disabled={captureBusy}
+              >
+                <FileImage className="mr-1 h-4 w-4" />
+                Toute la carte
+              </Button>
+              {captureSelection && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={captureBusy}
+                  onClick={() => {
+                    captureStartRef.current = null;
+                    setCaptureSelection(null);
+                  }}
+                >
+                  Recommencer
+                </Button>
+              )}
+              <Button size="sm" variant="ghost" onClick={cancelMapCapture} disabled={captureBusy}>
+                Annuler
+              </Button>
+            </div>
+          </div>
+        )}
 
         <button
           type="button"
           onClick={() => setRightPanelOpen((v) => !v)}
           title={rightPanelOpen ? "Réduire le panneau droit" : "Développer le panneau droit"}
           className="absolute top-1/2 -translate-y-1/2 z-[1500] bg-background border shadow-md rounded-full w-7 h-7 flex items-center justify-center hover:bg-muted transition-[right] duration-300 ease-in-out"
-          style={{ right: rightPanelOpen ? "clamp(0px, 85vw, 280px)" : "0px" }}
+          style={{ right: rightPanelOpen ? "clamp(0px, 85vw, 320px)" : "0px" }}
         >
           {rightPanelOpen ? (
             <ChevronRight className="w-4 h-4" />
@@ -1932,12 +1941,13 @@ const DataViz = () => {
 
         {/* ═══ PANNEAU DROIT : Légende + option noms + Récapitulatif ═══ */}
         <div
+          data-right-panel
           className={
-            (rightPanelOpen ? "w-[85vw] max-w-[280px] " : "w-0 ") +
+            (rightPanelOpen ? "w-[85vw] max-w-[320px] " : "w-0 ") +
             "shrink-0 h-full bg-background border-l border-border overflow-hidden transition-[width] duration-300 ease-in-out"
           }
         >
-          <div className="w-[85vw] max-w-[280px] h-full space-y-3 overflow-y-auto p-3">
+          <div className="w-[85vw] max-w-[320px] h-full space-y-3 overflow-y-auto p-3">
             {/* Légende */}
             {appliedTheme !== "0" && legendLabels ? (
               <Card>

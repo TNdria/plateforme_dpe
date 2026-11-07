@@ -1,5 +1,8 @@
 # Roadmap
 
+- [x] Corriger le lien entre les imports Population/Caisse et leurs lignes : date PostgreSQL partagée, récupération des anciens lots uniquement sur correspondance exacte ; 14 tests réussis et service redéployé.
+- [ ] Vérifier « Voir » sur un import Population/Caisse réel ; en attente d’une session administrateur Django disponible, distincte de la connexion Cloud.
+
 - [x] Ajuster les libellés de contexte du TdB établissement et afficher OUI/NON pour l’école ; conserver les pourcentages ZAP/CISCO.
 - [ ] Alimenter le nombre d’enfants déscolarisés et non scolarisés du TdB établissement ; aucun champ correspondant disponible dans la réponse actuelle.
 
