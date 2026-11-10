@@ -113,6 +113,25 @@ const menuItems: { section?: string; items: MenuItem[] }[] = [
     ],
   },
   {
+    section: "OUVERTURE",
+    items: [
+      {
+        label: "Ouverture",
+        icon: ClipboardList,
+        children: [
+          {
+            label: "Nouvelle demande",
+            path: "/ouverture/demande",
+          },
+          {
+            label: "Demandes",
+            path: "/ouverture/demandes",
+          },
+        ],
+      },
+    ],
+  },
+  {
     section: "GESTION",
     items: [
       {

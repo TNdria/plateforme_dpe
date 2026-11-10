@@ -17,7 +17,7 @@ import Login from '@/pages/Login';
 import NotFound from '@/pages/NotFound';
 import Dashboard from '@/pages/Dashboard';
 import Admin from '@/pages/Admin';
-
+import DemandeOuverture from '@/pages/ouverture/DemandeOuverture';
 /**
  * Robust lazy loader: retries failed dynamic imports (common when a chunk
  * resolves to `undefined` due to a stale/aborted preload in the preview
@@ -74,7 +74,10 @@ const PageFallback = () => (
     />
   </div>
 );
-
+const Demandes = lazyRetry(
+  () => import('@/pages/ouverture/Demande'),
+  'Demandes'
+);
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
@@ -95,6 +98,22 @@ const App = () => (
                       <RequireAdmin>
                         <Referentiel />
                       </RequireAdmin>
+                    }
+                  />
+                  <Route
+                    path="/ouverture/demandes"
+                    element={
+                      <RequireAuth>
+                        <Demandes />
+                      </RequireAuth>
+                    }
+                  />
+                  <Route
+                    path="/ouverture/demande"
+                    element={
+                      <RequireAuth>
+                        <DemandeOuverture />
+                      </RequireAuth>
                     }
                   />
                   <Route path="/sig" element={<SIG />} />
