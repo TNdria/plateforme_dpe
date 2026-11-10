@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import DisparityIcon from '@/components/score/DisparityIcon';
 import { EfficienceGrid } from './EfficienceGrid';
 import { TDBDiagnosticReport } from '@/components/tdb/TDBDiagnosticReport';
+import { RepartitionEtablissements } from './RepartitionEtablissements';
 import logoMen from '@/assets/logoMen.jpg';
 import {
   buildDrenReport,
@@ -518,6 +519,9 @@ export function TableauDeBord({ data, niveau, codeDren }: Props) {
           <DataTable table={report.other} onMeta={openFiche} />
         </div>
       </div>
+      {niveau === 'primaire' && (
+        <RepartitionEtablissements teachers={report.teacherAllocation ?? []} manuals={report.manualAllocation ?? []} />
+      )}
     </>
   );
 

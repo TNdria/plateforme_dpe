@@ -1,12 +1,19 @@
 # Roadmap
 
+## Cahier des charges DREN primaire — 9 novembre 2026
+- [x] Auditer les requêtes, formules et tableaux existants sans régresser les autres TDB.
+- [x] Corriger les données générales, la couverture scolaire et le profil de rétention cumulatif T1–T5 sur N/N−1.
+- [x] Corriger les enseignants qualifiés, le personnel administratif et l’indicateur de répartition par R² avec les quatre statuts.
+- [x] Corriger les manuels L1, les ratios publics par matière/groupe et leur répartition par R².
+- [x] Vérifier les tableaux alignés par établissement, les filtres, les valeurs manquantes et les tests réels : 101 tests réussis, rapports ATSINANANA 2025 et ATSIMO-ATSINANANA 2026 contrôlés.
+
 - [x] Corriger le lien entre les imports Population/Caisse et leurs lignes : date PostgreSQL partagée, récupération des anciens lots uniquement sur correspondance exacte ; 14 tests réussis et service redéployé.
 - [ ] Vérifier « Voir » sur un import Population/Caisse réel ; en attente d’une session administrateur Django disponible, distincte de la connexion Cloud.
 
 - [x] Ajuster les libellés de contexte du TdB établissement et afficher OUI/NON pour l’école ; conserver les pourcentages ZAP/CISCO.
 - [ ] Alimenter le nombre d’enfants déscolarisés et non scolarisés du TdB établissement ; aucun champ correspondant disponible dans la réponse actuelle.
 
-- [ ] Corriger « Autres matières » sans fusion des cellules, vérifier ses sources API et griser Ensemble dans Autres ressources sauf les trois indicateurs demandés.
+- [x] Corriger « Autres matières » avec RAKIBOLANA/HISTOIRE/GEOGRAPHIE/SVT par groupe, sans fusion des cellules ; Ensemble reste grisé dans Autres ressources sauf les trois indicateurs demandés.
 
 - [x] Corriger uniquement la présentation du tableau des manuels DREN : sept colonnes, en-têtes fusionnés et bordures, sans modifier les données ; affichage réel ATSINANANA 2025 vérifié et 44 tests réussis.
 
@@ -29,7 +36,7 @@
 - [x] Corriger les calculs DREN primaire disponibles selon le classeur ; vérifier les données réelles 2025, les valeurs manquantes et les comparaisons nationales.
 - [x] Alimenter le TDB DREN préscolaire/collège/lycée avec les colonnes déjà présentes dans la base : TNS et taux de transition (élèves par âge), disciplines enseignées, diplômes académiques, volume horaire, équipements (laboratoire, salle TIC, bibliothèque, accès handicap) et élèves réinsérés (CRAN), calculés côté client depuis les sommes par secteur ; vérifié sur ANALAMANGA 2025 (3 lignes sans source pour collège et lycée, 6 pour le préscolaire).
 
-- [ ] Compléter les indicateurs DREN encore sans source : UEAS, salles définitives, données genrées de rétention, TNS/TNA du primaire, personnel administratif, enseignants « mal répartis » et établissements fermés. Réconcilier les comptes CEPE et CM2 nationaux incohérents avant publication de leur proportion.
+- [ ] Compléter les indicateurs DREN encore sans source : UEAS et données genrées de rétention. Réconcilier les comptes CEPE et CM2 nationaux incohérents avant publication de leur proportion.
 
 - [x] Harmoniser le design de l’accueil et de l’administration sans ajouter de contenu ni modifier les fonctionnalités.
 

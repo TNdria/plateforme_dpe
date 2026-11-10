@@ -48,15 +48,22 @@ export function drenRetention(entity: Entity, grade: number, gender = ''): numbe
  * passants = effectif − redoublants. Le profil ne peut jamais remonter.
  */
 export function drenRetentionCohort(entity: Entity, grades: number, gender = ''): (number | null)[] {
-  const prev = entity?.ressources || {}, cur = entity?.annee_suivante?.ressources || {};
+  const previous = entity?.annee_precedente?.ressources || {}, current = entity?.ressources || {};
   const pass = (r: any, k: number) => {
     const e = drenNumber(r[`eff_t${k}${gender}`]), red = drenNumber(r[`red_t${k}${gender}`]);
     return e === null || red === null ? null : e - red;
   };
   const out: (number | null)[] = [100];
   for (let k = 2; k <= grades; k++) {
-    const last = out[k - 2], a = pass(cur, k), b = pass(prev, k - 1);
-    out.push(last === null || a === null || b === null || b <= 0 ? null : last * Math.min(1, a / b));
+    const last = out[k - 2], currentPass = pass(current, k), previousPass = pass(previous, k - 1);
+    if (last === null || currentPass === null || previousPass === null || previousPass <= 0) {
+      out.push(null);
+      continue;
+    }
+    const transition = currentPass / previousPass;
+    // Une remontée trahit des flux incohérents : ne pas la masquer par un plafond
+    // artificiel à 100. Le niveau concerné et la suite deviennent non calculables.
+    out.push(transition > 1 ? null : last * transition);
   }
   return out;
 }
@@ -168,9 +175,9 @@ export const DREN_MANUELS: { label: string; key: string; eleves: string }[] = [
   { label: 'Malagasy T1-T2', key: 'mlg_12', eleves: 'eleves_12' },
   { label: 'Malagasy T3', key: 'mlg_3', eleves: 'eleves_3' },
   { label: 'Malagasy T4-T5', key: 'mlg_45', eleves: 'eleves_45' },
-  { label: 'Calcul T1-T2', key: 'cal_12', eleves: 'eleves_12' },
-  { label: 'Calcul T3', key: 'cal_3', eleves: 'eleves_3' },
-  { label: 'Calcul T4-T5', key: 'cal_45', eleves: 'eleves_45' },
+  { label: 'Mathématiques T1-T2', key: 'cal_12', eleves: 'eleves_12' },
+  { label: 'Mathématiques T3', key: 'cal_3', eleves: 'eleves_3' },
+  { label: 'Mathématiques T4-T5', key: 'cal_45', eleves: 'eleves_45' },
   { label: 'Français T1-T2', key: 'fr_12', eleves: 'eleves_12' },
   { label: 'Français T3', key: 'fr_3', eleves: 'eleves_3' },
   { label: 'Français T4-T5', key: 'fr_45', eleves: 'eleves_45' },

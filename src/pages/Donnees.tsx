@@ -44,8 +44,8 @@ import { cn } from "@/lib/utils";
 import { getZoneInfo } from "@/lib/zone";
 import logoMen from "@/assets/logoMen.jpg";
 import logoDpe from "@/assets/logoDpe.jpg";
+import { buildSectorGroups, getTotalEleves, type Niveau } from "@/utils/donneesSectors";
 
-type Niveau = "prescolaire" | "primaire" | "college" | "lycee";
 type Section = "ecoles" | "eleves" | "personnels";
 type ExportFormat = "csv" | "xlsx";
 
@@ -294,18 +294,6 @@ const SECTION_COLUMNS: Record<Section, (niveau: Niveau, annee: string) => any[]>
 
 const formatNumber = (n: number) => new Intl.NumberFormat("fr-FR").format(Math.round(n || 0));
 
-const getTotalEleves = (data: any[], niveau: Niveau) => {
-  const sum = (row: any, keys: string[]) => keys.reduce((acc, k) => acc + (Number(row[k]) || 0), 0);
-  const keysByNiveau: Record<Niveau, string[]> = {
-    prescolaire: ["eff_ps", "eff_ms", "eff_gs"],
-    primaire: ["eff_t1", "eff_t2", "eff_t3", "eff_t4", "eff_t5"],
-    college: ["eff_t6", "eff_t7", "eff_t8", "eff_t9"],
-    lycee: ["_2nde", "_1re", "tle"],
-  };
-  const keys = keysByNiveau[niveau];
-  return data.reduce((acc, row) => acc + sum(row, keys), 0);
-};
-
 const Donnees = () => {
   const { niveau: niveauParam } = useParams<{ niveau: string }>();
   const niveau: Niveau = (
@@ -434,6 +422,9 @@ const Donnees = () => {
   const totalEtablissements = data.length;
   const totalEleves = getTotalEleves(data, niveau);
   const totalPersonnels = data.reduce((acc, e) => acc + (Number(e.pers_total) || 0), 0);
+
+  // Répartition Public (SECTEUR 0) / Privé (SECTEUR 1) / Total
+  const sectorGroups = buildSectorGroups(data, niveau);
 
   // Catégories exportables — indépendantes de l'onglet affiché, un seul jeu
   // de données déjà chargé (aucune requête supplémentaire).
@@ -836,32 +827,40 @@ const Donnees = () => {
         </TabsList>
       </Tabs>
 
-      {/* KPI cards */}
+      {/* KPI cards — adaptés à l'onglet actif : Public / Privé / Total */}
       <div
         className="grid grid-cols-1 sm:grid-cols-3 gap-4 animate-fade-in"
         style={{ animationDelay: "120ms" }}
       >
-        <StatCard
-          icon={School}
-          theme={SECTION_THEME[section]}
-          label="Établissements"
-          value={formatNumber(totalEtablissements)}
-          hint="Dans le périmètre filtré"
-        />
-        <StatCard
-          icon={Users}
-          theme={SECTION_THEME[section]}
-          label="Total élèves"
-          value={formatNumber(totalEleves)}
-          hint={`Effectifs ${meta.label.toLowerCase()}`}
-        />
-        <StatCard
-          icon={GraduationCap}
-          theme={SECTION_THEME[section]}
-          label="Total personnels"
-          value={formatNumber(totalPersonnels)}
-          hint="Enseignants et personnel"
-        />
+        {sectorGroups.map((g) => {
+          const icon = section === "ecoles" ? School : section === "eleves" ? Users : GraduationCap;
+          const base = section === "ecoles" ? "Établissements" : section === "eleves" ? "Élèves" : "Personnels";
+          const value = section === "ecoles" ? g.etabs : section === "eleves" ? g.eleves : g.pers;
+          const details =
+            section === "personnels"
+              ? [
+                  ...(g.key === "prive" ? [] : [{ label: "Fonctionnaires", value: formatNumber(g.fonct) }]),
+                  { label: "ENF", value: formatNumber(g.enf) },
+                  { label: "Subventionnés", value: formatNumber(g.sub) },
+                  { label: "Non subventionnés", value: formatNumber(g.nonSub) },
+                ]
+              : undefined;
+          return (
+            <StatCard
+              key={g.key}
+              icon={icon}
+              theme={SECTION_THEME[section]}
+              label={`${base} — ${g.label}`}
+              value={formatNumber(value)}
+              details={details}
+              hint={
+                section === "personnels" && g.key === "prive"
+                  ? "Le privé ne compte pas de fonctionnaires"
+                  : "Dans le périmètre filtré"
+              }
+            />
+          );
+        })}
       </div>
 
       {/* Table card */}
@@ -1127,12 +1126,14 @@ const StatCard = ({
   label,
   value,
   hint,
+  details,
 }: {
   icon: any;
   theme: StatCardTheme;
   label: string;
   value: string;
   hint?: string;
+  details?: { label: string; value: string }[];
 }) => {
   return (
     <Card
@@ -1163,6 +1164,32 @@ const StatCard = ({
           </p>
         </div>
       </div>
+      {details && details.length > 0 &&
+        (() => {
+          // 2 colonnes au-delà de 3 indicateurs : les libellés restent lisibles.
+          const cols = details.length > 3 ? 2 : details.length;
+          const lastRow = Math.floor((details.length - 1) / cols);
+          return (
+            <div
+              className="grid border-t border-border/30"
+              style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
+            >
+              {details.map((d, i) => (
+                <div
+                  key={d.label}
+                  className={cn(
+                    "px-2 py-2 text-center",
+                    i % cols !== cols - 1 && "border-r border-border/30",
+                    Math.floor(i / cols) < lastRow && "border-b border-border/30",
+                  )}
+                >
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{d.label}</p>
+                  <p className="text-base font-semibold tabular-nums text-foreground">{d.value}</p>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
       <div className="px-4 pt-3 pb-4 border-t border-border/30 text-center">
         <div className="min-h-[36px] flex items-center justify-center">
           {hint && (

@@ -40,7 +40,7 @@ describe('TableauDeBord', () => {
     expect(html).toContain('RESSOURCES');
     expect(html).toContain('ANALYSE DES GOULOTS D’ÉTRANGLEMENT (PUBLIC)');
     expect(html).toContain('EFFICIENCE (PUBLIC)');
-    expect(html).toContain('Nombre de manuels par élève T4-T5');
+    expect(html).toContain('Nombre d’élèves par manuel T4-T5');
     expect(html).toContain('Remarque(s) et Diagnostique(s)');
   });
 
@@ -48,6 +48,19 @@ describe('TableauDeBord', () => {
     const html = renderToStaticMarkup(<TableauDeBord data={primary} niveau="primaire" codeDren="12" />);
     expect(html).toContain('tdb-cell-missing" title="Nombre d’écoles fermées">—</td>');
     expect(html).toContain('title="Nombre d’écoles fermées">0</td>');
+  });
+
+  it('expose le détail aligné des établissements sans l’imprimer automatiquement', () => {
+    const html = renderToStaticMarkup(<TableauDeBord data={{
+      ...primary,
+      primaire_extra: { dren: { public: { repartition: [
+        { code_etab: 101, nom_etab: 'EPP A', eleves: 120, enseignants: 4, eleves_12: 60, manuel_cal_12: 30 },
+      ] } } },
+    }} niveau="primaire" codeDren="12" />);
+    expect(html).toContain('Détail de la répartition par établissement (public)');
+    expect(html).toContain('EPP A (101)');
+    expect(html).toContain('Mathématiques');
+    expect(html).toContain('print:hidden');
   });
 
   it('trace le nuage avec les autres DREN comparées', () => {

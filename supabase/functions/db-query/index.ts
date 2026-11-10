@@ -12,7 +12,7 @@ import {
   importTdbRows, latestTdbRow, ensureTdbTables, isTdbTable, updateTdbRow, insertTdbRow, listTdbRows,
   type TdbTable,
 } from "./tdbStore.ts";
-const VERSION = "v62-20261107-reference-batch-timestamp";
+const VERSION = "v68-20261110-dashboard-teachers-in-class";
 
 // Aménagements accessibles aux élèves en situation de handicap (fiche j2).
 const ACCES_ESH_COLS = [
@@ -1133,6 +1133,12 @@ serve(async (req: Request) => {
       case "getTdbDrenData": {
         const annee = parseInt(url.searchParams.get("annee") || "2025");
         const examYear = await resolveExamenYear(client, annee);
+        const cacheKey = `${codeDren}:${annee}`;
+        const cached = drenResponseCache.get(cacheKey);
+        if (cached && Date.now() - cached.at < DREN_RESPONSE_TTL) {
+          await client.end();
+          return new Response(cached.body, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
         try {
           const rawData: any = await executeTdbDrenData(client, codeDren, annee);
           rawData.dren_prive = rawData.dren_prive || {};
@@ -1152,7 +1158,10 @@ serve(async (req: Request) => {
           rawData.mada = mergeImportedTdbSnapshot(rawData.mada, csvMada);
           rawData.ueas = await loadUeasRows(client, codeDren);
           await client.end();
-          return new Response(JSON.stringify({ ...serializeData(rawData), examen_annee: examYear }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          const body = JSON.stringify({ ...serializeData(rawData), examen_annee: examYear });
+          const madaOk = Object.keys(rawData?.primaire_extra?.mada?.public || {}).length > 0;
+          if (madaOk) drenResponseCache.set(cacheKey, { at: Date.now(), body });
+          return new Response(body, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         } catch (tdbErr: any) {
           console.error("getTdbDrenData error:", tdbErr);
           await client.end();
@@ -2665,7 +2674,7 @@ async function executeStatsEnseignants(client: Client, codeDren: number, codeCis
 
   const query = `
     SELECT ${selectPrefix} ${yearCols}
-    FROM fpe_p1 p1 WHERE p1."SECTEUR" ${sect} ${whereClause} ${groupBy}
+    FROM fpe_p1 p1 WHERE p1."SECTEUR" ${sect} AND ${si('p1."EN_SALLE"')} = 1 ${whereClause} ${groupBy}
   `;
   return await client.queryObject(query);
 }
@@ -2838,9 +2847,46 @@ async function executeTdb111(client: Client, codeDren: number) {
 }
 
 // ============ TDB DREN ============
+const MADA_EXTRA_TTL = 6 * 60 * 60 * 1000;
+const madaExtraCache = new Map<number, { at: number; promise: Promise<any[]> }>();
+function getMadaPrimaireExtra(annee: number, runs: Array<(db: Client) => Promise<any>>): Promise<any[]> {
+  const hit = madaExtraCache.get(annee);
+  if (hit && Date.now() - hit.at < MADA_EXTRA_TTL) return hit.promise;
+  // Une connexion par bloc : les requêtes d'une même connexion sont sérialisées.
+  const promise = Promise.all(runs.map(async (run) => {
+    const db = new Client(dbConfig);
+    try { await db.connect(); return await run(db); }
+    catch (e) { console.error('DREN national extra', (e as Error).message); return {}; }
+    finally { try { await db.end(); } catch { /* ignore */ } }
+  }));
+  madaExtraCache.set(annee, { at: Date.now(), promise });
+  promise.then((r) => { if (r.some((x) => !x || Object.keys(x).length === 0)) madaExtraCache.delete(annee); })
+    .catch(() => madaExtraCache.delete(annee));
+  return promise;
+}
+
+const drenResponseCache = new Map<string, { at: number; body: string }>();
+const DREN_RESPONSE_TTL = 15 * 60 * 1000;
+
 async function executeTdbDrenData(client: Client, codeDren: number, annee: number) {
   const whereDren = `AND a1."CODE_DREN" = ${codeDren}`;
   const whereMada = '';
+  const startedAt = Date.now();
+  // Les indicateurs nationaux sont lourds et identiques pour toutes les DREN :
+  // calculés sur une connexion dédiée (en parallèle) et mis en cache par année.
+  const madaExtraPromise = getMadaPrimaireExtra(annee, [
+    (db) => getPrimaireExtra(whereMada, 0, false, db), (db) => getPrimaireExtra(whereMada, null, false, db),
+  ]);
+  const withOwnClient = async (run: (db: Client) => Promise<any>) => {
+    const db = new Client(dbConfig);
+    try { await db.connect(); return await run(db); }
+    catch (e) { console.error('DREN extra connection', (e as Error).message); return {}; }
+    finally { try { await db.end(); } catch { /* ignore */ } }
+  };
+  const drenExtraPromise = Promise.all([
+    withOwnClient((db) => getPrimaireExtra(whereDren, 0, true, db)),
+    withOwnClient((db) => getPrimaireExtra(whereDren, null, false, db)),
+  ]);
   // TNS / TNA : effectifs par âge officiel (colonnes T*_G/F_<âge>ANS de fpe_e1).
   // Le croisement « nouveau entrant × âge » n'existe pas : le TNA utilise donc
   // les élèves de CP1 âgés de 6 ans (redoublants de 6 ans compris).
@@ -3080,6 +3126,10 @@ async function executeTdbDrenData(client: Client, codeDren: number, annee: numbe
     try { return { ressources: await getRessources(where, annee + 1, secteur) }; }
     catch (e) { console.error('DREN next-year flows unavailable', e); return {}; }
   }
+  async function getPreviousYear(where: string, secteur: 0 | 1) {
+    try { return { ressources: await getRessources(where, annee - 1, secteur) }; }
+    catch (e) { console.error('DREN previous-year retention unavailable', e); return {}; }
+  }
   async function getAllSectorPupils(where: string) {
     try {
       const pupils = [1,2,3,4,5].flatMap(k => ['G','F'].map(g => si(`e1."T${k}_${g}"`))).join('+');
@@ -3094,9 +3144,9 @@ async function executeTdbDrenData(client: Client, codeDren: number, annee: numbe
         FROM fpe_a1 a1 JOIN fpe_e1 e1 ON e1."CODE_ETAB"=a1."CODE_ETAB" AND e1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND e1."SECTEUR"=a1."SECTEUR" WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND e1."EXISTE_PRIMAIRE"=1 ${where}`)).rows[0] || {};
     } catch (e) { console.error('DREN all-sector enrolment unavailable', e); return {}; }
   }
-  const [popDren, popMada, nextDren, nextMada, nextDrenPriv, allDren, allMada, agesDren, agesMada, fokDren, fokMada] = await Promise.all([
+  const [popDren, popMada, nextDren, nextMada, nextDrenPriv, previousDren, previousMada, allDren, allMada, agesDren, agesMada, fokDren, fokMada] = await Promise.all([
     getPopulation(codeDren), getPopulation(), getNextYear(whereDren, 0), getNextYear(whereMada, 0),
-    getNextYear(whereDren, 1),
+    getNextYear(whereDren, 1), getPreviousYear(whereDren, 0), getPreviousYear(whereMada, 0),
     getAllSectorPupils(whereDren), getAllSectorPupils(whereMada),
     getAges(whereDren), getAges(whereMada),
     getFokontany(whereDren, codeDren), getFokontany(whereMada),
@@ -3105,9 +3155,12 @@ async function executeTdbDrenData(client: Client, codeDren: number, annee: numbe
   // ---- Indicateurs DREN primaire (fiche de commentaires TDB_DREN) ----
   // Calculés en sous-requêtes par établissement pour éviter les produits
   // cartésiens ; les R² utilisent regr_r2(Y, X) = COEFFICIENT.DETERMINATION.
-  async function getPrimaireExtra(where: string, secteur: 0 | null) {
+  async function getPrimaireExtra(where: string, secteur: 0 | null, includeObservations = false, db: Client = client) {
     const sect = secteur === null ? '1=1' : `a1."SECTEUR"=${secteur}`;
-    const T = (cols: string[]) => cols.map((c) => si(`l1."${c}"`)).join('+');
+    const rawManual = (col: string) => `NULLIF(l1."${col}"::text, '')`;
+    // Une quantité n'est calculée que si au moins une cellule source est renseignée.
+    // Les NULL ne deviennent donc jamais, à eux seuls, un stock réel de zéro manuel.
+    const T = (cols: string[]) => `CASE WHEN ${cols.map((c) => `${rawManual(c)} IS NOT NULL`).join(' OR ')} THEN ${cols.map((c) => `COALESCE(${rawManual(c)}::integer, 0)`).join('+')} END`;
     const eff = (grades: number[]) => grades.flatMap((k) => [si(`e1."T${k}_G"`), si(`e1."T${k}_F"`)]).join('+');
     const MAN: Record<string, string> = {
       mlg_12: T(['SERIES_VOLA_T1', 'MALAGASY_T1', 'SERIES_VOLA_T2', 'MALAGASY_T2']),
@@ -3119,54 +3172,72 @@ async function executeTdbDrenData(client: Client, codeDren: number, annee: numbe
       fr_12: T(['FRANCAIS_T1', 'FRANCAIS_T2']),
       fr_3: T(['FRANCAIS_T3']),
       fr_45: T(['FRANCAIS_T4', 'FRANCAIS_T5']),
-      // Les manuels des « autres matières » ont leurs propres colonnes dans
-      // fpe_l1 : RAKIBOLANA/HISTOIRE/GEOGRAPHIE/SVT sont vides au primaire.
-      autres_12: T(['AUTRES_MANUELS_T1', 'AUTRES_MANUELS_T2']),
-      autres_3: T(['AUTRES_MANUELS_T3']),
-      autres_45: T(['AUTRES_MANUELS_T4', 'AUTRES_MANUELS_T5']),
-      autres: T(['AUTRES_MANUELS_T1', 'AUTRES_MANUELS_T2', 'AUTRES_MANUELS_T3', 'AUTRES_MANUELS_T4', 'AUTRES_MANUELS_T5']),
+      autres_12: T(['RAKIBOLANA_T1', 'HISTOIRE_T1', 'GEOGRAPHIE_T1', 'SVT_T1', 'RAKIBOLANA_T2', 'HISTOIRE_T2', 'GEOGRAPHIE_T2', 'SVT_T2']),
+      autres_3: T(['RAKIBOLANA_T3', 'HISTOIRE_T3', 'GEOGRAPHIE_T3', 'SVT_T3']),
+      autres_45: T(['RAKIBOLANA_T4', 'HISTOIRE_T4', 'GEOGRAPHIE_T4', 'SVT_T4', 'RAKIBOLANA_T5', 'HISTOIRE_T5', 'GEOGRAPHIE_T5', 'SVT_T5']),
+      autres: T([1, 2, 3, 4, 5].flatMap((k) => ['RAKIBOLANA', 'HISTOIRE', 'GEOGRAPHIE', 'SVT'].map((subject) => `${subject}_T${k}`))),
     };
     const EFF: Record<string, string> = { '12': eff([1, 2]), '3': eff([3]), '45': eff([4, 5]), tot: eff([1, 2, 3, 4, 5]) };
     const effKey = (k: string) => (k === 'autres' ? 'tot' : k.split('_')[1]);
-    const dipA = `upper(btrim(COALESCE(p1."DIPLOME_ACADEMIQUE",'')))`;
-    const dipP = `upper(btrim(COALESCE(p1."DIPLOME_PEDAGOGIQUE",'')))`;
-    const qualif = `${si('p1."EN_SALLE"')}=1 AND ${dipA} ~ '(BEPC|BAC|LICENCE|MAITRISE|MASTER|DOCTORAT|DEA|DESS|INGENIEUR)'
-      AND ${dipP}<>'' AND ${dipP} NOT IN ('AUTRES','AUTRE','MAITRE EPS(ENS)','MONITEUR EPS(ANS)')
-      AND ${dipP} NOT LIKE '%PR_SCOLAIRE%' AND ${dipP} NOT LIKE '%PRESCOLAIRE%'`;
-    const safe = async (q: string) => { try { return (await client.queryObject(q)).rows[0] || {}; } catch (e) { console.error('DREN primaire extra', (e as Error).message); return {}; } };
+    const normalizeDiploma = (col: string) => `regexp_replace(translate(upper(btrim(COALESCE(${col},''))), 'ÉÈÊËÀÂÄÎÏÔÖÙÛÜÇ', 'EEEEAAAIIOOUUUC'), '[^A-Z0-9]+', '', 'g')`;
+    const dipA = normalizeDiploma('p1."DIPLOME_ACADEMIQUE"');
+    const dipP = normalizeDiploma('p1."DIPLOME_PEDAGOGIQUE"');
+    const personId = `COALESCE(
+      NULLIF('M:' || btrim(p1."AGENT_ETAT_MATRICULE"::text), 'M:'),
+      NULLIF('C:' || btrim(p1."CIN"::text), 'C:'),
+      NULLIF('P:' || btrim(p1."PASSEPORT"::text), 'P:'),
+      CASE WHEN NULLIF(btrim(p1."NOM_PRENOMS"::text), '') IS NULL THEN p1.ctid::text
+        ELSE md5(concat_ws('|', p1."CODE_ETAB", upper(btrim(p1."NOM_PRENOMS"::text)), COALESCE(p1."DATE_NAISS"::text, ''))) END
+    )`;
+    const teacherPopulation = `p1."NIVEAU_TENU_PRIMAIRE"='1' AND p1."CODE_STATUT" IN ('1','2','3','4')`;
+    const qualif = `${si('p1."EN_SALLE"')}=1 AND (${dipA} LIKE 'BEPC%' OR ${dipA} LIKE 'BACC%' OR ${dipA} ~ '^(LICENCE|MAITRISE|MASTER|DOCTORAT|DEA|DESS|INGENIEUR)')
+      AND ${dipP}<>'' AND ${dipP} NOT IN ('AUTRES','AUTRE','MAITREEPSENS','MONITEUREPSANS')
+      AND ${dipP} NOT LIKE '%EDUCATIONPRESCOLAIRE%'`;
+    const safe = async (q: string) => { try { return (await db.queryObject(q)).rows[0] || {}; } catch (e) { console.error('DREN primaire extra', (e as Error).message); return {}; } };
     const qPers = `SELECT
-        SUM(CASE WHEN p1."NIVEAU_TENU_PRIMAIRE"='1' AND ${si('p1."EN_SALLE"')}=1 THEN 1 ELSE 0 END) AS ens_classe,
-        SUM(CASE WHEN p1."NIVEAU_TENU_PRIMAIRE"='1' AND ${si('p1."EN_SALLE"')}=0 THEN 1 ELSE 0 END) AS ens_non_classe,
-        SUM(CASE WHEN p1."NIVEAU_TENU_PRIMAIRE"='1' AND ${qualif} THEN 1 ELSE 0 END) AS ens_qualifies,
-        SUM(CASE WHEN ${si('p1."EN_SALLE"')}=0 THEN 1 ELSE 0 END) AS pers_admin
+        COUNT(DISTINCT CASE WHEN ${teacherPopulation} AND ${si('p1."EN_SALLE"')}=1 THEN ${personId} END) AS ens_classe,
+        COUNT(DISTINCT CASE WHEN ${teacherPopulation} AND ${si('p1."EN_SALLE"')}=0 THEN ${personId} END) AS ens_non_classe,
+        COUNT(DISTINCT CASE WHEN ${teacherPopulation} AND ${qualif} THEN ${personId} END) AS ens_qualifies,
+        COUNT(DISTINCT CASE WHEN ${si('p1."EN_SALLE"')}=0 THEN ${personId} END) AS pers_admin
       FROM fpe_p1 p1 JOIN fpe_a1 a1 ON a1."CODE_ETAB"=p1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=p1."ANNEE_SCOLAIRE" AND a1."SECTEUR"=p1."SECTEUR"
       WHERE p1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND ${sect} ${where}`;
+    const currentScope = `${secteur === null ? '1=1' : `c."SECTEUR"=${secteur}`} ${where.replace(/a1\./g, 'c.')}`;
     const qFerme = `SELECT COUNT(DISTINCT a1."CODE_ETAB") AS etab_ferme FROM fpe_a1 a1
       WHERE a1."ANNEE_SCOLAIRE"=${annee - 1} AND a1."EXISTE_PRIMAIRE"=1 AND ${sect} ${where}
       AND NOT EXISTS (SELECT 1 FROM fpe_a1 b WHERE b."CODE_ETAB"=a1."CODE_ETAB" AND b."ANNEE_SCOLAIRE"=${annee} AND b."EXISTE_PRIMAIRE"=1)
-      AND EXISTS (SELECT 1 FROM fpe_a1 c WHERE c."ANNEE_SCOLAIRE"=${annee} LIMIT 1)`;
+      AND EXISTS (SELECT 1 FROM fpe_a1 c WHERE c."ANNEE_SCOLAIRE"=${annee} AND ${currentScope})`;
+    const observations = includeObservations ? `,
+      COALESCE(jsonb_agg(jsonb_build_object(
+        'code_etab', el.etab, 'nom_etab', el.nom_etab, 'eleves', el.e_tot, 'enseignants', ens.n,
+        ${Object.keys(EFF).filter((k) => k !== 'tot').map((k) => `'eleves_${k}', el.e_${k}`).join(', ')},
+        ${Object.keys(MAN).map((k) => `'manuel_${k}', man.m_${k}`).join(', ')}
+      ) ORDER BY el.nom_etab, el.etab) FILTER (WHERE ens.etab IS NOT NULL OR man.etab IS NOT NULL), '[]'::jsonb) AS repartition` : '';
     const qEtab = `WITH el AS (
-        SELECT a1."CODE_ETAB" AS etab, ${Object.entries(EFF).map(([k, v]) => `SUM(${v}) AS e_${k}`).join(', ')}
+        SELECT a1."CODE_ETAB" AS etab, MAX(a1."NOM_ETAB") AS nom_etab, ${Object.entries(EFF).map(([k, v]) => `SUM(${v}) AS e_${k}`).join(', ')}
         FROM fpe_a1 a1 JOIN fpe_e1 e1 ON e1."CODE_ETAB"=a1."CODE_ETAB" AND e1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND e1."SECTEUR"=a1."SECTEUR"
         WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND ${sect} ${where} GROUP BY a1."CODE_ETAB"),
       ens AS (
-        SELECT p1."CODE_ETAB" AS etab, COUNT(*) AS n FROM fpe_p1 p1 JOIN fpe_a1 a1 ON a1."CODE_ETAB"=p1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=p1."ANNEE_SCOLAIRE" AND a1."SECTEUR"=p1."SECTEUR"
+        SELECT p1."CODE_ETAB" AS etab, COUNT(DISTINCT ${personId}) AS n FROM fpe_p1 p1 JOIN fpe_a1 a1 ON a1."CODE_ETAB"=p1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=p1."ANNEE_SCOLAIRE" AND a1."SECTEUR"=p1."SECTEUR"
         WHERE p1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND ${sect} ${where}
-          AND p1."NIVEAU_TENU_PRIMAIRE"='1' AND ${si('p1."EN_SALLE"')}=1 AND p1."CODE_STATUT" IN ('1','2') GROUP BY p1."CODE_ETAB"),
+          AND ${teacherPopulation} AND ${si('p1."EN_SALLE"')}=1 GROUP BY p1."CODE_ETAB"),
       man AS (
         SELECT l1."CODE_ETAB" AS etab, ${Object.entries(MAN).map(([k, v]) => `SUM(${v}) AS m_${k}`).join(', ')}
         FROM fpe_l1 l1 JOIN fpe_a1 a1 ON a1."CODE_ETAB"=l1."CODE_ETAB" AND a1."ANNEE_SCOLAIRE"=l1."ANNEE_SCOLAIRE" AND a1."SECTEUR"=l1."SECTEUR"
         WHERE l1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND ${sect} ${where} GROUP BY l1."CODE_ETAB")
       SELECT SUM(el.e_tot) AS eleves, ${Object.keys(EFF).filter((k) => k !== 'tot').map((k) => `SUM(el.e_${k}) AS eleves_${k}`).join(', ')},
-        regr_r2(COALESCE(ens.n,0)::float8, el.e_tot::float8) AS r2_enseignants,
-        ${Object.keys(MAN).map((k) => `SUM(man.m_${k}) AS manuel_${k}, regr_r2(man.m_${k}::float8, el.e_${effKey(k)}::float8) AS r2_manuel_${k}`).join(',\n        ')}
+        regr_r2(ens.n::float8, el.e_tot::float8) AS r2_enseignants,
+        ${Object.keys(MAN).map((k) => `SUM(man.m_${k}) AS manuel_${k}, regr_r2(man.m_${k}::float8, el.e_${effKey(k)}::float8) AS r2_manuel_${k}`).join(',\n        ')}${observations}
       FROM el LEFT JOIN ens ON ens.etab=el.etab LEFT JOIN man ON man.etab=el.etab`;
     const [pers, ferme, etab] = await Promise.all([safe(qPers), safe(qFerme), safe(qEtab)]);
     return { ...pers, ...ferme, ...etab };
   }
-  const [extraDrenPub, extraDrenEns, extraMadaPub, extraMadaEns] = await Promise.all([
-    getPrimaireExtra(whereDren, 0), getPrimaireExtra(whereDren, null),
-    getPrimaireExtra(whereMada, 0), getPrimaireExtra(whereMada, null),
+  const [extraDrenPub, extraDrenEns] = await drenExtraPromise;
+  // Budget : si le calcul national n'est pas prêt, on répond sans lui (« — »)
+  // et on le laisse terminer en arrière-plan pour alimenter le cache.
+  try { (globalThis as any).EdgeRuntime?.waitUntil?.(madaExtraPromise.catch(() => null)); } catch { /* ignore */ }
+  const [extraMadaPub, extraMadaEns] = await Promise.race([
+    madaExtraPromise,
+    new Promise<any[]>((resolve) => setTimeout(() => resolve([{}, {}]), Math.max(5000, 110000 - (Date.now() - startedAt)))),
   ]);
 
   const [namesResult, adminCountsResult] = await Promise.all([
@@ -3183,9 +3254,9 @@ async function executeTdbDrenData(client: Client, codeDren: number, annee: numbe
   const spread = (s: any) => ({ ressources: s.ressources, personnel: s.personnel, sections: s.sections, places: s.places, cepe: s.cepe, caisse: s.caisse, manuels: s.manuels });
   return {
     version: VERSION, names, annee,
-    dren: { population: popDren, annee_suivante: nextDren, ...allDren, ...agesDren, ...spread(drenPub), ressources: { ...drenPub.ressources, ...adminCounts, ...fokDren } },
+    dren: { population: popDren, annee_suivante: nextDren, annee_precedente: previousDren, ...allDren, ...agesDren, ...spread(drenPub), ressources: { ...drenPub.ressources, ...adminCounts, ...fokDren } },
     dren_prive: { annee_suivante: nextDrenPriv, ...spread(drenPriv) },
-    mada: { population: popMada, annee_suivante: nextMada, ...allMada, ...agesMada, ...spread(madaPub), ressources: { ...madaPub.ressources, ...fokMada } },
+    mada: { population: popMada, annee_suivante: nextMada, annee_precedente: previousMada, ...allMada, ...agesMada, ...spread(madaPub), ressources: { ...madaPub.ressources, ...fokMada } },
     efficience,
     efficienceDrens,
     primaire_extra: { dren: { public: extraDrenPub, ensemble: extraDrenEns }, mada: { public: extraMadaPub, ensemble: extraMadaEns } },

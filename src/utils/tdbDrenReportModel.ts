@@ -135,6 +135,22 @@ export interface EfficiencyReport {
   remarks: string[];
 }
 
+export interface TeacherAllocationRow {
+  codeEtab: string;
+  nomEtab: string;
+  eleves: number | null;
+  enseignants: number | null;
+}
+
+export interface ManualAllocationRow {
+  codeEtab: string;
+  nomEtab: string;
+  matiere: string;
+  groupe: string;
+  eleves: number | null;
+  manuels: number | null;
+}
+
 export interface DrenReportModel {
   level: ReportLevel;
   title: string;
@@ -152,6 +168,8 @@ export interface DrenReportModel {
   finance: ReportTable | null;
   other: ReportTable;
   manuals: ReportTable | null;
+  teacherAllocation?: TeacherAllocationRow[];
+  manualAllocation?: ManualAllocationRow[];
   bottlenecks: GoulotItem[];
   efficiency: EfficiencyReport | null;
   notes: string[];
@@ -786,15 +804,6 @@ function buildPrimary(raw: any): DrenReportModel {
   const importedPct = (e: any, key: string) => num(drenRead({ indicateurs: e?.indicateurs }, key));
   const pop = (e: any) => (e?.population || {}) as Record<string, number | null>;
   const allPupils = (e: any) => read(e, 'nombre_eleves_tous_secteurs') ?? read(e, 'nbr_eleve');
-  const qualified = (e: any) => {
-    const exact = num(e?.personnel?.qualifies_classe);
-    const teachers = read(e, 'pers_en_classe');
-    if (exact !== null && teachers !== null && teachers > 0) return (exact / teachers) * 100;
-    const unqualified = read(e, 'sans_diplome_ped');
-    return teachers === null || unqualified === null || teachers <= 0
-      ? null
-      : ((teachers - unqualified) / teachers) * 100;
-  };
   const genderValue = (e: any, key: string) => read(e, key);
   // Indicateurs complémentaires calculés côté serveur (fiche de commentaires).
   const xDP = raw.primaire_extra?.dren?.public, xDE = raw.primaire_extra?.dren?.ensemble;
@@ -852,7 +861,7 @@ function buildPrimary(raw: any): DrenReportModel {
         gen('Nombre de sections', ensembleValue(d, dPr, dEns, 'sections', 'nbr_section'), publicSections(d), 'sections'),
         gen('Effectif des élèves', allPupils(d) ?? sectorValue(dEns, 'ressources', 'nbr_eleve'), publicPupils(d), 'effectif'),
         gen('Dont filles', ensembleValue(d, dPr, dEns, 'ressources', 'nbr_eleve_f'), sectorValue(d, 'ressources', 'nbr_eleve_f') ?? read(d, 'nbr_eleve_f'), 'filles'),
-        gen('Nombre d’enfants réinsérés', ensembleValue(d, dPr, dEns, 'ressources', 'reinseres'), sectorValue(d, 'ressources', 'reinseres') ?? read(d, 'enfants_reinseres'), 'reinseres'),
+        gen('Nombre d’enfants réinsérés', ensembleValue(d, dPr, dEns, 'ressources', 'reinseres'), sectorValue(d, 'ressources', 'reinseres') ?? read(d, 'enfants_reinseres'), 'enfants_reinseres'),
         gen('Nombre de salles définitives', ensembleValue(d, dPr, dEns, 'sections', 'nbr_sdc'), publicSalles(d), 'salles'),
         gen('Nombre de places assises', ensembleValue(d, dPr, dEns, 'places', 'places_assises'), publicPlaces(d), 'places'),
       ],
@@ -1083,9 +1092,9 @@ function buildPrimary(raw: any): DrenReportModel {
       label: 'Pourcentage des enseignants qualifiés',
       meta: humanMeta('qualifies', 'Pourcentage des enseignants qualifiés'),
       cells: [
-        toCell(drenQualifies(xDE) ?? qualified(dEns) ?? read(d, 'ratio_eq'), null, humanMeta('qualifies', 'Pourcentage des enseignants qualifiés')),
-        toCell(drenQualifies(xDP) ?? qualified(d), drenQualifies(xMP) ?? qualified(m), humanMeta('qualifies', 'Pourcentage des enseignants qualifiés')),
-        toCell(drenQualifies(xMP) ?? qualified(m), null, humanMeta('qualifies', 'Pourcentage des enseignants qualifiés')),
+        toCell(drenQualifies(xDE) ?? read(d, 'ratio_eq'), null, humanMeta('qualifies', 'Pourcentage des enseignants qualifiés')),
+        toCell(drenQualifies(xDP), drenQualifies(xMP), humanMeta('qualifies', 'Pourcentage des enseignants qualifiés')),
+        toCell(drenQualifies(xMP), null, humanMeta('qualifies', 'Pourcentage des enseignants qualifiés')),
       ],
     },
     {
@@ -1179,9 +1188,9 @@ function buildPrimary(raw: any): DrenReportModel {
   const malMeta = META.manuels_mal_repartis;
   const manuals: ReportTable = {
     columns: ['Manuels', 'Élèves / manuel DREN', 'Élèves / manuel MADA', '% mal répartis DREN', '% mal répartis MADA'],
-    note: 'Élèves / manuel : effectif des classes concernées ÷ manuels (Malagasy = Série vola + Malagasy). % mal répartis : (1 − R²) × 100 entre manuels et effectifs par établissement, tous secteurs.',
+    note: 'Élèves / manuel : effectif des classes concernées ÷ manuels (Malagasy = Série vola + Malagasy ; Autres = Rakibolana + Histoire + Géographie + SVT). % mal répartis : (1 − R²) × 100 entre manuels et effectifs du même établissement public.',
     rows: DREN_MANUELS.map(({ label, key, eleves }) => {
-      const dr = drenManuelRow(xDE, key, eleves), mr = drenManuelRow(xME, key, eleves);
+      const dr = drenManuelRow(xDP, key, eleves), mr = drenManuelRow(xMP, key, eleves);
       return {
         label,
         meta: manualMeta,
@@ -1207,11 +1216,11 @@ function buildPrimary(raw: any): DrenReportModel {
     ['Nombre d’enseignants pour 1 000 enfants d’âge scolaire', 'enseignants_1000', drenDivide(sectorValue(dEns, 'personnel', 'pers_en_classe') ?? read(d, 'pers_en_classe'), p.pop_6_10, 1000)],
     ['Nombre de places assises par enfant d’âge scolaire', 'places_enfant', drenDivide(sectorValue(dEns, 'places', 'places_assises') ?? read(d, 'places_assises'), p.pop_6_10, 1)],
     ['Pourcentage d’EPP continues', 'ecole_continue', importedPct(d, 'ecole_continue') ?? eppContinues(dEns)],
-    ['Pourcentage d’enseignants qualifiés', 'qualifies', qualified(dEns) ?? qualified(d)],
+    ['Pourcentage d’enseignants qualifiés', 'qualifies', drenQualifies(xDE) ?? drenQualifies(xDP) ?? read(d, 'ratio_eq')],
     ['Ratio groupe pédagogique par enseignant', 'groupe_enseignant', ratio(sectorValue(dEns, 'sections', 'nbr_section'), sectorValue(dEns, 'personnel', 'pers_en_classe')) ?? ratio(publicSections(d), read(d, 'pers_en_classe'))],
-    ['Nombre de manuels par élève T1-T2', 'manuel_eleve', ratio(sectorValue(dEns, 'ressources', 'nbr_eleve_t1_t2'), sectorValue(dEns, 'manuels', 'manuel_t1_t2')) ?? ratio(sectorValue(d, 'ressources', 'nbr_eleve_t1_t2'), sectorValue(d, 'manuels', 'manuel_t1_t2'))],
-    ['Nombre de manuels par élève T3', 'manuel_eleve', ratio(sectorValue(dEns, 'ressources', 'nbr_eleve_t3'), sectorValue(dEns, 'manuels', 'manuel_t3')) ?? ratio(sectorValue(d, 'ressources', 'nbr_eleve_t3'), sectorValue(d, 'manuels', 'manuel_t3'))],
-    ['Nombre de manuels par élève T4-T5', 'manuel_eleve', ratio(sectorValue(dEns, 'ressources', 'nbr_eleve_t4_t5'), sectorValue(dEns, 'manuels', 'manuel_t4_t5')) ?? ratio(sectorValue(d, 'ressources', 'nbr_eleve_t4_t5'), sectorValue(d, 'manuels', 'manuel_t4_t5'))],
+    ['Nombre d’élèves par manuel T1-T2', 'manuel_eleve', ratio(sectorValue(dEns, 'ressources', 'nbr_eleve_t1_t2'), sectorValue(dEns, 'manuels', 'manuel_t1_t2')) ?? ratio(sectorValue(d, 'ressources', 'nbr_eleve_t1_t2'), sectorValue(d, 'manuels', 'manuel_t1_t2'))],
+    ['Nombre d’élèves par manuel T3', 'manuel_eleve', ratio(sectorValue(dEns, 'ressources', 'nbr_eleve_t3'), sectorValue(dEns, 'manuels', 'manuel_t3')) ?? ratio(sectorValue(d, 'ressources', 'nbr_eleve_t3'), sectorValue(d, 'manuels', 'manuel_t3'))],
+    ['Nombre d’élèves par manuel T4-T5', 'manuel_eleve', ratio(sectorValue(dEns, 'ressources', 'nbr_eleve_t4_t5'), sectorValue(dEns, 'manuels', 'manuel_t4_t5')) ?? ratio(sectorValue(d, 'ressources', 'nbr_eleve_t4_t5'), sectorValue(d, 'manuels', 'manuel_t4_t5'))],
   ];
 
   /* ---- Efficience ---- */
@@ -1225,6 +1234,30 @@ function buildPrimary(raw: any): DrenReportModel {
     sortedProfile[g - 1]?.mada ?? null,
     drenAdmission(m),
   );
+
+  let rawObservations: any = xDP?.repartition ?? [];
+  if (typeof rawObservations === 'string') {
+    try { rawObservations = JSON.parse(rawObservations); } catch { rawObservations = []; }
+  }
+  const observations = Array.isArray(rawObservations) ? rawObservations : [];
+  const teacherAllocation: TeacherAllocationRow[] = observations.flatMap((row: any) => {
+    const eleves = num(row?.eleves), enseignants = num(row?.enseignants);
+    const codeEtab = String(row?.code_etab ?? '').trim();
+    if (!codeEtab || eleves === null || enseignants === null) return [];
+    return [{ codeEtab, nomEtab: String(row?.nom_etab || codeEtab), eleves, enseignants }];
+  });
+  const manualAllocation: ManualAllocationRow[] = observations.flatMap((row: any) => {
+    const codeEtab = String(row?.code_etab ?? '').trim();
+    if (!codeEtab) return [];
+    const nomEtab = String(row?.nom_etab || codeEtab);
+    return DREN_MANUELS.flatMap(({ label, key, eleves: elevesKey }) => {
+      const eleves = num(row?.[elevesKey]), manuels = num(row?.[`manuel_${key}`]);
+      if (eleves === null || manuels === null) return [];
+      const match = label.match(/^(.*) (T1-T2|T3|T4-T5)$/);
+      const subject = match?.[1] === 'Calcul' ? 'Mathématiques' : match?.[1] || label;
+      return [{ codeEtab, nomEtab, matiere: subject, groupe: match?.[2] || '', eleves, manuels }];
+    });
+  });
 
   return {
     level: 'primaire',
@@ -1265,6 +1298,8 @@ function buildPrimary(raw: any): DrenReportModel {
     finance,
     other,
     manuals,
+    teacherAllocation,
+    manualAllocation,
     bottlenecks: bottleneckValues.map(([label, code, value]) => ({
       label,
       value: value === null ? null : Math.max(0, Math.min(100, value)),
@@ -1277,6 +1312,7 @@ function buildPrimary(raw: any): DrenReportModel {
       'Les évaluations UEAS T2/T5 ne sont pas disponibles dans la base actuelle : leurs cellules restent vides plutôt que d’afficher un score inventé.',
       'Le taux d’accès générationnel n’est affiché que s’il est fourni par un import (projection de cohorte) ; il n’est pas déductible des seules données annuelles.',
       'Le TNA retire les redoublants de CP1 âgés de 6 ans : il mesure donc les seuls nouveaux entrants de 6 ans.',
+      'Le profil de rétention part de 100 en T1 et cumule les passants de chaque niveau en N sur ceux du niveau précédent en N−1. Une transition supérieure à 100 % ou un dénominateur absent rend la suite non calculable.',
     ],
   };
 }

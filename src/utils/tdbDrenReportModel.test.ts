@@ -189,7 +189,7 @@ describe('rapport primaire', () => {
       manuel_autres_12: 50, manuel_autres_3: 100, manuel_autres_45: 200,
       r2_manuel_autres_12: 0.2, r2_manuel_autres_3: 0.4, r2_manuel_autres_45: 0.6 };
     const report = buildDrenReport({ ...primaryRaw, primaire_extra: {
-      dren: { ensemble: extra }, mada: { ensemble: { ...extra, manuel_autres_12: 100, manuel_autres_3: 150, manuel_autres_45: 400 } },
+      dren: { public: extra }, mada: { public: { ...extra, manuel_autres_12: 100, manuel_autres_3: 150, manuel_autres_45: 400 } },
     } }, 'primaire');
     const rows = report.manuals?.rows.filter(r => r.label.startsWith('Autres matières')) ?? [];
     expect(rows).toHaveLength(3);
@@ -229,8 +229,17 @@ describe('rapport primaire', () => {
   it('calcule les ratios et le total financier sans inventer les postes absents', () => {
     const total = model.finance!.rows.at(-1)!;
     expect(total.cells[0].value).toBeCloseTo(3664.8, 1);
-    expect(model.human.rows[0].cells[1].value).toBeCloseTo(22.3, 1);
-    expect(model.human.rows[0].cells[2].value).toBeCloseTo(16.8, 1);
+    const exact = buildDrenReport({ ...primaryRaw, primaire_extra: {
+      dren: { public: { ens_qualifies: 30, ens_classe: 40 }, ensemble: { ens_qualifies: 45, ens_classe: 60 } },
+      mada: { public: { ens_qualifies: 50, ens_classe: 80 } },
+    } }, 'primaire');
+    expect(exact.human.rows[0].cells[0].value).toBeCloseTo(75, 1);
+    expect(exact.human.rows[0].cells[1].value).toBeCloseTo(75, 1);
+    expect(exact.human.rows[0].cells[2].value).toBeCloseTo(62.5, 1);
+  });
+  it('ne remplace pas la qualification académique et pédagogique par l’ancien calcul', () => {
+    expect(model.human.rows[0].cells[1].status).toBe('missing');
+    expect(model.human.rows[0].cells[2].status).toBe('missing');
   });
   it('calcule TNS, TNA et le taux d’EPP ayant de CAP depuis les effectifs par âge', () => {
     const row = (label: string) => model.coverage.rows.find((r) => r.label === label)!;
@@ -249,6 +258,28 @@ describe('rapport primaire', () => {
     expect(value('Pourcentage d’élèves vivant à moins de 2 km')).toBe(21.5);
     expect(value('Pourcentage d’établissements avec point d’eau')).toBe(12.2);
     expect(value('Pourcentage d’EPP continues')).toBe(64.2);
+  });
+  it('aligne chaque effectif avec les enseignants et manuels du même établissement', () => {
+    const report = buildDrenReport({ ...primaryRaw, primaire_extra: {
+      dren: { public: { repartition: [
+        { code_etab: 101, nom_etab: 'EPP A', eleves: 120, enseignants: 4, eleves_12: 60, manuel_cal_12: 30 },
+        { code_etab: 202, nom_etab: 'EPP B', eleves: 240, enseignants: 6, eleves_12: 100, manuel_cal_12: 20 },
+      ] } },
+    } }, 'primaire');
+    expect(report.teacherAllocation).toEqual([
+      { codeEtab: '101', nomEtab: 'EPP A', eleves: 120, enseignants: 4 },
+      { codeEtab: '202', nomEtab: 'EPP B', eleves: 240, enseignants: 6 },
+    ]);
+    expect(report.manualAllocation).toEqual([
+      { codeEtab: '101', nomEtab: 'EPP A', matiere: 'Mathématiques', groupe: 'T1-T2', eleves: 60, manuels: 30 },
+      { codeEtab: '202', nomEtab: 'EPP B', matiere: 'Mathématiques', groupe: 'T1-T2', eleves: 100, manuels: 20 },
+    ]);
+  });
+  it('conserve les observations manuelles incomplètes hors du tableau plutôt que de les compléter', () => {
+    const report = buildDrenReport({ ...primaryRaw, primaire_extra: {
+      dren: { public: { repartition: [{ code_etab: 101, nom_etab: 'EPP A', eleves_12: 60, manuel_cal_12: null }] } },
+    } }, 'primaire');
+    expect(report.manualAllocation).toEqual([]);
   });
 });
 
@@ -347,6 +378,7 @@ describe('rapport primaire avec les deux secteurs', () => {
     expect(row('Nombre de sections').cells[1].value).toBe(8663);
     expect(row('Dont filles').cells[0].value).toBe(161605);
     expect(row('Nombre d’enfants réinsérés').cells[0].value).toBe(12);
+    expect(row('Nombre d’enfants réinsérés').cells[0].display).not.toContain('%');
     expect(row('Nombre de places assises').cells[0].value).toBe(179716);
   });
 
@@ -378,7 +410,7 @@ describe('rapport primaire avec les deux secteurs', () => {
       expect(cell?.status).toBe('na');
       expect(cell?.value).toBeNull();
     }
-    const manuals = model.bottlenecks.find((b) => b.label === 'Nombre de manuels par élève T1-T2')!;
+    const manuals = model.bottlenecks.find((b) => b.label === 'Nombre d’élèves par manuel T1-T2')!;
     expect(manuals.raw).toBeCloseTo(0.6, 2);
   });
 });

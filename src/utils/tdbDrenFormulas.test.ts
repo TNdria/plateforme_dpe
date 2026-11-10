@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { drenCoverage, drenRetention, drenAdmission, drenRepeat, drenPromotion, drenAbandon, drenFormat, drenExamThreshold } from './tdbDrenFormulas';
+import { drenCoverage, drenRetention, drenRetentionCohort, drenAdmission, drenRepeat, drenPromotion, drenAbandon, drenFormat, drenExamThreshold } from './tdbDrenFormulas';
 describe('DREN primary ODS reference', () => {
   it('computes TBS over population 6–10 without an artificial 100% cap', () => {
     expect(drenCoverage({ ressources: { nbr_eleve: 1200 }, population: { pop_6_10: 1000 } })[1].value).toBe(120);
@@ -82,5 +82,48 @@ describe('fiche commentaires TDB DREN primaire', () => {
     const r = drenManuelRow({ manuel_mlg_12: 50, eleves_12: 200, r2_manuel_mlg_12: 0.4 }, 'mlg_12', 'eleves_12');
     expect(r.ratio).toBe(4);
     expect(r.malRepartis).toBeCloseTo(60);
+  });
+});
+
+describe('profil de rétention primaire N / N-1', () => {
+  const entity = {
+    ressources: {
+      eff_t1: 100, red_t1: 0,
+      eff_t2: 90, red_t2: 10,
+      eff_t3: 80, red_t3: 10,
+      eff_t4: 70, red_t4: 10,
+      eff_t5: 60, red_t5: 10,
+    },
+    annee_precedente: { ressources: {
+      eff_t1: 100, red_t1: 20,
+      eff_t2: 80, red_t2: 0,
+      eff_t3: 70, red_t3: 0,
+      eff_t4: 60, red_t4: 0,
+    } },
+  };
+
+  it('cumule chaque transition exacte de T1 à T5 sans réutiliser T3 → T4', () => {
+    expect(drenRetentionCohort(entity, 5)).toEqual([100, 100, 87.5, 75, 62.5]);
+  });
+
+  it('ignore une année suivante fournie à tort pour les flux de promotion', () => {
+    const wrongYear = { ...entity, annee_suivante: { ressources: { eff_t2: 1, red_t2: 0 } } };
+    expect(drenRetentionCohort(wrongYear, 5)).toEqual([100, 100, 87.5, 75, 62.5]);
+  });
+
+  it('rend non calculable une remontée incohérente au lieu de la plafonner à 100', () => {
+    const increasing = {
+      ressources: { eff_t2: 80, red_t2: 0 },
+      annee_precedente: { ressources: { eff_t1: 50, red_t1: 0 } },
+    };
+    expect(drenRetentionCohort(increasing, 5)).toEqual([100, null, null, null, null]);
+  });
+
+  it('signale un dénominateur nul sans fabriquer la suite du profil', () => {
+    const zero = {
+      ressources: { eff_t2: 80, red_t2: 0 },
+      annee_precedente: { ressources: { eff_t1: 0, red_t1: 0 } },
+    };
+    expect(drenRetentionCohort(zero, 5)).toEqual([100, null, null, null, null]);
   });
 });
