@@ -66,6 +66,40 @@ const Utilisateurs = lazyRetry(
 );
 const Profil = lazyRetry(() => import('@/pages/Profil'), 'Profil');
 
+// Module Ouverture
+const DemandeOuverture = lazyRetry(
+  () => import('@/pages/ouverture/DemandeOuverture'),
+  'DemandeOuverture'
+);
+const ValidationOuverture = lazyRetry(
+  () => import('@/pages/ouverture/Validation'),
+  'ValidationOuverture'
+);
+const DemandesOuverture = lazyRetry(
+  () => import('@/pages/ouverture/Demande'),
+  'DemandesOuverture'
+);
+const AttributionCode = lazyRetry(
+  () => import('@/pages/ouverture/AttributionCode'),
+  'AttributionCode'
+);
+const OuverturesProvisoires = lazyRetry(
+  () => import('@/pages/ouverture/OuverturesProvisoires'),
+  'OuverturesProvisoires'
+);
+const OuverturesDefinitives = lazyRetry(
+  () => import('@/pages/ouverture/OuvertureDefinitive'),
+  'OuverturesDefinitives'
+);
+const SuiviEtablissement = lazyRetry(
+  () => import('@/pages/ouverture/SuiviEtablissement'),
+  'SuiviEtablissement'
+);
+const AnalyseOuverture = lazyRetry(
+  () => import('@/pages/ouverture/Analyse3Ans'),
+  'AnalyseOuverture'
+);
+
 const PageFallback = () => (
   <div className="fixed top-0 left-0 right-0 z-[100] h-[3px] overflow-hidden bg-primary/10 pointer-events-none">
     <div
@@ -97,6 +131,40 @@ const App = () => (
                       </RequireAdmin>
                     }
                   />
+                  {/* Module Ouverture */}
+                  <Route
+                    path="/ouverture/demande"
+                    element={<RequireAuth><DemandeOuverture /></RequireAuth>}
+                  />
+                  <Route
+                    path="/ouverture/validation"
+                    element={<RequireAuth><ValidationOuverture /></RequireAuth>}
+                  />
+                  <Route
+                    path="/ouverture/demandes"
+                    element={<RequireAuth><DemandesOuverture /></RequireAuth>}
+                  />
+                  <Route
+                    path="/ouverture/attribution-code"
+                    element={<RequireAuth><AttributionCode /></RequireAuth>}
+                  />
+                  <Route
+                    path="/ouverture/ouvertures-provisoires"
+                    element={<RequireAuth><OuverturesProvisoires /></RequireAuth>}
+                  />
+                  <Route
+                    path="/ouverture/ouvertures-definitives"
+                    element={<RequireAuth><OuverturesDefinitives /></RequireAuth>}
+                  />
+                  <Route
+                    path="/ouverture/suivi-etablissement"
+                    element={<RequireAuth><SuiviEtablissement /></RequireAuth>}
+                  />
+                  <Route
+                    path="/ouverture/analyse"
+                    element={<RequireAuth><AnalyseOuverture /></RequireAuth>}
+                  />
+
                   <Route path="/sig" element={<SIG />} />
                   <Route
                     path="/ors"
