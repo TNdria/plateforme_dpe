@@ -101,12 +101,6 @@ const menuItems: { section?: string; items: MenuItem[] }[] = [
         children: [
           { label: "Nouvelle demande", path: "/ouverture/demande" },
           { label: "Demandes", path: "/ouverture/demandes" },
-          { label: "Validation", path: "/ouverture/validation" },
-          { label: "Attribution de code", path: "/ouverture/attribution-code" },
-          { label: "Ouvertures provisoires", path: "/ouverture/ouvertures-provisoires" },
-          { label: "Ouvertures définitives", path: "/ouverture/ouvertures-definitives" },
-          { label: "Suivi établissement", path: "/ouverture/suivi-etablissement" },
-          { label: "Analyse sur 3 ans", path: "/ouverture/analyse" },
         ],
       },
     ],
