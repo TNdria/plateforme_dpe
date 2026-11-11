@@ -15,6 +15,7 @@
  */
 import {
   drenAdmission,
+  drenExamAdmission,
   drenAbandon,
   drenCoverage,
   drenCycleRate,
@@ -113,7 +114,7 @@ export interface GoulotItem {
   label: string;
   /** Valeur plafonnée à 100 pour l’affichage de la barre. */
   value: number | null;
-  /** Valeur brute : au-delà de 100, la barre est pleine et l’étiquette est masquée. */
+  /** Pourcentage brut, conservé même lorsque la barre atteint son plafond. */
   raw: number | null;
   meta: IndicatorMeta;
 }
@@ -884,7 +885,6 @@ function buildPrimary(raw: any): DrenReportModel {
     ];
   };
   const coverageLabels = [
-    ['Taux d’accès générationnel', 'tag'],
     ['TBS (%)', 'tbs'],
     ['TNS (%)', 'tns'],
     ['TNA (%)', 'tna'],
@@ -897,7 +897,7 @@ function buildPrimary(raw: any): DrenReportModel {
     columns: ['Couverture', 'Votre DREN', 'MADA'],
     rows: coverageLabels.map(([label, code], i) => {
       const meta = mk(code, label, { sense: 'higher', max: capped.has(code) ? 100 : undefined });
-      const dv = round(cd[i], 1), mv = round(cm[i], 1);
+      const dv = round(cd[i + 1], 1), mv = round(cm[i + 1], 1);
       return {
         label,
         meta,
@@ -950,7 +950,6 @@ function buildPrimary(raw: any): DrenReportModel {
       ],
     };
   };
-  const cepeAdmission = (e: any, meta: IndicatorMeta): number | null => drenAdmission(e);
   const examGroups = [
     { label: '', span: 1 },
     { label: 'Public', span: 2 },
@@ -963,22 +962,8 @@ function buildPrimary(raw: any): DrenReportModel {
     cepeSubject('Malagasy', 'mlg'),
     cepeSubject('Français', 'frs'),
     cepeSubject('Mathématiques', 'mths'),
-    cepeSubject('Autres matières', 'autres'),
-    {
-      label: 'Ensemble',
-      cells: [
-        toCell(num(d?.cepe?.sm_total), null, cepeMeta('cepe_sm_total', 'Score moyen — Ensemble', '')),
-        toCell(null, null, cepeMeta('cepe_pct_total', '% ≥ 10 — Ensemble')),
-        toCell(num(dPr?.cepe?.sm_total), null, cepeMeta('cepe_sm_priv', 'Score moyen — Privé', '')),
-        toCell(null, null, cepeMeta('cepe_pct_priv', '% ≥ 10 — Privé')),
-        toCell(num(dExam?.cepe?.sm_total), null, cepeMeta('cepe_sm_total_ens', 'Score moyen — Ensemble', '')),
-        toCell(null, null, cepeMeta('cepe_pct_total_ens', '% ≥ 10 — Ensemble')),
-        toCell(num(m?.cepe?.sm_total), null, cepeMeta('cepe_sm_total_mada', 'Score moyen — MADA', '')),
-        toCell(null, null, cepeMeta('cepe_pct_total_mada', '% ≥ 10 — MADA')),
-      ],
-    },
   ];
-  const admisMeta = META.admis;
+  const admisMeta = { ...META.admis, formula: 'Admis au CEPE ÷ candidats au CEPE du même secteur et sexe × 100' };
   const admissionRow = (label: string, fn: (e: any) => number | null): ReportRow => {
     const dv = fn(d), pv = fn(dPr), ev = fn(dExam), mv = fn(m);
     return {
@@ -998,9 +983,9 @@ function buildPrimary(raw: any): DrenReportModel {
     subjectRows: cepeRows,
     admissionTitle: 'Pourcentage des admis au CEPE',
     admissionRows: [
-      admissionRow('Ensemble', (e) => cepeAdmission(e, admisMeta)),
-      admissionRow('dont Garçons', (e) => drenAdmission(e, '_g')),
-      admissionRow('dont Filles', (e) => drenAdmission(e, '_f')),
+      admissionRow('Ensemble', (e) => drenExamAdmission(e)),
+      admissionRow('dont Garçons', (e) => drenExamAdmission(e, '_g')),
+      admissionRow('dont Filles', (e) => drenExamAdmission(e, '_f')),
     ],
     note: 'SM : Score Moyen sur 20. Privé et Ensemble sont calculés depuis les candidats des deux secteurs ; une cellule reste « — » si la source ne fournit aucun candidat.',
   };
@@ -1211,7 +1196,6 @@ function buildPrimary(raw: any): DrenReportModel {
     ['Pourcentage de fokontany ayant au moins une école', 'fokontany_ecole', fokontanyRate(d)],
     ['Nombre de salles de classes définitives pour 1 000 enfants', 'salles_1000', drenDivide(sectorValue(dEns, 'sections', 'nbr_sdc') ?? read(d, 'nbr_sdc'), p.pop_6_10, 1000)],
     ['Pourcentage d’élèves vivant à moins de 2 km', 'moins_2km', importedPct(d, 'eleve_2km') ?? drenDivide(sectorValue(dEns, 'ressources', 'eleve_2km'), sectorValue(dEns, 'ressources', 'nbr_eleve')) ?? within2km(d)],
-    ['Taux d’accès générationnel', 'tag', cd[0]],
     ['Taux de rétention', 'retention', drenRetention(dEns, 5) ?? sortedProfile[g - 1]?.dren ?? null],
     ['Nombre d’enseignants pour 1 000 enfants d’âge scolaire', 'enseignants_1000', drenDivide(sectorValue(dEns, 'personnel', 'pers_en_classe') ?? read(d, 'pers_en_classe'), p.pop_6_10, 1000)],
     ['Nombre de places assises par enfant d’âge scolaire', 'places_enfant', drenDivide(sectorValue(dEns, 'places', 'places_assises') ?? read(d, 'places_assises'), p.pop_6_10, 1)],
@@ -1300,20 +1284,37 @@ function buildPrimary(raw: any): DrenReportModel {
     manuals,
     teacherAllocation,
     manualAllocation,
-    bottlenecks: bottleneckValues.map(([label, code, value]) => ({
-      label,
-      value: value === null ? null : Math.max(0, Math.min(100, value)),
-      raw: value,
-      meta: code === 'manuel_eleve' ? { ...META.manuel_eleve, label } : mk(code, label, { section: 'goulots' }),
-    })),
+    bottlenecks: bottleneckValues.map(([label, code, value]) => percentBottleneck(label, code, value,
+      code === 'manuel_eleve' ? { ...META.manuel_eleve, label } : mk(code, label, { section: 'goulots' }))),
     efficiency,
     notes: [
       'Les colonnes Privé et Ensemble sont calculées en agrégeant les deux secteurs ; une cellule reste « — » lorsque la source ne fournit pas la donnée.',
       'Les évaluations UEAS T2/T5 ne sont pas disponibles dans la base actuelle : leurs cellules restent vides plutôt que d’afficher un score inventé.',
-      'Le taux d’accès générationnel n’est affiché que s’il est fourni par un import (projection de cohorte) ; il n’est pas déductible des seules données annuelles.',
       'Le TNA retire les redoublants de CP1 âgés de 6 ans : il mesure donc les seuls nouveaux entrants de 6 ans.',
       'Le profil de rétention part de 100 en T1 et cumule les passants de chaque niveau en N sur ceux du niveau précédent en N−1. Une transition supérieure à 100 % ou un dénominateur absent rend la suite non calculable.',
     ],
+  };
+}
+
+/** Convertit les densités en rapports sur une base 100, sans inventer de norme. */
+function percentBottleneck(label: string, code: string, value: number | null, meta: IndicatorMeta): GoulotItem {
+  const conversions: Record<string, { label: string; formula: string; inverse?: boolean; factor?: number }> = {
+    salles_1000: { label: 'Rapport salles définitives / enfants d’âge scolaire (%)', formula: 'Salles définitives ÷ population d’âge scolaire × 100', factor: 0.1 },
+    enseignants_1000: { label: 'Rapport enseignants / enfants d’âge scolaire (%)', formula: 'Enseignants en classe ÷ population d’âge scolaire × 100', factor: 0.1 },
+    places_enfant: { label: 'Couverture en places assises (%)', formula: 'Places assises ÷ population d’âge scolaire × 100', factor: 100 },
+    groupe_enseignant: { label: 'Couverture des groupes pédagogiques en enseignants (%)', formula: 'Enseignants en classe ÷ groupes pédagogiques × 100', inverse: true },
+    eleves_section: { label: 'Rapport sections / élèves (%)', formula: 'Sections ÷ élèves × 100', inverse: true },
+    manuel_eleve: { label: `Couverture en manuels ${label.match(/T1-T2|T3|T4-T5/)?.[0] ?? label.replace(/^Ratio élèves-manuels |^Nombre d’élèves par manuel /, '')} (%)`, formula: 'Manuels disponibles ÷ élèves concernés × 100', inverse: true },
+  };
+  const conversion = meta.unit === '%' ? undefined : conversions[code];
+  const raw = !conversion || value === null ? value : conversion.inverse
+    ? drenDivide(1, value) : value * (conversion.factor ?? 1);
+  const displayLabel = conversion?.label ?? label;
+  return {
+    label: displayLabel,
+    value: raw === null ? null : Math.max(0, Math.min(100, raw)),
+    raw,
+    meta: conversion ? { ...meta, label: displayLabel, unit: '%', digits: 1, sense: 'higher', definition: conversion.formula, formula: conversion.formula } : meta,
   };
 }
 
@@ -1898,12 +1899,8 @@ function buildNiveau(raw: any, level: Exclude<ReportLevel, 'primaire'>): DrenRep
     finance,
     other,
     manuals,
-    bottlenecks: bottleneckDefs.map(([label, code, value]) => ({
-      label,
-      value: value === null ? null : Math.max(0, Math.min(100, value)),
-      raw: value,
-      meta: mkMeta(code, label, { section: 'goulots' }),
-    })),
+    bottlenecks: bottleneckDefs.map(([label, code, value]) => percentBottleneck(label, code, value,
+      mkMeta(code, label, { section: 'goulots' }))),
     efficiency,
     notes: level === 'lycee'
       ? ['Les taux de promotion supérieurs à 100 % et les abandons négatifs traduisent des entrants hors cohorte : ils sont signalés en jaune, jamais tronqués.']

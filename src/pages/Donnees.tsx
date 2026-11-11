@@ -95,27 +95,27 @@ const SECTION_META: Record<Section, { label: string; icon: any }> = {
   personnels: { label: "Personnels", icon: GraduationCap },
 };
 
-const SECTION_THEME: Record<
-  Section,
-  { ring: string; iconBg: string; iconColor: string; tableHeader: string }
-> = {
+type SectionTheme = { ring: string; iconBg: string; iconColor: string; tableHeader: string; tabActive: string; tabInactive: string; tint: string; tintBorder: string };
+
+// Couleurs officielles MEN / DPE : bleu, vert, rouge
+const SECTION_THEME: Record<Section, SectionTheme> = {
   ecoles: {
-    ring: "ring-blue-500/30 border-blue-500/20",
-    iconBg: "bg-blue-500/10",
-    iconColor: "text-blue-600 dark:text-blue-400",
-    tableHeader: "bg-blue-100/80 dark:bg-blue-950/40",
+    ring: "border-t-primary", iconBg: "bg-primary/10", iconColor: "text-primary", tableHeader: "bg-primary/10",
+    tabActive: "data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md",
+    tabInactive: "text-muted-foreground hover:text-primary hover:bg-primary/10",
+    tint: "bg-primary/[0.08]", tintBorder: "bg-primary/25",
   },
   eleves: {
-    ring: "ring-emerald-500/30 border-emerald-500/20",
-    iconBg: "bg-emerald-500/10",
-    iconColor: "text-emerald-600 dark:text-emerald-400",
-    tableHeader: "bg-emerald-100/80 dark:bg-emerald-950/40",
+    ring: "border-t-secondary", iconBg: "bg-secondary/10", iconColor: "text-secondary", tableHeader: "bg-secondary/10",
+    tabActive: "data-[state=active]:bg-secondary data-[state=active]:text-secondary-foreground data-[state=active]:shadow-md",
+    tabInactive: "text-muted-foreground hover:text-secondary hover:bg-secondary/10",
+    tint: "bg-secondary/[0.08]", tintBorder: "bg-secondary/25",
   },
   personnels: {
-    ring: "ring-violet-500/30 border-violet-500/20",
-    iconBg: "bg-violet-500/10",
-    iconColor: "text-violet-600 dark:text-violet-400",
-    tableHeader: "bg-violet-100/80 dark:bg-violet-950/40",
+    ring: "border-t-gold", iconBg: "bg-gold/10", iconColor: "text-gold", tableHeader: "bg-gold/10",
+    tabActive: "data-[state=active]:bg-gold data-[state=active]:text-gold-foreground data-[state=active]:shadow-md",
+    tabInactive: "text-muted-foreground hover:text-gold hover:bg-gold/10",
+    tint: "bg-gold/[0.09]", tintBorder: "bg-gold/25",
   },
 };
 
@@ -621,7 +621,7 @@ const Donnees = () => {
           <div className="ml-auto">
             <Badge
               variant="outline"
-              className="text-[10px] font-normal border-green-500 text-green-600 bg-green-50 dark:bg-green-950 dark:text-green-400 px-3 py-1"
+              className="text-[10px] font-medium border-secondary/50 text-secondary bg-secondary/10 px-3 py-1"
             >
               {filters.selectedDren !== "0"
                 ? filters.drens.find((d) => String(d.CODE_DREN) === filters.selectedDren)?.DREN
@@ -809,15 +809,20 @@ const Donnees = () => {
         className="animate-fade-in"
         style={{ animationDelay: "90ms" }}
       >
-        <TabsList className="grid w-full grid-cols-3 h-auto p-1 bg-muted/50">
+        <TabsList className="grid w-full grid-cols-3 h-auto gap-1 p-1 bg-muted/60 rounded-lg">
           {(Object.keys(SECTION_META) as Section[]).map((s) => {
             const m = SECTION_META[s];
+            const t = SECTION_THEME[s];
             const Icon = m.icon;
             return (
               <TabsTrigger
                 key={s}
                 value={s}
-                className="data-[state=active]:bg-background data-[state=active]:shadow-sm flex items-center gap-1.5 py-2 text-xs sm:text-sm"
+                className={cn(
+                  "flex items-center justify-center gap-1.5 rounded-md py-2 text-xs sm:text-sm font-semibold transition-colors",
+                  t.tabInactive,
+                  t.tabActive,
+                )}
               >
                 <Icon className="h-4 w-4" />
                 {m.label}
@@ -836,13 +841,15 @@ const Donnees = () => {
           const icon = section === "ecoles" ? School : section === "eleves" ? Users : GraduationCap;
           const base = section === "ecoles" ? "Établissements" : section === "eleves" ? "Élèves" : "Personnels";
           const value = section === "ecoles" ? g.etabs : section === "eleves" ? g.eleves : g.pers;
+          // Seule la carte « Secteur public » détaille par statut : le privé et la
+          // carte Total n'affichent que leur total de personnels.
           const details =
-            section === "personnels"
+            section === "personnels" && g.key === "public"
               ? [
-                  ...(g.key === "prive" ? [] : [{ label: "Fonctionnaires", value: formatNumber(g.fonct) }]),
+                  { label: "Fonctionnaires", value: formatNumber(g.fonct) },
                   { label: "ENF", value: formatNumber(g.enf) },
-                  { label: "Subventionnés", value: formatNumber(g.sub) },
-                  { label: "Non subventionnés", value: formatNumber(g.nonSub) },
+                  { label: "Subventionnés", value: g.subKnown ? formatNumber(g.sub) : "—" },
+                  { label: "Non subventionnés", value: g.nonSubKnown ? formatNumber(g.nonSub) : "—" },
                 ]
               : undefined;
           return (
@@ -850,12 +857,14 @@ const Donnees = () => {
               key={g.key}
               icon={icon}
               theme={SECTION_THEME[section]}
-              label={`${base} — ${g.label}`}
+              label={base}
+              sector={g.key === "total" ? "Total" : `Secteur ${g.label.toLowerCase()}`}
+              highlight={g.key === "total"}
               value={formatNumber(value)}
               details={details}
               hint={
                 section === "personnels" && g.key === "prive"
-                  ? "Le privé ne compte pas de fonctionnaires"
+                  ? "Ventilation par statut non disponible pour le privé"
                   : "Dans le périmètre filtré"
               }
             />
@@ -1112,93 +1121,74 @@ const FilterField = ({
   <div className="space-y-1.5">
     <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
       {label}
-      {locked && <Lock className="h-3 w-3 text-amber-600" />}
+      {locked && <Lock className="h-3 w-3 text-destructive" />}
     </label>
     {children}
   </div>
 );
 
-type StatCardTheme = { ring: string; iconBg: string; iconColor: string };
+type StatCardTheme = { ring: string; iconBg: string; iconColor: string; tint: string; tintBorder: string };
 
 const StatCard = ({
   icon: Icon,
   theme,
   label,
+  sector,
   value,
   hint,
   details,
+  highlight,
 }: {
   icon: any;
   theme: StatCardTheme;
   label: string;
+  sector: string;
   value: string;
   hint?: string;
   details?: { label: string; value: string }[];
-}) => {
-  return (
-    <Card
-      className={cn(
-        "group relative overflow-hidden shadow-sm hover:shadow-md transition-all h-full flex flex-col border-2",
-        theme.ring,
-      )}
-    >
-      <div className="px-4 pt-4 pb-2 border-b border-border/40">
-        <p className="text-[11px] uppercase tracking-[0.18em] font-semibold text-muted-foreground text-center">
-          {label}
-        </p>
-      </div>
-      <div className="flex-1 flex flex-col items-center justify-center px-4 py-5 bg-gradient-to-b from-transparent to-muted/10">
-        <div className="h-14 flex items-center justify-center">
-          <div
-            className={cn(
-              "w-12 h-12 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110",
-              theme.iconBg,
-            )}
-          >
-            <Icon className={cn("w-6 h-6", theme.iconColor)} />
-          </div>
-        </div>
-        <div className="h-14 flex items-center justify-center">
-          <p className="text-[2.1rem] font-bold tracking-tight leading-none tabular-nums text-foreground">
-            {value}
-          </p>
-        </div>
-      </div>
-      {details && details.length > 0 &&
-        (() => {
-          // 2 colonnes au-delà de 3 indicateurs : les libellés restent lisibles.
-          const cols = details.length > 3 ? 2 : details.length;
-          const lastRow = Math.floor((details.length - 1) / cols);
-          return (
-            <div
-              className="grid border-t border-border/30"
-              style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
-            >
-              {details.map((d, i) => (
-                <div
-                  key={d.label}
-                  className={cn(
-                    "px-2 py-2 text-center",
-                    i % cols !== cols - 1 && "border-r border-border/30",
-                    Math.floor(i / cols) < lastRow && "border-b border-border/30",
-                  )}
-                >
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{d.label}</p>
-                  <p className="text-base font-semibold tabular-nums text-foreground">{d.value}</p>
-                </div>
-              ))}
-            </div>
-          );
-        })()}
-      <div className="px-4 pt-3 pb-4 border-t border-border/30 text-center">
-        <div className="min-h-[36px] flex items-center justify-center">
-          {hint && (
-            <p className="text-xs text-muted-foreground text-center leading-relaxed">{hint}</p>
+  highlight?: boolean;
+}) => (
+  <Card
+    className={cn(
+      "relative overflow-hidden border border-border/60 border-t-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg",
+      theme.ring,
+      highlight && "bg-gradient-to-br from-card to-accent/60",
+    )}
+  >
+    <div className="flex items-start justify-between gap-3 px-5 pt-4">
+      <div className="min-w-0">
+        <p className="text-xs font-medium text-muted-foreground">{label}</p>
+        <span
+          className={cn(
+            "mt-1 inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
+            theme.iconBg,
+            theme.iconColor,
           )}
-        </div>
+        >
+          {sector}
+        </span>
       </div>
-    </Card>
-  );
-};
+      <div className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-xl", theme.iconBg)}>
+        <Icon className={cn("h-5 w-5", theme.iconColor)} />
+      </div>
+    </div>
+    <p className="px-5 pb-3 pt-2 text-3xl font-bold leading-none tracking-tight tabular-nums text-foreground">
+      {value}
+    </p>
+    {details && details.length > 0 && (
+      <div className={cn("grid grid-cols-2 gap-px border-t border-border/50", theme.tintBorder)}>
+        {details.map((d) => (
+          <div key={d.label} className={cn("px-4 py-2.5", theme.tint)}>
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{d.label}</p>
+            <p className="text-base font-semibold tabular-nums text-foreground">{d.value}</p>
+          </div>
+        ))}
+      </div>
+    )}
+    {hint && (
+      <p className="border-t border-border/50 px-5 py-2 text-[11px] text-muted-foreground">{hint}</p>
+    )}
+  </Card>
+);
 
 export default Donnees;

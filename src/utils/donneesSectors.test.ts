@@ -22,13 +22,16 @@ describe("buildSectorGroups", () => {
     expect(total.nonSub).toBe(14);
   });
 
-  it("sépare fonctionnaires et ENF, le privé n'ayant aucun fonctionnaire", () => {
-    expect(pub.fonct).toBe(10);
-    expect(pub.enf).toBe(10);
+  it("regroupe fonctionnaires + contractuels et FRAM non sub + autres", () => {
+    const [p] = buildSectorGroups(
+      [{ SECTEUR: "0", pers_total: 20, fonctionnaire: 8, contractuel: 2, fram_sub: 4, fram_nonsub: 3 }],
+      "primaire",
+    );
+    expect(p.fonct).toBe(10);
+    expect(p.sub).toBe(4);
+    expect(p.nonSub).toBe(6);
     expect(priv.fonct).toBe(0);
-    expect(priv.enf).toBe(20);
     expect(total.fonct).toBe(10);
-    expect(total.enf).toBe(30);
   });
 
   it("cumule établissements, élèves et personnels sans perdre les lignes vides", () => {
@@ -46,6 +49,25 @@ describe("buildSectorGroups", () => {
     expect(groups[1].pers).toBe(20);
     expect(groups[2].pers).toBe(43);
     expect(groups[2].eleves).toBe(117);
+  });
+
+  it("distingue une colonne FRAM non renseignée d'un vrai zéro", () => {
+    const groups = buildSectorGroups(
+      [
+        { SECTEUR: "0", pers_total: 10, fonctionnaire: 4, fram_sub: 3, fram_nonsub: 3 },
+        { SECTEUR: "1", pers_total: 8, fonctionnaire: 0, fram_sub: "", fram_nonsub: "-" },
+      ],
+      "primaire",
+    );
+    const [pub, priv, total] = groups;
+    expect(pub.subKnown).toBe(true);
+    expect(pub.nonSubKnown).toBe(true);
+    expect(priv.subKnown).toBe(false);
+    expect(priv.nonSubKnown).toBe(false);
+    // Le total connaît la colonne dès qu'une seule ligne du périmètre la renseigne.
+    expect(total.subKnown).toBe(true);
+    expect(total.nonSubKnown).toBe(true);
+    expect(priv.sub).toBe(0);
   });
 
   it("borne les effectifs au niveau demandé", () => {

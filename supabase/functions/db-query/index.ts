@@ -12,7 +12,7 @@ import {
   importTdbRows, latestTdbRow, ensureTdbTables, isTdbTable, updateTdbRow, insertTdbRow, listTdbRows,
   type TdbTable,
 } from "./tdbStore.ts";
-const VERSION = "v68-20261110-dashboard-teachers-in-class";
+const VERSION = "v63-20261109-dren-primary-formulas";
 
 // Aménagements accessibles aux élèves en situation de handicap (fiche j2).
 const ACCES_ESH_COLS = [
@@ -1133,12 +1133,6 @@ serve(async (req: Request) => {
       case "getTdbDrenData": {
         const annee = parseInt(url.searchParams.get("annee") || "2025");
         const examYear = await resolveExamenYear(client, annee);
-        const cacheKey = `${codeDren}:${annee}`;
-        const cached = drenResponseCache.get(cacheKey);
-        if (cached && Date.now() - cached.at < DREN_RESPONSE_TTL) {
-          await client.end();
-          return new Response(cached.body, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        }
         try {
           const rawData: any = await executeTdbDrenData(client, codeDren, annee);
           rawData.dren_prive = rawData.dren_prive || {};
@@ -1158,10 +1152,7 @@ serve(async (req: Request) => {
           rawData.mada = mergeImportedTdbSnapshot(rawData.mada, csvMada);
           rawData.ueas = await loadUeasRows(client, codeDren);
           await client.end();
-          const body = JSON.stringify({ ...serializeData(rawData), examen_annee: examYear });
-          const madaOk = Object.keys(rawData?.primaire_extra?.mada?.public || {}).length > 0;
-          if (madaOk) drenResponseCache.set(cacheKey, { at: Date.now(), body });
-          return new Response(body, { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          return new Response(JSON.stringify({ ...serializeData(rawData), examen_annee: examYear }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         } catch (tdbErr: any) {
           console.error("getTdbDrenData error:", tdbErr);
           await client.end();
@@ -2674,7 +2665,7 @@ async function executeStatsEnseignants(client: Client, codeDren: number, codeCis
 
   const query = `
     SELECT ${selectPrefix} ${yearCols}
-    FROM fpe_p1 p1 WHERE p1."SECTEUR" ${sect} AND ${si('p1."EN_SALLE"')} = 1 ${whereClause} ${groupBy}
+    FROM fpe_p1 p1 WHERE p1."SECTEUR" ${sect} ${whereClause} ${groupBy}
   `;
   return await client.queryObject(query);
 }
@@ -2847,46 +2838,9 @@ async function executeTdb111(client: Client, codeDren: number) {
 }
 
 // ============ TDB DREN ============
-const MADA_EXTRA_TTL = 6 * 60 * 60 * 1000;
-const madaExtraCache = new Map<number, { at: number; promise: Promise<any[]> }>();
-function getMadaPrimaireExtra(annee: number, runs: Array<(db: Client) => Promise<any>>): Promise<any[]> {
-  const hit = madaExtraCache.get(annee);
-  if (hit && Date.now() - hit.at < MADA_EXTRA_TTL) return hit.promise;
-  // Une connexion par bloc : les requêtes d'une même connexion sont sérialisées.
-  const promise = Promise.all(runs.map(async (run) => {
-    const db = new Client(dbConfig);
-    try { await db.connect(); return await run(db); }
-    catch (e) { console.error('DREN national extra', (e as Error).message); return {}; }
-    finally { try { await db.end(); } catch { /* ignore */ } }
-  }));
-  madaExtraCache.set(annee, { at: Date.now(), promise });
-  promise.then((r) => { if (r.some((x) => !x || Object.keys(x).length === 0)) madaExtraCache.delete(annee); })
-    .catch(() => madaExtraCache.delete(annee));
-  return promise;
-}
-
-const drenResponseCache = new Map<string, { at: number; body: string }>();
-const DREN_RESPONSE_TTL = 15 * 60 * 1000;
-
 async function executeTdbDrenData(client: Client, codeDren: number, annee: number) {
   const whereDren = `AND a1."CODE_DREN" = ${codeDren}`;
   const whereMada = '';
-  const startedAt = Date.now();
-  // Les indicateurs nationaux sont lourds et identiques pour toutes les DREN :
-  // calculés sur une connexion dédiée (en parallèle) et mis en cache par année.
-  const madaExtraPromise = getMadaPrimaireExtra(annee, [
-    (db) => getPrimaireExtra(whereMada, 0, false, db), (db) => getPrimaireExtra(whereMada, null, false, db),
-  ]);
-  const withOwnClient = async (run: (db: Client) => Promise<any>) => {
-    const db = new Client(dbConfig);
-    try { await db.connect(); return await run(db); }
-    catch (e) { console.error('DREN extra connection', (e as Error).message); return {}; }
-    finally { try { await db.end(); } catch { /* ignore */ } }
-  };
-  const drenExtraPromise = Promise.all([
-    withOwnClient((db) => getPrimaireExtra(whereDren, 0, true, db)),
-    withOwnClient((db) => getPrimaireExtra(whereDren, null, false, db)),
-  ]);
   // TNS / TNA : effectifs par âge officiel (colonnes T*_G/F_<âge>ANS de fpe_e1).
   // Le croisement « nouveau entrant × âge » n'existe pas : le TNA utilise donc
   // les élèves de CP1 âgés de 6 ans (redoublants de 6 ans compris).
@@ -3155,7 +3109,7 @@ async function executeTdbDrenData(client: Client, codeDren: number, annee: numbe
   // ---- Indicateurs DREN primaire (fiche de commentaires TDB_DREN) ----
   // Calculés en sous-requêtes par établissement pour éviter les produits
   // cartésiens ; les R² utilisent regr_r2(Y, X) = COEFFICIENT.DETERMINATION.
-  async function getPrimaireExtra(where: string, secteur: 0 | null, includeObservations = false, db: Client = client) {
+  async function getPrimaireExtra(where: string, secteur: 0 | null, includeObservations = false) {
     const sect = secteur === null ? '1=1' : `a1."SECTEUR"=${secteur}`;
     const rawManual = (col: string) => `NULLIF(l1."${col}"::text, '')`;
     // Une quantité n'est calculée que si au moins une cellule source est renseignée.
@@ -3193,7 +3147,7 @@ async function executeTdbDrenData(client: Client, codeDren: number, annee: numbe
     const qualif = `${si('p1."EN_SALLE"')}=1 AND (${dipA} LIKE 'BEPC%' OR ${dipA} LIKE 'BACC%' OR ${dipA} ~ '^(LICENCE|MAITRISE|MASTER|DOCTORAT|DEA|DESS|INGENIEUR)')
       AND ${dipP}<>'' AND ${dipP} NOT IN ('AUTRES','AUTRE','MAITREEPSENS','MONITEUREPSANS')
       AND ${dipP} NOT LIKE '%EDUCATIONPRESCOLAIRE%'`;
-    const safe = async (q: string) => { try { return (await db.queryObject(q)).rows[0] || {}; } catch (e) { console.error('DREN primaire extra', (e as Error).message); return {}; } };
+    const safe = async (q: string) => { try { return (await client.queryObject(q)).rows[0] || {}; } catch (e) { console.error('DREN primaire extra', (e as Error).message); return {}; } };
     const qPers = `SELECT
         COUNT(DISTINCT CASE WHEN ${teacherPopulation} AND ${si('p1."EN_SALLE"')}=1 THEN ${personId} END) AS ens_classe,
         COUNT(DISTINCT CASE WHEN ${teacherPopulation} AND ${si('p1."EN_SALLE"')}=0 THEN ${personId} END) AS ens_non_classe,
@@ -3231,13 +3185,9 @@ async function executeTdbDrenData(client: Client, codeDren: number, annee: numbe
     const [pers, ferme, etab] = await Promise.all([safe(qPers), safe(qFerme), safe(qEtab)]);
     return { ...pers, ...ferme, ...etab };
   }
-  const [extraDrenPub, extraDrenEns] = await drenExtraPromise;
-  // Budget : si le calcul national n'est pas prêt, on répond sans lui (« — »)
-  // et on le laisse terminer en arrière-plan pour alimenter le cache.
-  try { (globalThis as any).EdgeRuntime?.waitUntil?.(madaExtraPromise.catch(() => null)); } catch { /* ignore */ }
-  const [extraMadaPub, extraMadaEns] = await Promise.race([
-    madaExtraPromise,
-    new Promise<any[]>((resolve) => setTimeout(() => resolve([{}, {}]), Math.max(5000, 110000 - (Date.now() - startedAt)))),
+  const [extraDrenPub, extraDrenEns, extraMadaPub, extraMadaEns] = await Promise.all([
+    getPrimaireExtra(whereDren, 0, true), getPrimaireExtra(whereDren, null),
+    getPrimaireExtra(whereMada, 0), getPrimaireExtra(whereMada, null),
   ]);
 
   const [namesResult, adminCountsResult] = await Promise.all([
