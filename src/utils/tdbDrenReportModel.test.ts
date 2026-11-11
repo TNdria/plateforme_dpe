@@ -209,7 +209,7 @@ describe('rapport primaire', () => {
     expect(model.title).toBe('PRIMAIRE');
     expect(model.anneeLabel).toBe('2024 - 2025');
     expect(model.general).toHaveLength(3);
-    expect(model.bottlenecks).toHaveLength(13);
+    expect(model.bottlenecks).toHaveLength(12);
     expect(model.flows).toHaveLength(3);
   });
   it('ne duplique pas les agrégats publics dans la colonne Ensemble', () => {
@@ -336,6 +336,28 @@ describe('nuage d’efficience DREN', () => {
 });
 
 describe('rapport primaire avec les deux secteurs', () => {
+  it('calcule les trois admissions nationales sans effectifs CM2', () => {
+    const report = buildDrenReport({ ...primaryRaw, mada: { cepe: primaryRaw.mada.cepe } }, 'primaire');
+    expect(report.exams[0].admissionRows[0].cells[3].value).toBeCloseTo(418000 / 700000 * 100);
+    expect(report.exams[0].admissionRows[1].cells[3].value).toBeCloseTo(208000 / 350000 * 100);
+    expect(report.exams[0].admissionRows[2].cells[3].value).toBe(60);
+  });
+  it('exprime les salles par enfant sur une base 100 et non 1000', () => {
+    const report = buildDrenReport(primaryRaw, 'primaire');
+    expect(report.bottlenecks.find(b => b.meta.code === 'salles_1000')?.raw).toBeCloseTo(2226 / 380000 * 100);
+  });
+  it('exprime les enseignants par enfant sur une base 100 et non 1000', () => {
+    const report = buildDrenReport(primaryRaw, 'primaire');
+    expect(report.bottlenecks.find(b => b.meta.code === 'enseignants_1000')?.raw).toBeCloseTo(6436 / 380000 * 100);
+  });
+  it('exprime la couverture en places assises sur une base 100', () => {
+    const report = buildDrenReport(primaryRaw, 'primaire');
+    expect(report.bottlenecks.find(b => b.meta.code === 'places_enfant')?.raw).toBeCloseTo(159716 / 380000 * 100);
+  });
+  it('exprime les enseignants par groupe pédagogique sur une base 100', () => {
+    const report = buildDrenReport(primaryRaw, 'primaire');
+    expect(report.bottlenecks.find(b => b.meta.code === 'groupe_enseignant')?.raw).toBeCloseTo(6436 / 8663 * 100);
+  });
   const withPrivate = () => {
     const raw = JSON.parse(JSON.stringify(primaryRaw));
     raw.dren.personnel.qualifies_classe = 1436;
@@ -410,8 +432,9 @@ describe('rapport primaire avec les deux secteurs', () => {
       expect(cell?.status).toBe('na');
       expect(cell?.value).toBeNull();
     }
-    const manuals = model.bottlenecks.find((b) => b.label === 'Nombre d’élèves par manuel T1-T2')!;
-    expect(manuals.raw).toBeCloseTo(0.6, 2);
+    const manuals = model.bottlenecks.find((b) => b.meta.code === 'manuel_eleve');
+    expect(manuals?.raw).toBeCloseTo(25000 / 15000 * 100, 2);
+    expect(manuals?.meta.unit).toBe('%');
   });
 });
 
@@ -424,9 +447,10 @@ describe('rapport collège', () => {
   });
   it('place les goulots en 0–100 et conserve la valeur brute', () => {
     expect(model.bottlenecks).toHaveLength(12);
-    const section = model.bottlenecks.find((b) => b.label === 'Ratio élèves-section')!;
-    expect(section.value).toBeLessThanOrEqual(100);
-    expect(section.raw).toBeCloseTo(9.75, 2);
+    const section = model.bottlenecks.find((b) => b.meta.code === 'eleves_section');
+    expect(section?.value).toBeLessThanOrEqual(100);
+    expect(section?.raw).toBeCloseTo(100 / 9.75, 2);
+    expect(model.bottlenecks.every(b => b.meta.unit === '%')).toBe(true);
   });
   it('affiche les trois tableaux de flux dans l’ordre du collège', () => {
     expect(model.flows.map((f) => f.title)).toEqual([

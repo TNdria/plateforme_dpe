@@ -48,6 +48,10 @@
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
 
+    /* Gold - troisième couleur de section (Personnels) */
+    --gold: 32 85% 34%;
+    --gold-foreground: 0 0% 100%;
+
     /* Success - aligned with MEN green */
     --success: 142 100% 29%;
     --success-foreground: 0 0% 100%;
@@ -137,6 +141,9 @@
 
     --warning: 38 92% 55%;
     --warning-foreground: 0 0% 0%;
+
+    --gold: 32 90% 58%;
+    --gold-foreground: 0 0% 0%;
 
     --success: 142 76% 42%;
     --success-foreground: 0 0% 100%;

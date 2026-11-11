@@ -14,6 +14,10 @@ export type SectorGroup = {
   enf: number;
   sub: number;
   nonSub: number;
+  // Une colonne FRAM vide dans toutes les lignes du groupe signifie « non
+  // renseigné », pas « zéro » : la carte affiche alors « — ».
+  subKnown: boolean;
+  nonSubKnown: boolean;
 };
 
 const ELEVES_KEYS: Record<Niveau, string[]> = {
@@ -30,6 +34,14 @@ const num = (v: unknown): number => {
 
 const sumBy = (rows: any[], key: string): number => rows.reduce((acc, r) => acc + num(r?.[key]), 0);
 
+const isFilled = (v: unknown): boolean => {
+  if (v === null || v === undefined) return false;
+  const s = String(v).trim();
+  return s !== "" && s !== "-";
+};
+
+const hasAnyValue = (rows: any[], key: string): boolean => rows.some((r) => isFilled(r?.[key]));
+
 export const getTotalEleves = (data: any[], niveau: Niveau): number => {
   const keys = ELEVES_KEYS[niveau] || [];
   return data.reduce(
@@ -41,15 +53,22 @@ export const getTotalEleves = (data: any[], niveau: Niveau): number => {
 export const buildSectorGroups = (data: any[], niveau: Niveau): SectorGroup[] => {
   const calc = (rows: any[]) => {
     const pers = sumBy(rows, "pers_total");
-    const fonct = sumBy(rows, "fonctionnaire");
+    // Personnel de l'État = fonctionnaires + contractuels de l'État.
+    const fonct = sumBy(rows, "fonctionnaire") + sumBy(rows, "contractuel");
+    const sub = sumBy(rows, "fram_sub");
+    const nonSubKnown = hasAnyValue(rows, "fram_nonsub") || hasAnyValue(rows, "autres");
+    // Non subventionnés = FRAM non subventionnés + autres (reste du personnel).
+    const nonSub = Math.max(sumBy(rows, "fram_nonsub") + sumBy(rows, "autres"), pers - fonct - sub, 0);
     return {
       etabs: rows.length,
       eleves: getTotalEleves(rows, niveau),
       pers,
       fonct,
       enf: Math.max(0, pers - fonct),
-      sub: sumBy(rows, "fram_sub"),
-      nonSub: sumBy(rows, "fram_nonsub"),
+      sub,
+      nonSub,
+      subKnown: hasAnyValue(rows, "fram_sub"),
+      nonSubKnown,
     };
   };
 

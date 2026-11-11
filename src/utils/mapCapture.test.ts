@@ -8,6 +8,7 @@ describe("flattenLeafletCaptureTransforms", () => {
   it("applique la translation du panneau Leaflet sur left/top pour éviter le décalage à l’export", () => {
     const root = document.createElement("div");
     const pane = document.createElement("div");
+    pane.className = "leaflet-map-pane";
     pane.style.position = "absolute";
     pane.style.left = "12px";
     pane.style.top = "34px";
@@ -24,12 +25,32 @@ describe("flattenLeafletCaptureTransforms", () => {
   it("ignore les transformations de mise à l’échelle qui ne sont pas des translations", () => {
     const root = document.createElement("div");
     const pane = document.createElement("div");
+    pane.className = "leaflet-map-pane";
     pane.style.transform = "scale(1.2)";
     root.appendChild(pane);
 
     flattenLeafletCaptureTransforms(root);
 
     expect(pane.style.transform).toBe("scale(1.2)");
+  });
+
+  it("lit la translation d'une matrice et laisse les éléments hors Leaflet intacts", () => {
+    const root = document.createElement("div");
+    const tile = document.createElement("div");
+    tile.className = "leaflet-tile";
+    tile.style.left = "0px";
+    tile.style.top = "0px";
+    tile.style.transform = "matrix(1, 0, 0, 1, -30, 45)";
+    const other = document.createElement("div");
+    other.style.transform = "translate3d(5px, 5px, 0px)";
+    root.append(tile, other);
+
+    flattenLeafletCaptureTransforms(root);
+
+    expect(tile.style.transform).toBe("none");
+    expect(tile.style.left).toBe("-30px");
+    expect(tile.style.top).toBe("45px");
+    expect(other.style.transform).toBe("translate3d(5px, 5px, 0px)");
   });
 });
 

@@ -40,7 +40,7 @@ describe('TableauDeBord', () => {
     expect(html).toContain('RESSOURCES');
     expect(html).toContain('ANALYSE DES GOULOTS D’ÉTRANGLEMENT (PUBLIC)');
     expect(html).toContain('EFFICIENCE (PUBLIC)');
-    expect(html).toContain('Nombre d’élèves par manuel T4-T5');
+    expect(html).toContain('Couverture en manuels T4-T5');
     expect(html).toContain('Remarque(s) et Diagnostique(s)');
   });
 

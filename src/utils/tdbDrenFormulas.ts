@@ -73,6 +73,14 @@ export function drenAdmission(entity: Entity, gender = ''): number | null {
   const rate = drenDivide(admitted, entity?.ressources?.[`eff_t5${gender}`] ?? drenRead(entity, `inscrits_cm2${gender}`, `eff_t5${gender}`));
   return rate !== null && rate > 100 ? null : rate;
 }
+/** Réussite au CEPE : admis rapportés aux candidats du même périmètre/sexe. */
+export function drenExamAdmission(entity: Entity, gender = ''): number | null {
+  const cepe = entity?.cepe || {};
+  const admitted = gender ? cepe[`admis${gender}`] : drenSum([cepe.admis_f, cepe.admis_g]);
+  const candidates = gender ? cepe[`nbr${gender}`] : cepe.total_candidats ?? drenSum([cepe.nbr_f, cepe.nbr_g]);
+  const rate = drenDivide(admitted, candidates);
+  return rate !== null && rate > 100 ? null : rate;
+}
 // Le snapshot importé (df_dren.csv) exprime le redoublement en pourcentage,
 // alors que la source SQL fournit des effectifs. Ne mélange jamais les unités :
 // le taux est calculé depuis les effectifs, puis le pourcentage importé sert de

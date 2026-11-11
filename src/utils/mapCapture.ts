@@ -22,16 +22,48 @@ function readNumericCssValue(element: HTMLElement, property: "left" | "top") {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function getTransformMatrix(transform: string) {
-  if (!transform || transform === "none" || typeof DOMMatrixReadOnly === "undefined") {
-    return null;
+// jsdom et les environnements sans DOMMatrix ne peuvent pas valider cette
+// conversion : on extrait la translation de la chaîne elle-même, ce qui couvre
+// les formes réellement produites par Leaflet (translate3d, translate, matrix).
+const TRANSLATE_3D = /translate3d\(\s*([^,%]+?)\s*,\s*([^,%]+?)\s*,\s*[^)]*\)/;
+const TRANSLATE_2D = /translate\(\s*([^,%]+?)\s*(?:,\s*([^,%]+?)\s*)?\)/;
+const MATRIX_2D = /matrix\(\s*[^,]+,\s*[^,]+,\s*[^,]+,\s*[^,]+,\s*([^,]+),\s*([^)]+?)\s*\)/;
+
+function readLength(raw: string | undefined): number | null {
+  if (!raw) return null;
+  const value = raw.trim();
+  // Un pourcentage dépend de la taille de l'élément : l'additionner à un
+  // offset en pixels inventerait une position.
+  if (!value || value.endsWith("%")) return null;
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getTranslation(transform: string): { dx: number; dy: number } | null {
+  if (!transform || transform === "none") return null;
+
+  const three = TRANSLATE_3D.exec(transform);
+  if (three) {
+    const dx = readLength(three[1]);
+    const dy = readLength(three[2]);
+    return dx === null || dy === null ? null : { dx, dy };
   }
 
-  try {
-    return new DOMMatrixReadOnly(transform);
-  } catch {
-    return null;
+  const matrix = MATRIX_2D.exec(transform);
+  if (matrix) {
+    const dx = readLength(matrix[1]);
+    const dy = readLength(matrix[2]);
+    return dx === null || dy === null ? null : { dx, dy };
   }
+
+  const two = TRANSLATE_2D.exec(transform);
+  if (two) {
+    const dx = readLength(two[1]);
+    const dy = two[2] === undefined ? 0 : readLength(two[2]);
+    return dx === null || dy === null ? null : { dx, dy };
+  }
+
+  return null;
 }
 
 export function clampCapturePoint(
@@ -54,19 +86,20 @@ export function flattenLeafletCaptureTransforms(root: ParentNode | null): void {
   const nodes = root.querySelectorAll<HTMLElement>(LEAFLET_CAPTURE_TARGETS);
   nodes.forEach((element) => {
     const transform = element.style.transform || getComputedStyle(element).transform;
-    const matrix = getTransformMatrix(transform);
+    const translation = getTranslation(transform);
 
-    if (!matrix) {
+    if (!translation) {
       return;
     }
 
-    const hasTranslation = Math.abs(matrix.m41) > 1e-3 || Math.abs(matrix.m42) > 1e-3;
+    const { dx, dy } = translation;
+    const hasTranslation = Math.abs(dx) > 1e-3 || Math.abs(dy) > 1e-3;
     if (!hasTranslation) {
       return;
     }
 
-    const left = readNumericCssValue(element, "left") + matrix.m41;
-    const top = readNumericCssValue(element, "top") + matrix.m42;
+    const left = readNumericCssValue(element, "left") + dx;
+    const top = readNumericCssValue(element, "top") + dy;
 
     element.style.transform = "none";
     element.style.left = `${left}px`;

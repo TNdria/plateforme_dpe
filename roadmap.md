@@ -1,5 +1,10 @@
 # Roadmap
 
+## Corrections TDB DREN — 11 novembre 2026
+- [x] Retirer l’accès générationnel et les deux lignes de matières CEPE demandées.
+- [x] Calculer les admissions CEPE nationales et par sexe depuis les candidats, sans dépendre des effectifs CM2 ; MADA ATSINANANA 2026 : 79,0 %, garçons 78,1 %, filles 79,8 %.
+- [x] Exprimer les rapports des goulots sur une base 100 avec des libellés et fiches cohérents ; 79 tests réussis et affichage réel ATSINANANA vérifié, efficience inchangée.
+
 ## Cahier des charges DREN primaire — 9 novembre 2026
 - [x] Auditer les requêtes, formules et tableaux existants sans régresser les autres TDB.
 - [x] Corriger les données générales, la couverture scolaire et le profil de rétention cumulatif T1–T5 sur N/N−1.
@@ -51,3 +56,7 @@
 - [x] Libellé « Organisation du réseau scolaire »
 - [x] Pictogramme unique bâtiment + couleur par niveau ; villages en points
 - [x] Corriger toutes les erreurs de typecheck du build (y compris préexistantes)
+
+- [x] Cartes Données : une carte par onglet (Établissements / Élèves / Personnels),Public / Privé / Total, et détail Personnels avec Fonctionnaires, ENF, Subventionnés et Non subventionnés ; colonne FRAM vide affichée « — » ; 6 tests réussis et ANALAMANGA 2025 vérifié.
+
+- [x] Vérifier la capture PNG de la carte thématique : export aligné sur l'affichage (écart moyen 4/255), tuiles complètes, aucun libellé dupliqué ; conversion des transformations refaite pour rester testable, 168 tests réussis.

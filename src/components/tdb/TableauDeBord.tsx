@@ -347,7 +347,6 @@ function GoulotBars({ items, onMeta }: { items: GoulotItem[]; onMeta: (meta?: In
       <table className="tdb-goulot-table">
         <tbody>
           {items.map((item) => {
-            const over = item.raw !== null && item.raw > 100;
             // La piste va de 0 à 100 % : un ratio (élèves par salle, salles pour
             // 1 000 enfants…) n'y a pas d'échelle et ne doit pas dessiner de barre.
             const onPercentScale = item.meta.unit === '%';
@@ -365,7 +364,7 @@ function GoulotBars({ items, onMeta }: { items: GoulotItem[]; onMeta: (meta?: In
                   </div>
                 </td>
                 <td className={`tdb-goulot-value${item.value === null ? ' tdb-goulot-missing' : ''}`}>
-                  {item.value === null ? '—' : over ? '' : formatDrenValue(item.raw, item.meta.unit === '%' ? '%' : '', item.meta.digits ?? 1)}
+                  {item.value === null ? '—' : formatDrenValue(item.raw, item.meta.unit === '%' ? '%' : '', item.meta.digits ?? 1)}
                 </td>
               </tr>
             );

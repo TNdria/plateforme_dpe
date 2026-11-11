@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { drenCoverage, drenRetention, drenRetentionCohort, drenAdmission, drenRepeat, drenPromotion, drenAbandon, drenFormat, drenExamThreshold } from './tdbDrenFormulas';
+import { drenCoverage, drenRetention, drenRetentionCohort, drenAdmission, drenExamAdmission, drenRepeat, drenPromotion, drenAbandon, drenFormat, drenExamThreshold } from './tdbDrenFormulas';
 describe('DREN primary ODS reference', () => {
+  it('calcule la réussite CEPE depuis les candidats, même avec un effectif CM2 incohérent', () => {
+    const e = { ressources: { eff_t5: 10 }, cepe: { total_candidats: 200, nbr_g: 80, nbr_f: 120, admis_g: 40, admis_f: 90 } };
+    expect(drenExamAdmission(e)).toBe(65);
+    expect(drenExamAdmission(e, '_g')).toBe(50);
+    expect(drenExamAdmission(e, '_f')).toBe(75);
+    expect(drenExamAdmission({ cepe: { total_candidats: 0, admis_g: 0, admis_f: 0 } })).toBeNull();
+  });
   it('computes TBS over population 6–10 without an artificial 100% cap', () => {
     expect(drenCoverage({ ressources: { nbr_eleve: 1200 }, population: { pop_6_10: 1000 } })[1].value).toBe(120);
   });
