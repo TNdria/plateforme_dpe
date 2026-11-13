@@ -443,6 +443,25 @@
 /* Hide scrollbar */
 .scrollbar-hide::-webkit-scrollbar { display: none; }
 
+/* Sidebar navigation scrollbar: visible and themed */
+.sidebar-nav-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--sidebar-border)) transparent;
+}
+.sidebar-nav-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.sidebar-nav-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar-nav-scroll::-webkit-scrollbar-thumb {
+  background: hsl(var(--sidebar-border));
+  border-radius: 999px;
+}
+.sidebar-nav-scroll::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--sidebar-primary) / 0.7);
+}
+
 /* SIG Layer Control Styling - matching Django original */
 .leaflet-control-layers {
   background: rgba(255, 255, 255, 0.95) !important;

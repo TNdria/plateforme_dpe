@@ -416,6 +416,37 @@ describe('rapport primaire avec les deux secteurs', () => {
     expect(promo.rows.find((r) => r.label === 'Filles')!.cells[1].value).not.toBeNull();
   });
 
+  const latestYear = () => {
+    const raw = withPrivate();
+    delete raw.dren.annee_suivante;
+    delete raw.dren_prive.annee_suivante;
+    delete raw.mada.annee_suivante;
+    raw.dren.annee_precedente = { ressources: { eff_t1: 60000, eff_t2: 56000, eff_t3: 52000, eff_t4: 48000 } };
+    raw.dren_prive.annee_precedente = { ressources: { eff_t1: 7800, eff_t2: 6900, eff_t3: 5900, eff_t4: 4900 } };
+    raw.mada.annee_precedente = { ressources: { eff_t1: 890000, eff_t2: 840000, eff_t3: 790000, eff_t4: 750000 } };
+    return raw;
+  };
+
+  it('mesure le flux entrant quand l’année suivante n’est pas encore disponible', () => {
+    const model = buildDrenReport(latestYear(), 'primaire');
+    const promo = model.flows.find((f) => f.title.includes('Promotion'))!;
+    const row = promo.rows.find((r) => r.label === 'T1 → T2')!;
+    expect(row.cells[0].value).toBeCloseTo(65.4, 1);
+    expect(row.cells[1].value).toBeCloseTo(79.5, 1);
+    expect(row.cells[2].value).toBeCloseTo(((58000 + 7000) - (18734 + 800)) / (60000 + 7800) * 100, 1);
+    expect(row.cells[3].value).not.toBeNull();
+    expect(row.cells[0].status).not.toBe('missing');
+  });
+
+  it('n’oppose pas un dénominateur public à un numérateur des deux secteurs', () => {
+    const raw = latestYear();
+    delete raw.dren_prive.annee_precedente;
+    const model = buildDrenReport(raw, 'primaire');
+    const row = model.flows.find((f) => f.title.includes('Promotion'))!.rows.find((r) => r.label === 'T1 → T2')!;
+    expect(row.cells[0].value).not.toBeNull();
+    expect(row.cells[2].value).toBeNull();
+  });
+
   it('remplit le CEPE privé et l’ensemble sans recopier le public', () => {
     const model = buildDrenReport(withPrivate(), 'primaire');
     const row = model.exams[0].subjectRows[0];

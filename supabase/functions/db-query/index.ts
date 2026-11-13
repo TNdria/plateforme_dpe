@@ -3098,9 +3098,9 @@ async function executeTdbDrenData(client: Client, codeDren: number, annee: numbe
         FROM fpe_a1 a1 JOIN fpe_e1 e1 ON e1."CODE_ETAB"=a1."CODE_ETAB" AND e1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND e1."SECTEUR"=a1."SECTEUR" WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND e1."EXISTE_PRIMAIRE"=1 ${where}`)).rows[0] || {};
     } catch (e) { console.error('DREN all-sector enrolment unavailable', e); return {}; }
   }
-  const [popDren, popMada, nextDren, nextMada, nextDrenPriv, previousDren, previousMada, allDren, allMada, agesDren, agesMada, fokDren, fokMada] = await Promise.all([
+  const [popDren, popMada, nextDren, nextMada, nextDrenPriv, previousDren, previousDrenPriv, previousMada, allDren, allMada, agesDren, agesMada, fokDren, fokMada] = await Promise.all([
     getPopulation(codeDren), getPopulation(), getNextYear(whereDren, 0), getNextYear(whereMada, 0),
-    getNextYear(whereDren, 1), getPreviousYear(whereDren, 0), getPreviousYear(whereMada, 0),
+    getNextYear(whereDren, 1), getPreviousYear(whereDren, 0), getPreviousYear(whereDren, 1), getPreviousYear(whereMada, 0),
     getAllSectorPupils(whereDren), getAllSectorPupils(whereMada),
     getAges(whereDren), getAges(whereMada),
     getFokontany(whereDren, codeDren), getFokontany(whereMada),
@@ -3205,7 +3205,7 @@ async function executeTdbDrenData(client: Client, codeDren: number, annee: numbe
   return {
     version: VERSION, names, annee,
     dren: { population: popDren, annee_suivante: nextDren, annee_precedente: previousDren, ...allDren, ...agesDren, ...spread(drenPub), ressources: { ...drenPub.ressources, ...adminCounts, ...fokDren } },
-    dren_prive: { annee_suivante: nextDrenPriv, ...spread(drenPriv) },
+    dren_prive: { annee_suivante: nextDrenPriv, annee_precedente: previousDrenPriv, ...spread(drenPriv) },
     mada: { population: popMada, annee_suivante: nextMada, annee_precedente: previousMada, ...allMada, ...agesMada, ...spread(madaPub), ressources: { ...madaPub.ressources, ...fokMada } },
     efficience,
     efficienceDrens,

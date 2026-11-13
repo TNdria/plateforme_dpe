@@ -96,20 +96,45 @@ export function drenRepeat(entity: Entity, grade?: number, gender = ''): number 
     : drenRead(entity, gender === '_f' ? 'red_fille' : gender === '_g' ? 'red_garcons' : 'red_ensemble');
   return imported ?? pooled;
 }
+/** Effectif du niveau suivant dans l’année n+1, s’il est renseigné. */
+function drenNextEnrolment(entity: Entity, grade: number, gender = ''): number | null {
+  const eff = drenNumber(entity?.annee_suivante?.ressources?.[`eff_t${grade + 1}${gender}`]);
+  // Un effectif nul signifie « année non renseignée », jamais 0 % de promotion.
+  return eff !== null && eff > 0 ? eff : null;
+}
+/**
+ * Taux de promotion du niveau, en gardant une seule période cohérente.
+ * Le flux de référence est celui qui sort de l’année sélectionnée (n → n+1).
+ * L’exercice le plus récent n’a pas encore d’année suivante : l’action DREN
+ * renvoie alors seulement l’année précédente, et le flux entrant (n−1 → n)
+ * mesure la même promotion sans laisser la cellule vide ni mélanger deux
+ * périodes dans un même taux.
+ */
 export function drenPromotion(entity: Entity, grade: number, gender = ''): number | null {
   const direct = drenRead(entity, `promotion_t${grade}${gender}`, `tp_t${grade}${gender}`);
   if (direct !== null) return direct;
-  const next = entity?.annee_suivante?.ressources;
-  const eff = drenNumber(next?.[`eff_t${grade + 1}${gender}`]), red = drenNumber(next?.[`red_t${grade + 1}${gender}`]);
-  return drenDivide(eff === null || red === null ? null : eff - red, entity?.ressources?.[`eff_t${grade}${gender}`]);
+  const current = entity?.ressources || {};
+  const nextEff = drenNextEnrolment(entity, grade, gender);
+  if (nextEff !== null) {
+    const red = drenNumber(entity?.annee_suivante?.ressources?.[`red_t${grade + 1}${gender}`]);
+    return drenDivide(red === null ? null : nextEff - red, current?.[`eff_t${grade}${gender}`]);
+  }
+  const eff = drenNumber(current?.[`eff_t${grade + 1}${gender}`]);
+  const red = drenNumber(current?.[`red_t${grade + 1}${gender}`]);
+  return drenDivide(eff === null || red === null ? null : eff - red, entity?.annee_precedente?.ressources?.[`eff_t${grade}${gender}`]);
 }
 export function drenAbandon(entity: Entity, grade: number, gender = ''): number | null {
   const direct = drenRead(entity, `abandon_t${grade}${gender}`);
   if (direct !== null) return direct;
   const promotion = drenPromotion(entity, grade, gender);
-  const repeat = drenDivide(entity?.annee_suivante?.ressources?.[`red_t${grade}${gender}`], entity?.ressources?.[`eff_t${grade}${gender}`]);
+  if (promotion === null) return null;
+  const current = entity?.ressources || {};
+  // Le redoublement se rapporte au même dénominateur que la promotion retenue.
+  const repeat = drenNextEnrolment(entity, grade, gender) !== null
+    ? drenDivide(entity?.annee_suivante?.ressources?.[`red_t${grade}${gender}`], current?.[`eff_t${grade}${gender}`])
+    : drenDivide(current?.[`red_t${grade}${gender}`], entity?.annee_precedente?.ressources?.[`eff_t${grade}${gender}`]);
   // Coherent flow identity; the ODS abandonment expression contains duplicated terms.
-  return promotion === null || repeat === null ? null : 100 - promotion - repeat;
+  return repeat === null ? null : 100 - promotion - repeat;
 }
 export function drenCycleRate(entity: Entity, kind: 'promotion' | 'abandon', gender = ''): number | null {
   const rates = [1, 2, 3, 4].map(k => ({ rate: kind === 'promotion' ? drenPromotion(entity, k, gender) : drenAbandon(entity, k, gender), size: drenNumber(entity?.ressources?.[`eff_t${k}${gender}`]) }));

@@ -60,6 +60,16 @@ describe('DREN primary ODS reference', () => {
     expect(drenPromotion(e, 1, '_f')).toBe(90);
     expect(drenPromotion({ ressources: e.ressources }, 1, '_g')).toBeNull();
   });
+  it('mesure le flux entrant quand l’année suivante n’existe pas encore', () => {
+    const latest = {
+      ressources: { eff_t1: 100, eff_t2: 200, red_t1: 10, red_t2: 40 },
+      annee_precedente: { ressources: { eff_t1: 120, eff_t2: 80 } },
+    };
+    // (200 − 40) ÷ 120 ; le redoublement reste rapporté au même dénominateur.
+    expect(drenPromotion(latest, 1)).toBeCloseTo(133.3, 1);
+    expect(drenAbandon(latest, 1)).toBeCloseTo(-41.7, 1);
+    expect(drenPromotion({ ressources: latest.ressources }, 1)).toBeNull();
+  });
   it('retains negative abandonment caused by out-of-cohort entrants for review', () => {
     expect(drenAbandon({ ressources: { eff_t1: 100 }, annee_suivante: { ressources: { eff_t2: 110, red_t2: 0, red_t1: 5 } } }, 1)).toBeCloseTo(-15);
   });

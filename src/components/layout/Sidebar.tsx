@@ -242,10 +242,7 @@ const Sidebar = () => {
       </div>
 
       {/* Navigation */}
-      <nav
-        className="flex-1 overflow-y-auto py-4 px-2 scrollbar-hide"
-        style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
-      >
+      <nav className="flex-1 min-h-0 overflow-y-auto py-4 px-2 sidebar-nav-scroll">
         {visibleGroups.map((group, groupIndex) => (
           <div key={groupIndex} className="mb-4">
             {group.section && !isCollapsed && (

@@ -782,6 +782,12 @@ function buildPrimary(raw: any): DrenReportModel {
       caisse: addGroup(pub?.caisse, priv?.caisse),
       manuels: addGroup(pub?.manuels, priv?.manuels),
       annee_suivante: { ressources: addGroup(pub?.annee_suivante?.ressources, priv?.annee_suivante?.ressources) },
+      // Le repli « flux entrant » n’est valable que si les deux secteurs ont
+      // leur année précédente : sinon le numérateur couvrirait un seul secteur
+      // pour un dénominateur portant sur les deux, et le taux serait faussé.
+      annee_precedente: pub?.annee_precedente?.ressources && priv?.annee_precedente?.ressources
+        ? { ressources: addGroup(pub.annee_precedente.ressources, priv.annee_precedente.ressources) }
+        : undefined,
     };
   };
   const dEns = mergeSector(d, dPr) ?? {};
