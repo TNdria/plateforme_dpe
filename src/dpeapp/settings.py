@@ -46,7 +46,6 @@ INSTALLED_APPS = [
     'login',
     'referentiel',
     'dashboard',
-    'sig',
     'orsprimaire',
     'orscollege',
     'orslycee',

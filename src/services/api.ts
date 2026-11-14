@@ -543,19 +543,24 @@ export const authApi = {
   logout: () => fetchAPI<any>('/login/logout/', { method: 'POST' }),
 };
 
-// DataViz API - Uses Lovable Cloud edge function (db-query)
+// DataViz API - Django uniquement, sans fallback Supabase
 export const datavizApi = {
-  getHeatmapN0: () => fetchDB<any[]>('getHeatmapN0'),
-  getHeatmapN1: () => fetchDB<any[]>('getHeatmapN1'),
-  getHeatmapN2: () => fetchDB<any[]>('getHeatmapN2'),
-  getHeatmapN3: () => fetchDB<any[]>('getHeatmapN3'),
-  getLayerDren: () => fetchDB<any[]>('getDatavizLayerDren'),
-  getLayerCisco: () => fetchDB<any[]>('getDatavizLayerCisco'),
-  getLayerCommune: (code: number) => fetchDB<any[]>('getDatavizLayerCommune', { code }),
-  getDataDren: (niveau: number) => fetchDB<any[]>('getDatavizDataDren', { niveau }),
-  getDataCisco: (niveau: number) => fetchDB<any[]>('getDatavizDataCisco', { niveau }),
-  getDataCommune: (code: number, niveau: number) => fetchDB<any[]>('getDatavizDataCommune', { code, niveau }),
-  getDataEtab: (code: number, niveau: number) => fetchDB<any[]>('getDatavizDataEtab', { code, niveau }),
+  getHeatmapN0: () => fetchAPI<any[]>('/dataviz/layerHeatmapEtabN0/'),
+  getHeatmapN1: () => fetchAPI<any[]>('/dataviz/layerHeatmapEtabN1/'),
+  getHeatmapN2: () => fetchAPI<any[]>('/dataviz/layerHeatmapEtabN2/'),
+  getHeatmapN3: () => fetchAPI<any[]>('/dataviz/layerHeatmapEtabN3/'),
+  getLayerDren: () => fetchAPI<any[]>('/dataviz/layerDren/'),
+  getLayerCisco: () => fetchAPI<any[]>('/dataviz/layerCisco/'),
+  getLayerCommune: (code: number) =>
+    fetchAPI<any[]>(`/dataviz/layerCommune/${code}`),
+  getDataDren: (niveau: number) =>
+    fetchAPI<any[]>(`/dataviz/getDataDren/?niveau=${niveau}`),
+  getDataCisco: (niveau: number) =>
+    fetchAPI<any[]>(`/dataviz/getDataCisco/?niveau=${niveau}`),
+  getDataCommune: (code: number, niveau: number) =>
+    fetchAPI<any[]>(`/dataviz/getDataCommune/${code}?niveau=${niveau}`),
+  getDataEtab: (code: number, niveau: number) =>
+    fetchAPI<any[]>(`/dataviz/getDataEtab/${code}/?niveau=${niveau}`),
 };
 
 // ==================== DONNEES API - DJANGO DIRECT ====================

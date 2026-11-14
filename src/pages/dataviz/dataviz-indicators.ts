@@ -1,411 +1,758 @@
 /**
- * Registre unique des indicateurs de la carte thématique.
- * Source de vérité pour : select, calcul de ratio, plages slider,
- * unités, polarité (sens de l'indicateur), champs sources d'export.
+ * Registre DATAVIZ — 40 indicateurs issus du classeur
+ * « Indicateurs Carte thématiques par niveau VF ».
  *
- * Pour ajouter un indicateur :
- *  1. Ajouter une entrée dans INDICATORS
- *  2. Renseigner les niveaux applicables (inclure 'prescolaire' si besoin)
- *  3. Définir calculate, sourceFields, polarity, sliderDefaults, unit
+ * Le classeur est la référence des libellés, formules et seuils.
+ * Les lignes rouges du classeur sont exclues.
  *
- * Tout le reste (UI, couleurs, export) dérive automatiquement.
+ * Contrat d'intégration backend prévu :
+ * chaque ligne de réponse DATAVIZ peut fournir
+ * DATAVIZ_VALUES: { "<code_indicateur>": number }.
+ * Le backend devra alimenter cette valeur à partir de ses données réelles.
+ *
+ * Tant qu'une correspondance n'est pas confirmée, calculate() renvoie NaN :
+ * aucune donnée absente n'est transformée artificiellement en zéro.
  */
 
 export type Niveau = 'prescolaire' | 'primaire' | 'college' | 'lycee';
 
 export const NIVEAUX: { value: Niveau; label: string }[] = [
-  // { value: 'prescolaire', label: 'Préscolaire' }, // décommenter quand les données seront prêtes
+  { value: 'prescolaire', label: 'Préscolaire' },
   { value: 'primaire', label: 'Primaire (EPP)' },
   { value: 'college', label: 'Collège (CEG)' },
   { value: 'lycee', label: 'Lycée' },
 ];
 
-/** Polarité : direction « souhaitable » de l'indicateur pour la coloration */
-export type Polarity =
-  | 'lower-better'   // ratio élevé = problème (ex. élèves/maître)
-  | 'higher-better'  // taux élevé = mieux (ex. % électrification)
-  | 'neutral';       // comptage pur, même logique que lower-better par défaut
+export type Polarity = 'lower-better' | 'higher-better' | 'neutral';
+export type MappingStatus = 'ready' | 'pending' | 'ambiguous';
+export type ColorClass = 'inf' | 'entre' | 'sup' | 'missing';
 
 export interface IndicatorDef {
-  /** Code technique (valeur du select) */
   value: string;
-  /** Libellé affiché */
   label: string;
-  /** Niveaux scolaires pour lesquels l'indicateur est proposé */
   niveaux: Niveau[];
-  /**
-   * Champs bruts nécessaires au calcul (et exportés).
-   * Utilisés aussi pour construire les colonnes d'export.
-   */
+  formula: string;
+  defaultMinMax: string | null;
+  defaultBounds: [number, number] | null;
   sourceFields: string[];
-  /** Libellés humains des champs sources (pour les en-têtes d'export) */
   sourceFieldLabels: Record<string, string>;
-  /** Fonction de calcul du ratio / valeur */
   calculate: (data: Record<string, unknown>) => number;
-  /** Plage et valeurs initiales du slider [min, max] */
   sliderDefaults: { range: [number, number]; start: [number, number] };
-  /** Unité affichée (suffixe) */
   unit: string;
-  /** true si la valeur est un pourcentage 0-100 */
   isPercentage: boolean;
-  /** true si la valeur est un entier (pas de décimales) */
   isCount: boolean;
-  /** Sens de l'indicateur pour la coloration carte + export */
   polarity: Polarity;
+  mappingStatus: MappingStatus;
+  mappingNote?: string;
 }
 
-const safeDiv = (a: number, b: number) => (b === 0 ? 0 : a / b);
-const pf = (v: unknown) => parseFloat(String(v ?? '')) || 0;
-const pi = (v: unknown) => parseInt(String(v ?? ''), 10) || 0;
+const toNumber = (value: unknown): number => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : NaN;
+  if (typeof value !== 'string' || value.trim() === '') return NaN;
+  const parsed = Number(value.trim().replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : NaN;
+};
 
-/** Registre complet des indicateurs */
+const read = (data: Record<string, unknown>, key: string): number => toNumber(data[key]);
+
+const divide = (numerator: number, denominator: number): number =>
+  Number.isFinite(numerator) && Number.isFinite(denominator) && denominator > 0
+    ? numerator / denominator
+    : NaN;
+
+const percent = (numerator: number, denominator: number): number => {
+  const value = divide(numerator, denominator);
+  return Number.isFinite(value) ? value * 100 : NaN;
+};
+
+const parseBounds = (value: string | null): [number, number] | null => {
+  if (!value) return null;
+  const match = value.match(/^\s*(-?\d+(?:[.,]\d+)?)\s*%?\s*-\s*(-?\d+(?:[.,]\d+)?)\s*%?\s*$/);
+  if (!match) return null;
+  const min = Number(match[1].replace(',', '.'));
+  const max = Number(match[2].replace(',', '.'));
+  return Number.isFinite(min) && Number.isFinite(max) ? [min, max] : null;
+};
+
+type IndicatorSpec = Omit<IndicatorDef, 'defaultBounds' | 'sliderDefaults' | 'calculate'> & {
+  calculateLocal?: (data: Record<string, unknown>) => number;
+};
+
+const makeIndicator = (spec: IndicatorSpec): IndicatorDef => {
+  const defaultBounds = parseBounds(spec.defaultMinMax);
+  const maxBound = defaultBounds ? Math.max(100, defaultBounds[0], defaultBounds[1]) : 100;
+  const range: [number, number] = [
+    defaultBounds ? Math.min(0, defaultBounds[0]) : 0,
+    maxBound,
+  ];
+  const start: [number, number] = defaultBounds ? [...defaultBounds] : [0, 100];
+
+  return {
+    ...spec,
+    defaultBounds,
+    sliderDefaults: { range, start },
+    calculate: (data) => {
+      const backendValues = data.DATAVIZ_VALUES;
+      if (
+        backendValues &&
+        typeof backendValues === 'object' &&
+        !Array.isArray(backendValues)
+      ) {
+        const value = toNumber((backendValues as Record<string, unknown>)[spec.value]);
+        if (Number.isFinite(value)) return value;
+      }
+      return spec.calculateLocal ? spec.calculateLocal(data) : NaN;
+    },
+  };
+};
+
+const commonFields = {
+  eff_2025: 'Effectif élèves inscrits',
+  en_classe: 'Enseignants en activité',
+  qualifiee: 'Enseignants qualifiés',
+  fonctionnaire: 'Enseignants fonctionnaires',
+  fram_sub: 'Enseignants FRAM subventionnés',
+  fram_nonsub: 'Enseignants FRAM non subventionnés',
+};
+
 export const INDICATORS: IndicatorDef[] = [
-  {
-    value: 'rem',
-    label: 'Ratio élève-maître',
-    niveaux: ['primaire', 'college', 'lycee'],
-    sourceFields: ['eff_2025', 'en_classe'],
-    sourceFieldLabels: {
-      eff_2025: 'Effectif élèves',
-      en_classe: 'Enseignants en classe',
-    },
-    calculate: (d) => safeDiv(pf(d.eff_2025), pf(d.en_classe)),
-    sliderDefaults: { range: [0, 100], start: [25, 50] },
-    unit: ' élèves/ens',
-    isPercentage: false,
-    isCount: false,
-    polarity: 'lower-better',
-  },
-  {
-    value: 're-sdc',
-    label: 'Ratio élèves par salle de classe',
-    niveaux: ['primaire', 'college', 'lycee'],
-    sourceFields: ['eff_2025', 'sdc_be', 'sdc_me'],
-    sourceFieldLabels: {
-      eff_2025: 'Effectif élèves',
-      sdc_be: 'Salles bon état',
-      sdc_me: 'Salles moyen état',
-    },
-    calculate: (d) => {
-      const sdc = pf(d.sdc_be) + pf(d.sdc_me);
-      return safeDiv(pf(d.eff_2025), sdc);
-    },
-    sliderDefaults: { range: [0, 100], start: [25, 60] },
-    unit: ' élèves/sdc',
-    isPercentage: false,
-    isCount: false,
-    polarity: 'lower-better',
-  },
-  {
-    value: 'ratio-pa',
-    label: 'Ratio élèves par place assise',
-    niveaux: ['primaire', 'college', 'lycee'],
-    sourceFields: ['eff_2025', 'places'],
-    sourceFieldLabels: {
-      eff_2025: 'Effectif élèves',
-      places: 'Places assises',
-    },
-    calculate: (d) => safeDiv(pf(d.eff_2025), pf(d.places)),
-    sliderDefaults: { range: [0, 10], start: [0, 1] },
-    unit: ' élèves/place',
-    isPercentage: false,
-    isCount: false,
-    polarity: 'lower-better',
-  },
-  {
-    value: 'elec',
-    label: 'Pourcentage des écoles électrifiées',
-    niveaux: ['primaire', 'college', 'lycee'],
-    sourceFields: ['elec', 'nbr_etab'],
-    sourceFieldLabels: {
-      elec: 'Écoles électrifiées',
-      nbr_etab: "Nombre d'établissements",
-    },
-    calculate: (d) => Math.round(safeDiv(pf(d.elec), pf(d.nbr_etab)) * 100),
-    sliderDefaults: { range: [0, 100], start: [50, 75] },
-    unit: '%',
-    isPercentage: true,
-    isCount: false,
-    polarity: 'higher-better',
-  },
-  {
-    value: 'eau',
-    label: "Pourcentage des écoles avec point d'eau",
-    niveaux: ['primaire', 'college', 'lycee'],
-    sourceFields: ['eau', 'nbr_etab'],
-    sourceFieldLabels: {
-      eau: "Écoles avec point d'eau",
-      nbr_etab: "Nombre d'établissements",
-    },
-    calculate: (d) => Math.round(safeDiv(pf(d.eau), pf(d.nbr_etab)) * 100),
-    sliderDefaults: { range: [0, 100], start: [50, 75] },
-    unit: '%',
-    isPercentage: true,
-    isCount: false,
-    polarity: 'higher-better',
-  },
-  {
-    value: 'exist-lat-g',
-    label: 'Pourcentage des écoles ayant des latrines pour garçons',
-    niveaux: ['primaire', 'college', 'lycee'],
-    sourceFields: ['latrine_g', 'nbr_etab'],
-    sourceFieldLabels: {
-      latrine_g: 'Écoles avec latrines garçons',
-      nbr_etab: "Nombre d'établissements",
-    },
-    calculate: (d) => Math.round(safeDiv(pi(d.latrine_g), pf(d.nbr_etab)) * 100),
-    sliderDefaults: { range: [0, 100], start: [30, 60] },
-    unit: '%',
-    isPercentage: true,
-    isCount: false,
-    polarity: 'higher-better',
-  },
-  {
-    value: 'exist-lat-f',
-    label: 'Pourcentage des écoles ayant des latrines pour filles',
-    niveaux: ['primaire', 'college', 'lycee'],
-    sourceFields: ['latrine_f', 'nbr_etab'],
-    sourceFieldLabels: {
-      latrine_f: 'Écoles avec latrines filles',
-      nbr_etab: "Nombre d'établissements",
-    },
-    calculate: (d) => Math.round(safeDiv(pi(d.latrine_f), pf(d.nbr_etab)) * 100),
-    sliderDefaults: { range: [0, 100], start: [30, 60] },
-    unit: '%',
-    isPercentage: true,
-    isCount: false,
-    polarity: 'higher-better',
-  },
-  {
-    value: 'exist-lat',
-    label: 'Pourcentage des écoles ayant des latrines communes',
-    niveaux: ['primaire', 'college', 'lycee'],
-    sourceFields: ['latrine', 'nbr_etab'],
-    sourceFieldLabels: {
-      latrine: 'Écoles avec latrines communes',
-      nbr_etab: "Nombre d'établissements",
-    },
-    calculate: (d) => Math.round(safeDiv(pi(d.latrine), pf(d.nbr_etab)) * 100),
-    sliderDefaults: { range: [0, 100], start: [30, 60] },
-    unit: '%',
-    isPercentage: true,
-    isCount: false,
-    polarity: 'higher-better',
-  },
-  {
-    value: 'ens-f',
-    label: 'Pourcentage des enseignants Fonctionnaires',
-    niveaux: ['primaire', 'college', 'lycee'],
-    sourceFields: ['fonct', 'pers_total'],
-    sourceFieldLabels: {
-      fonct: 'Enseignants fonctionnaires',
-      pers_total: 'Personnel enseignant total',
-    },
-    calculate: (d) => safeDiv(pi(d.fonct), pf(d.pers_total)) * 100,
-    sliderDefaults: { range: [0, 100], start: [30, 60] },
-    unit: '%',
-    isPercentage: true,
-    isCount: false,
-    polarity: 'higher-better',
-  },
-  {
-    value: 'ens-fsub',
-    label: 'Pourcentage des enseignants FRAM subventionnés',
-    niveaux: ['primaire'],
-    sourceFields: ['fs', 'pers_total'],
-    sourceFieldLabels: {
-      fs: 'FRAM subventionnés',
-      pers_total: 'Personnel enseignant total',
-    },
-    calculate: (d) => safeDiv(pi(d.fs), pf(d.pers_total)) * 100,
-    sliderDefaults: { range: [0, 100], start: [30, 60] },
-    unit: '%',
-    isPercentage: true,
-    isCount: false,
-    polarity: 'higher-better',
-  },
-  {
-    value: 'ens-fnsub',
-    label: 'Pourcentage des enseignants FRAM non subventionnés et Autres',
-    niveaux: ['primaire'],
-    sourceFields: ['fns', 'pers_total'],
-    sourceFieldLabels: {
-      fns: 'FRAM non subventionnés / Autres',
-      pers_total: 'Personnel enseignant total',
-    },
-    calculate: (d) => safeDiv(pi(d.fns), pf(d.pers_total)) * 100,
-    sliderDefaults: { range: [0, 100], start: [30, 60] },
-    unit: '%',
-    isPercentage: true,
-    isCount: false,
-    // Part non subventionnée : plus bas = mieux (moins de précarité)
-    polarity: 'lower-better',
-  },
-  {
-    value: 'ens-q',
-    label: 'Pourcentage des enseignants qualifiés',
-    niveaux: ['primaire', 'college', 'lycee'],
-    sourceFields: ['qualifiee', 'pers_total'],
-    sourceFieldLabels: {
-      qualifiee: 'Enseignants qualifiés',
-      pers_total: 'Personnel enseignant total',
-    },
-    calculate: (d) => safeDiv(pi(d.qualifiee), pf(d.pers_total)) * 100,
-    sliderDefaults: { range: [0, 100], start: [35, 75] },
-    unit: '%',
-    isPercentage: true,
-    isCount: false,
-    polarity: 'higher-better',
-  },
-  {
-    value: 'extra-ens',
-    label: 'Nombre des enseignants en sureffectif',
-    niveaux: ['primaire', 'college', 'lycee'],
-    sourceFields: ['en_classe', 'sdc_be', 'sdc_me'],
-    sourceFieldLabels: {
-      en_classe: 'Enseignants en classe',
-      sdc_be: 'Salles bon état',
-      sdc_me: 'Salles moyen état',
-    },
-    // Formule MEN : en_classe - (sdc_be + sdc_me) * 2  (2 rotations / salle)
-    calculate: (d) => {
-      const sdcE = pf(d.sdc_be) + pf(d.sdc_me);
-      return pi(d.en_classe) - sdcE * 2;
-    },
-    sliderDefaults: { range: [0, 20], start: [1, 2] },
-    unit: ' ens.',
+  // ── PRÉSCOLAIRE : 6 indicateurs ─────────────────────────────────────────
+  makeIndicator({
+    value: 'pre-offre-fonctionnelle',
+    label: "% d'établissements disposant d'une offre préscolaire fonctionnelle",
+    niveaux: ['prescolaire'],
+    formula: 'Comptage des établissements ayant au moins une section préscolaire effectivement ouverte et fonctionnelle.',
+    defaultMinMax: '50%-75%',
+    sourceFields: [],
+    sourceFieldLabels: {},
+    unit: ' établissements',
     isPercentage: false,
     isCount: true,
-    polarity: 'lower-better',
-  },
-  // ── Indicateurs de volume / structure ──
-  {
-    value: 'nbr-etab',
-    label: "Nombre d'établissements",
-    niveaux: ['primaire', 'college', 'lycee'],
-    sourceFields: ['nbr_etab'],
-    sourceFieldLabels: {
-      nbr_etab: "Nombre d'établissements",
-    },
-    calculate: (d) => pf(d.nbr_etab),
-    sliderDefaults: { range: [0, 2000], start: [50, 500] },
-    unit: ' étab',
+    polarity: 'higher-better',
+    mappingStatus: 'ambiguous',
+    mappingNote: "Le libellé annonce un pourcentage, mais la formule du classeur demande un comptage.",
+  }),
+  makeIndicator({
+    value: 'pre-ratio-enfants-educateur',
+    label: 'Ratio enfants-éducateur',
+    niveaux: ['prescolaire'],
+    formula: 'Effectif total des enfants inscrits /Nombre total d’éducateurs en activité.',
+    defaultMinMax: '25-30',
+    sourceFields: [],
+    sourceFieldLabels: {},
+    unit: ' enfants/éducateur',
     isPercentage: false,
-    isCount: true,
+    isCount: false,
+    polarity: 'lower-better',
+    mappingStatus: 'pending',
+  }),
+  makeIndicator({
+    value: 'pre-educateurs-qualifies',
+    label: 'Pourcentage d’éducateurs qualifiés',
+    niveaux: ['prescolaire'],
+    formula: '(Nombre d’éducateurs qualifiés / Nombre total d’éducateurs en activité) × 100.',
+    defaultMinMax: '50%-75%',
+    sourceFields: [],
+    sourceFieldLabels: {},
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
+    polarity: 'higher-better',
+    mappingStatus: 'pending',
+  }),
+  makeIndicator({
+    value: 'pre-educateurs-fram',
+    label: 'Pourcentage d’éducateurs FRAM',
+    niveaux: ['prescolaire'],
+    formula: '(Nombre d’éducateurs FRAM en activité / Nombre total d’éducateurs en activité) × 100.',
+    defaultMinMax: '25-50%',
+    sourceFields: [],
+    sourceFieldLabels: {},
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
     polarity: 'neutral',
-  },
-  {
-    value: 'eff-total',
-    label: 'Effectif total des élèves',
-    niveaux: ['primaire', 'college', 'lycee'],
-    sourceFields: ['eff_2025'],
-    sourceFieldLabels: {
-      eff_2025: 'Effectif total élèves',
-    },
-    calculate: (d) => pf(d.eff_2025),
-    sliderDefaults: { range: [0, 200000], start: [5000, 50000] },
-    unit: ' élèves',
-    isPercentage: false,
-    isCount: true,
-    polarity: 'neutral',
-  },
-  {
-    value: 're-etab',
-    label: 'Ratio élèves par établissement',
-    niveaux: ['primaire', 'college', 'lycee'],
-    sourceFields: ['eff_2025', 'nbr_etab'],
-    sourceFieldLabels: {
-      eff_2025: 'Effectif élèves',
-      nbr_etab: "Nombre d'établissements",
-    },
-    calculate: (d) => safeDiv(pf(d.eff_2025), pf(d.nbr_etab)),
-    sliderDefaults: { range: [0, 1000], start: [100, 400] },
-    unit: ' élèves/étab',
-    isPercentage: false,
-    isCount: false,
-    polarity: 'lower-better',
-  },
-  {
-    value: 'sdc-be-pct',
+    mappingStatus: 'pending',
+  }),
+  makeIndicator({
+    value: 'pre-salles-bon-etat',
     label: 'Pourcentage de salles de classe en bon état',
-    niveaux: ['primaire', 'college', 'lycee'],
-    sourceFields: ['sdc_be', 'sdc_me'],
-    sourceFieldLabels: {
-      sdc_be: 'Salles bon état',
-      sdc_me: 'Salles moyen état',
-    },
-    calculate: (d) => {
-      const tot = pf(d.sdc_be) + pf(d.sdc_me);
-      return safeDiv(pf(d.sdc_be), tot) * 100;
-    },
-    sliderDefaults: { range: [0, 100], start: [40, 75] },
+    niveaux: ['prescolaire'],
+    formula: '(Nombre de salles de classe en bon état / Nombre total de salles de classe évaluées) × 100.',
+    defaultMinMax: '50-75%',
+    sourceFields: [],
+    sourceFieldLabels: {},
     unit: '%',
     isPercentage: true,
     isCount: false,
     polarity: 'higher-better',
-  },
-  {
-    value: 'pers-etab',
-    label: 'Personnel enseignant par établissement',
-    niveaux: ['primaire', 'college', 'lycee'],
-    sourceFields: ['pers_total', 'nbr_etab'],
-    sourceFieldLabels: {
-      pers_total: 'Personnel enseignant total',
-      nbr_etab: "Nombre d'établissements",
-    },
-    calculate: (d) => safeDiv(pf(d.pers_total), pf(d.nbr_etab)),
-    sliderDefaults: { range: [0, 50], start: [3, 10] },
-    unit: ' ens/étab',
+    mappingStatus: 'pending',
+  }),
+  makeIndicator({
+    value: 'pre-cantine',
+    label: "Pourcentage d'établissements disposant d'une cantine scolaire",
+    niveaux: ['prescolaire'],
+    formula: '(Nombre d’établissements disposant d’une cantine fonctionnelle / Nombre total d’établissements préscolaires fonctionnels) × 100.',
+    defaultMinMax: '50-75%',
+    sourceFields: [],
+    sourceFieldLabels: {},
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
+    polarity: 'higher-better',
+    mappingStatus: 'pending',
+  }),
+
+  // ── PRIMAIRE : 11 indicateurs ────────────────────────────────────────────
+  makeIndicator({
+    value: 'pri-ratio-eleves-salle',
+    label: 'Ratio élèves par salle de classe utilisée',
+    niveaux: ['primaire'],
+    formula: 'Effectif total des élèves inscrits /Nombre total de salles de classe effectivement utilisées.',
+    defaultMinMax: '50-50',
+    sourceFields: [],
+    sourceFieldLabels: {},
+    unit: ' élèves/salle',
     isPercentage: false,
     isCount: false,
+    polarity: 'lower-better',
+    mappingStatus: 'pending',
+    mappingNote: 'Le champ des salles effectivement utilisées reste à confirmer.',
+  }),
+  makeIndicator({
+    value: 'pri-ratio-eleves-maitre',
+    label: 'Ratio élèves-maître',
+    niveaux: ['primaire'],
+    formula: 'Effectif total des élèves inscrits /Nombre total d’enseignants en activité.',
+    defaultMinMax: '50-50',
+    sourceFields: ['eff_2025', 'en_classe'],
+    sourceFieldLabels: { eff_2025: commonFields.eff_2025, en_classe: commonFields.en_classe },
+    calculateLocal: (d) => divide(read(d, 'eff_2025'), read(d, 'en_classe')),
+    unit: ' élèves/enseignant',
+    isPercentage: false,
+    isCount: false,
+    polarity: 'lower-better',
+    mappingStatus: 'ready',
+  }),
+  makeIndicator({
+    value: 'pri-enseignants-qualifies',
+    label: "Pourcentage d'enseignants qualifiés",
+    niveaux: ['primaire'],
+    formula: '(Nombre d’enseignants qualifiés /Nombre total d’enseignants en activité) × 100.',
+    defaultMinMax: '50%-75%',
+    sourceFields: ['qualifiee', 'en_classe'],
+    sourceFieldLabels: { qualifiee: commonFields.qualifiee, en_classe: commonFields.en_classe },
+    calculateLocal: (d) => percent(read(d, 'qualifiee'), read(d, 'en_classe')),
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
+    polarity: 'higher-better',
+    mappingStatus: 'ready',
+  }),
+  makeIndicator({
+    value: 'pri-enseignants-fram',
+    label: "Pourcentage d'enseignants FRAM",
+    niveaux: ['primaire'],
+    formula: '(Nombre d’enseignants FRAM en activité / Nombre total d’enseignants en activité) × 100.',
+    defaultMinMax: '25-50%',
+    sourceFields: ['fram_sub', 'fram_nonsub', 'en_classe'],
+    sourceFieldLabels: {
+      fram_sub: commonFields.fram_sub,
+      fram_nonsub: commonFields.fram_nonsub,
+      en_classe: commonFields.en_classe,
+    },
+    calculateLocal: (d) => {
+      const sub = read(d, 'fram_sub');
+      const nonSub = read(d, 'fram_nonsub');
+      return percent(sub + nonSub, read(d, 'en_classe'));
+    },
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
     polarity: 'neutral',
-  },
+    mappingStatus: 'ready',
+  }),
+  makeIndicator({
+    value: 'pri-salles-bon-etat',
+    label: 'Pourcentage de salles de classe en bon état',
+    niveaux: ['primaire'],
+    formula: '(Nombre de salles de classe en bon état / Nombre total de salles de classe évaluées) × 100.',
+    defaultMinMax: '50-75%',
+    sourceFields: [],
+    sourceFieldLabels: {},
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
+    polarity: 'higher-better',
+    mappingStatus: 'pending',
+    mappingNote: 'Le total des salles évaluées n’est pas identifié dans les champs frontend inspectés.',
+  }),
+  makeIndicator({
+    value: 'pri-ecoles-latrines',
+    label: "Pourcentage d'écoles disposant de latrines",
+    niveaux: ['primaire'],
+    formula: '(Nombre d’écoles disposant de latrines fonctionnelles /Nombre total d’écoles évaluées) × 100.',
+    defaultMinMax: '50-75%',
+    sourceFields: [],
+    sourceFieldLabels: {},
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
+    polarity: 'higher-better',
+    mappingStatus: 'pending',
+  }),
+  makeIndicator({
+    value: 'pri-ecoles-latrines-filles',
+    label: "Pourcentage d'écoles disposant de latrines pour filles",
+    niveaux: ['primaire'],
+    formula: '(Nombre d’écoles disposant de latrines fonctionnelles réservées aux filles / Nombre total d’écoles évaluées) × 100.',
+    defaultMinMax: '50-75%',
+    sourceFields: [],
+    sourceFieldLabels: {},
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
+    polarity: 'higher-better',
+    mappingStatus: 'pending',
+  }),
+  makeIndicator({
+    value: 'pri-ecoles-point-eau',
+    label: "Pourcentage d'écoles disposant d'un point d'eau",
+    niveaux: ['primaire'],
+    formula: '(Nombre d’écoles disposant d’un point d’eau fonctionnel / Nombre total d’écoles évaluées) × 100.',
+    defaultMinMax: '50-75%',
+    sourceFields: [],
+    sourceFieldLabels: {},
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
+    polarity: 'higher-better',
+    mappingStatus: 'pending',
+  }),
+  makeIndicator({
+    value: 'pri-ecoles-electrifiees',
+    label: "Pourcentage d'écoles électrifiées",
+    niveaux: ['primaire'],
+    formula: '(Nombre d’écoles disposant d’une installation électrique fonctionnelle / Nombre total d’écoles évaluées) × 100.',
+    defaultMinMax: '50-75%',
+    sourceFields: [],
+    sourceFieldLabels: {},
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
+    polarity: 'higher-better',
+    mappingStatus: 'pending',
+  }),
+  makeIndicator({
+    value: 'pri-ecoles-cantine',
+    label: "Pourcentage d'écoles disposant d'une cantine scolaire",
+    niveaux: ['primaire'],
+    formula: '(Nombre d’écoles disposant d’une cantine fonctionnelle / Nombre total d’écoles évaluées) × 100.',
+    defaultMinMax: '50-75%',
+    sourceFields: [],
+    sourceFieldLabels: {},
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
+    polarity: 'higher-better',
+    mappingStatus: 'pending',
+  }),
+  makeIndicator({
+    value: 'pri-eleves-distance-2km',
+    label: "Pourcentage d'élèves parcourant plus de 2 km pour accéder à l'école",
+    niveaux: ['primaire'],
+    formula: '(Nombre d’élèves parcourant plus de 2 km / Nombre total d’élèves dont la distance domicile-école est renseignée) × 100.',
+    defaultMinMax: '50-75%',
+    sourceFields: [],
+    sourceFieldLabels: {},
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
+    polarity: 'lower-better',
+    mappingStatus: 'pending',
+  }),
+
+  // ── COLLÈGE : 13 indicateurs ─────────────────────────────────────────────
+  makeIndicator({
+    value: 'col-communes-sans-ceg',
+    label: 'Pourcentage de commune sans CEG',
+    niveaux: ['college'],
+    formula: '(Nombre de communes disposant d’au moins un collège fonctionnel / Nombre total de communes) × 100.',
+    defaultMinMax: '50-75%',
+    sourceFields: [],
+    sourceFieldLabels: {},
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
+    polarity: 'higher-better',
+    mappingStatus: 'ambiguous',
+    mappingNote: 'Le libellé indique « sans CEG », mais la formule calcule les communes disposant d’au moins un CEG.',
+  }),
+  makeIndicator({
+    value: 'col-ratio-eleves-salle',
+    label: 'Ratio élèves par salle de classe utilisée',
+    niveaux: ['college'],
+    formula: 'Effectif total des élèves inscrits / Nombre total de salles de classe effectivement utilisées.',
+    defaultMinMax: '50-50',
+    sourceFields: [],
+    sourceFieldLabels: {},
+    unit: ' élèves/salle',
+    isPercentage: false,
+    isCount: false,
+    polarity: 'lower-better',
+    mappingStatus: 'pending',
+  }),
+  makeIndicator({
+    value: 'col-ratio-eleves-enseignants-discipline',
+    label: 'Ratio élèves-enseignants par discipline',
+    niveaux: ['college'],
+    formula: 'Pour chaque discipline : Effectif total des élèves concernés / Nombre d’enseignants en activité dans cette discipline.',
+    defaultMinMax: '50-50',
+    sourceFields: [],
+    sourceFieldLabels: {},
+    unit: ' élèves/enseignant',
+    isPercentage: false,
+    isCount: false,
+    polarity: 'lower-better',
+    mappingStatus: 'pending',
+  }),
+  makeIndicator({
+    value: 'col-enseignants-qualifies',
+    label: "Pourcentage d'enseignants qualifiés",
+    niveaux: ['college'],
+    formula: '(Nombre d’enseignants qualifiés / Nombre total d’enseignants en activité) × 100.',
+    defaultMinMax: '50-75%',
+    sourceFields: ['qualifiee', 'en_classe'],
+    sourceFieldLabels: { qualifiee: commonFields.qualifiee, en_classe: commonFields.en_classe },
+    calculateLocal: (d) => percent(read(d, 'qualifiee'), read(d, 'en_classe')),
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
+    polarity: 'higher-better',
+    mappingStatus: 'ready',
+  }),
+  makeIndicator({
+    value: 'col-enseignants-fonctionnaires',
+    label: "Pourcentage d'enseignants fonctionnaires",
+    niveaux: ['college'],
+    formula: '(Nombre d’enseignants fonctionnaires en activité / Nombre total d’enseignants en activité) × 100.',
+    defaultMinMax: '50-75%',
+    sourceFields: ['fonctionnaire', 'en_classe'],
+    sourceFieldLabels: { fonctionnaire: commonFields.fonctionnaire, en_classe: commonFields.en_classe },
+    calculateLocal: (d) => percent(read(d, 'fonctionnaire'), read(d, 'en_classe')),
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
+    polarity: 'higher-better',
+    mappingStatus: 'ready',
+  }),
+  makeIndicator({
+    value: 'col-enseignants-fram',
+    label: "Pourcentage d'enseignants FRAM",
+    niveaux: ['college'],
+    formula: '(Nombre d’enseignants FRAM en activité / Nombre total d’enseignants en activité) × 100.',
+    defaultMinMax: '25-50%',
+    sourceFields: ['fram_sub', 'fram_nonsub', 'en_classe'],
+    sourceFieldLabels: {
+      fram_sub: commonFields.fram_sub,
+      fram_nonsub: commonFields.fram_nonsub,
+      en_classe: commonFields.en_classe,
+    },
+    calculateLocal: (d) => percent(read(d, 'fram_sub') + read(d, 'fram_nonsub'), read(d, 'en_classe')),
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
+    polarity: 'neutral',
+    mappingStatus: 'ready',
+  }),
+  makeIndicator({
+    value: 'col-salles-bon-etat',
+    label: 'Pourcentage de salles de classe en bon état',
+    niveaux: ['college'],
+    formula: '(Nombre de salles de classe en bon état / Nombre total de salles de classe évaluées) × 100.',
+    defaultMinMax: '50-75%',
+    sourceFields: [],
+    sourceFieldLabels: {},
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
+    polarity: 'higher-better',
+    mappingStatus: 'pending',
+  }),
+  makeIndicator({
+    value: 'col-etablissements-latrines',
+    label: "Pourcentage d'établissements disposant de latrines",
+    niveaux: ['college'],
+    formula: '(Nombre de collèges disposant de latrines fonctionnelles / Nombre total de collèges évalués) × 100.',
+    defaultMinMax: '50-75%',
+    sourceFields: [],
+    sourceFieldLabels: {},
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
+    polarity: 'higher-better',
+    mappingStatus: 'pending',
+  }),
+  makeIndicator({
+    value: 'col-etablissements-latrines-filles',
+    label: "Pourcentage d'établissements disposant de latrines pour filles",
+    niveaux: ['college'],
+    formula: '(Nombre de collèges disposant de latrines fonctionnelles réservées aux filles / Nombre total de collèges évalués) × 100.',
+    defaultMinMax: '50-75%',
+    sourceFields: [],
+    sourceFieldLabels: {},
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
+    polarity: 'higher-better',
+    mappingStatus: 'pending',
+  }),
+  makeIndicator({
+    value: 'col-etablissements-point-eau',
+    label: "Pourcentage d'établissements disposant d'un point d'eau",
+    niveaux: ['college'],
+    formula: '(Nombre de collèges disposant d’un point d’eau fonctionnel / Nombre total de collèges évalués) × 100.',
+    defaultMinMax: '50-75%',
+    sourceFields: [],
+    sourceFieldLabels: {},
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
+    polarity: 'higher-better',
+    mappingStatus: 'pending',
+  }),
+  makeIndicator({
+    value: 'col-etablissements-electrifies',
+    label: "Pourcentage d'établissements électrifiés",
+    niveaux: ['college'],
+    formula: '(Nombre de collèges disposant d’une installation électrique fonctionnelle / Nombre total de collèges évalués) × 100.',
+    defaultMinMax: '50-75%',
+    sourceFields: [],
+    sourceFieldLabels: {},
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
+    polarity: 'higher-better',
+    mappingStatus: 'pending',
+  }),
+  makeIndicator({
+    value: 'col-colleges-laboratoire',
+    label: "Pourcentage de collèges disposant d'un laboratoire fonctionnel",
+    niveaux: ['college'],
+    formula: '(Nombre de collèges disposant d’un laboratoire fonctionnel /Nombre total de collèges évalués) × 100.',
+    defaultMinMax: '50-75%',
+    sourceFields: [],
+    sourceFieldLabels: {},
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
+    polarity: 'higher-better',
+    mappingStatus: 'pending',
+  }),
+  makeIndicator({
+    value: 'col-eleves-distance-5km',
+    label: "Pourcentage d'élèves parcourant plus de 5 km pour accéder au collège",
+    niveaux: ['college'],
+    formula: '(Nombre d’élèves parcourant plus de 5 km / Nombre total d’élèves dont la distance domicile-collège est renseignée) × 100.',
+    defaultMinMax: '50-75%',
+    sourceFields: [],
+    sourceFieldLabels: {},
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
+    polarity: 'lower-better',
+    mappingStatus: 'pending',
+  }),
+
+  // ── LYCÉE : 10 indicateurs ───────────────────────────────────────────────
+  makeIndicator({
+    value: 'lyc-ratio-eleves-enseignants-discipline',
+    label: 'Ratio élèves-enseignants par discipline',
+    niveaux: ['lycee'],
+    formula: 'Pour chaque matière : Effectif total des élèves concernés /Nombre d’enseignants en activité dans cette matière.',
+    defaultMinMax: '50-50',
+    sourceFields: [],
+    sourceFieldLabels: {},
+    unit: ' élèves/enseignant',
+    isPercentage: false,
+    isCount: false,
+    polarity: 'lower-better',
+    mappingStatus: 'pending',
+  }),
+  makeIndicator({
+    value: 'lyc-enseignants-qualifies',
+    label: "Pourcentage d'enseignants qualifiés",
+    niveaux: ['lycee'],
+    formula: '(Nombre d’enseignants qualifiés / Nombre total d’enseignants en activité) × 100.',
+    defaultMinMax: '50-75%',
+    sourceFields: ['qualifiee', 'en_classe'],
+    sourceFieldLabels: { qualifiee: commonFields.qualifiee, en_classe: commonFields.en_classe },
+    calculateLocal: (d) => percent(read(d, 'qualifiee'), read(d, 'en_classe')),
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
+    polarity: 'higher-better',
+    mappingStatus: 'ready',
+  }),
+  makeIndicator({
+    value: 'lyc-enseignants-fonctionnaires',
+    label: "Pourcentage d'enseignants fonctionnaires",
+    niveaux: ['lycee'],
+    formula: '(Nombre d’enseignants fonctionnaires en activité / Nombre total d’enseignants en activité) × 100.',
+    defaultMinMax: '50-75%',
+    sourceFields: ['fonctionnaire', 'en_classe'],
+    sourceFieldLabels: { fonctionnaire: commonFields.fonctionnaire, en_classe: commonFields.en_classe },
+    calculateLocal: (d) => percent(read(d, 'fonctionnaire'), read(d, 'en_classe')),
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
+    polarity: 'higher-better',
+    mappingStatus: 'ready',
+  }),
+  makeIndicator({
+    value: 'lyc-enseignants-fram',
+    label: "Pourcentage d'enseignants FRAM",
+    niveaux: ['lycee'],
+    formula: '(Nombre d’enseignants FRAM en activité / Nombre total d’enseignants en activité) × 100.',
+    defaultMinMax: '25-50%',
+    sourceFields: ['fram_sub', 'fram_nonsub', 'en_classe'],
+    sourceFieldLabels: {
+      fram_sub: commonFields.fram_sub,
+      fram_nonsub: commonFields.fram_nonsub,
+      en_classe: commonFields.en_classe,
+    },
+    calculateLocal: (d) => percent(read(d, 'fram_sub') + read(d, 'fram_nonsub'), read(d, 'en_classe')),
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
+    polarity: 'neutral',
+    mappingStatus: 'ready',
+  }),
+  makeIndicator({
+    value: 'lyc-etablissements-electrifies',
+    label: "Pourcentage d'établissements électrifiés",
+    niveaux: ['lycee'],
+    formula: '(Nombre de lycées disposant d’une installation électrique fonctionnelle / Nombre total de lycées évalués) × 100.',
+    defaultMinMax: '50-75%',
+    sourceFields: [],
+    sourceFieldLabels: {},
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
+    polarity: 'higher-better',
+    mappingStatus: 'pending',
+  }),
+  makeIndicator({
+    value: 'lyc-salles-bon-etat',
+    label: 'Pourcentage de salles de classe en bon état',
+    niveaux: ['lycee'],
+    formula: '(Nombre de salles de classe en bon état /Nombre total de salles de classe évaluées) × 100.',
+    defaultMinMax: '50-75%',
+    sourceFields: [],
+    sourceFieldLabels: {},
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
+    polarity: 'higher-better',
+    mappingStatus: 'pending',
+  }),
+  makeIndicator({
+    value: 'lyc-lycees-laboratoire',
+    label: "Pourcentage de lycées disposant d'un laboratoire fonctionnel",
+    niveaux: ['lycee'],
+    formula: '(Nombre de lycées disposant d’un laboratoire fonctionnel / Nombre total de lycées évalués) × 100.',
+    defaultMinMax: '50-75%',
+    sourceFields: [],
+    sourceFieldLabels: {},
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
+    polarity: 'higher-better',
+    mappingStatus: 'pending',
+  }),
+  makeIndicator({
+    value: 'lyc-lycees-latrines',
+    label: 'Pourcentage de lycées disposant de latrines',
+    niveaux: ['lycee'],
+    formula: '(Nombre de lycées disposant de latrines fonctionnelles / Nombre total de lycées évalués) × 100.',
+    defaultMinMax: '50-75%',
+    sourceFields: [],
+    sourceFieldLabels: {},
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
+    polarity: 'higher-better',
+    mappingStatus: 'pending',
+  }),
+  makeIndicator({
+    value: 'lyc-lycees-latrines-filles',
+    label: 'Pourcentage de lycées disposant de latrines pour filles',
+    niveaux: ['lycee'],
+    formula: '(Nombre de lycées disposant de latrines fonctionnelles réservées aux filles / Nombre total de lycées évalués) × 100.',
+    defaultMinMax: '50-75%',
+    sourceFields: [],
+    sourceFieldLabels: {},
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
+    polarity: 'higher-better',
+    mappingStatus: 'pending',
+  }),
+  makeIndicator({
+    value: 'lyc-etablissements-point-eau',
+    label: "Pourcentage d'établissements disposant d'un point d'eau",
+    niveaux: ['lycee'],
+    formula: '(Nombre de lycées disposant d’un point d’eau fonctionnel / Nombre total de lycées évalués) × 100.',
+    defaultMinMax: '50-75%',
+    sourceFields: [],
+    sourceFieldLabels: {},
+    unit: '%',
+    isPercentage: true,
+    isCount: false,
+    polarity: 'higher-better',
+    mappingStatus: 'pending',
+  }),
 ];
 
-/** Placeholder « choisir un thème » */
 export const THEME_PLACEHOLDER = {
   value: '0',
   label: '--Choisir un thème--',
 } as const;
 
-/** Indicateurs filtrés par niveau + placeholder en tête */
-export function getThemesForNiveau(niveau: Niveau): { value: string; label: string }[] {
-  const filtered = INDICATORS.filter((ind) => ind.niveaux.includes(niveau)).map((ind) => ({
-    value: ind.value,
-    label: ind.label,
-  }));
-  return [{ value: THEME_PLACEHOLDER.value, label: THEME_PLACEHOLDER.label }, ...filtered];
+export function getThemesForNiveau(niveau: Niveau): {
+  value: string;
+  label: string;
+  mappingStatus: MappingStatus;
+  mappingNote?: string;
+}[] {
+  return [
+    { ...THEME_PLACEHOLDER, mappingStatus: 'ready' },
+    ...INDICATORS.filter((indicator) => indicator.niveaux.includes(niveau)).map((indicator) => ({
+      value: indicator.value,
+      label: indicator.label,
+      mappingStatus: indicator.mappingStatus,
+      mappingNote: indicator.mappingNote,
+    })),
+  ];
 }
 
-/** Récupère la définition complète d'un indicateur */
 export function getIndicator(theme: string): IndicatorDef | undefined {
-  return INDICATORS.find((ind) => ind.value === theme);
+  return INDICATORS.find((indicator) => indicator.value === theme);
 }
 
-/** Plage et start du slider pour un thème */
 export function getSliderDefaults(theme: string): { range: [number, number]; start: [number, number] } {
-  const ind = getIndicator(theme);
-  return ind?.sliderDefaults ?? { range: [0, 100], start: [25, 75] };
+  return getIndicator(theme)?.sliderDefaults ?? { range: [0, 100], start: [0, 100] };
 }
 
-/** Calcul du ratio / valeur */
 export function calculateRatio(data: Record<string, unknown>, theme: string): number {
-  const ind = getIndicator(theme);
-  if (!ind) return 0;
+  const indicator = getIndicator(theme);
+  if (!indicator) return NaN;
   try {
-    return ind.calculate(data);
+    return indicator.calculate(data);
   } catch {
-    return 0;
+    return NaN;
   }
 }
-
-/**
- * Classification couleur selon polarité.
- * - lower-better / neutral : < min → blanc, entre → vert, > max → rouge
- * - higher-better          : < min → rouge,  entre → vert, > max → blanc
- *   (haut = bon → blanc ; bas = critique → rouge)
- */
-export type ColorClass = 'inf' | 'entre' | 'sup';
 
 export function classifyRatio(
   ratio: number,
@@ -413,57 +760,56 @@ export function classifyRatio(
   maxBound: number,
   polarity: Polarity = 'lower-better',
 ): ColorClass {
-  if (isNaN(ratio) || !Number.isFinite(ratio)) return 'inf';
+  if (!Number.isFinite(ratio)) return 'missing';
 
   if (polarity === 'higher-better') {
-    if (ratio < minBound) return 'sup'; // critique bas → traité comme « sup » pour rouge
-    if (ratio > maxBound) return 'inf'; // excellent haut → « inf » pour blanc
+    if (ratio < minBound) return 'sup';
+    if (ratio > maxBound) return 'inf';
     return 'entre';
   }
 
-  // lower-better & neutral
   if (ratio < minBound) return 'inf';
   if (ratio > maxBound) return 'sup';
   return 'entre';
 }
 
-/** Couleur hex pour la carte (et légende) */
 export function getThematicColor(
   ratio: number,
   minBound: number,
   maxBound: number,
   polarity: Polarity = 'lower-better',
 ): string {
-  if (isNaN(ratio) || !Number.isFinite(ratio)) return '#FFFFFF';
-  const cls = classifyRatio(ratio, minBound, maxBound, polarity);
-  if (cls === 'inf') return '#FFFFFF';
-  if (cls === 'sup') return '#FF0000';
+  const classification = classifyRatio(ratio, minBound, maxBound, polarity);
+  if (classification === 'missing') return '#9CA3AF';
+  if (classification === 'inf') return '#FFFFFF';
+  if (classification === 'sup') return '#FF0000';
   return '#00AA00';
 }
 
-/** Libellés de légende cohérents avec la polarité */
 export function getLegendLabels(
   minBound: number,
   maxBound: number,
   polarity: Polarity,
-  formatValue: (v: number) => string,
+  formatValue: (value: number) => string,
   unit: string,
-): { white: string; green: string; red: string } {
-  const minFmt = formatValue(minBound);
-  const maxFmt = formatValue(maxBound);
-  const u = unit || '';
+): { white: string; green: string; red: string; missing: string } {
+  const min = `${formatValue(minBound)}${unit || ''}`;
+  const max = `${formatValue(maxBound)}${unit || ''}`;
 
   if (polarity === 'higher-better') {
     return {
-      white: `Supérieur à ${maxFmt}${u} (meilleur)`,
-      green: `[${minFmt} – ${maxFmt}]${u}`,
-      red: `Inférieur à ${minFmt}${u} (critique)`,
+      white: `Supérieur à ${max} (meilleur)`,
+      green: `[${min} – ${max}]`,
+      red: `Inférieur à ${min} (critique)`,
+      missing: 'Donnée indisponible',
     };
   }
+
   return {
-    white: `Inférieur à ${minFmt}${u}`,
-    green: `[${minFmt} – ${maxFmt}]${u}`,
-    red: `Supérieur à ${maxFmt}${u}`,
+    white: `Inférieur à ${min}`,
+    green: `[${min} – ${max}]`,
+    red: `Supérieur à ${max}`,
+    missing: 'Donnée indisponible',
   };
 }
 
@@ -483,24 +829,19 @@ export function getThemePolarity(theme: string): Polarity {
   return getIndicator(theme)?.polarity ?? 'lower-better';
 }
 
-/** Format affichage (fr-FR) — 1 décimale sauf comptages */
 export function formatThemeValue(value: number, theme: string): string {
   if (!Number.isFinite(value)) return '—';
-  const isCount = isCountTheme(theme);
-  const opts: Intl.NumberFormatOptions = isCount
+  const options: Intl.NumberFormatOptions = isCountTheme(theme)
     ? { maximumFractionDigits: 0 }
     : { minimumFractionDigits: 1, maximumFractionDigits: 1 };
-  return value.toLocaleString('fr-FR', opts);
+  return value.toLocaleString('fr-FR', options);
 }
 
-/** Valeur export : toujours 2 décimales (sauf comptages entiers) */
 export function formatExportValue(value: number, theme: string): number | null {
   if (!Number.isFinite(value)) return null;
-  if (isCountTheme(theme)) return Math.round(value);
-  return Math.round(value * 100) / 100;
+  return isCountTheme(theme) ? Math.round(value) : Math.round(value * 100) / 100;
 }
 
-/** Styles GeoJSON de base */
 export const STYLE_DREN = {
   fillColor: '#4e73df',
   color: '#4e73df',
@@ -508,6 +849,7 @@ export const STYLE_DREN = {
   opacity: 1,
   fillOpacity: 0.02,
 };
+
 export const STYLE_CISCO = {
   fillColor: '#22afbe',
   color: '#22afbe',
@@ -515,6 +857,7 @@ export const STYLE_CISCO = {
   opacity: 1,
   fillOpacity: 0.05,
 };
+
 export const STYLE_COMMUNE = {
   fillColor: '#c0c0c0',
   color: '#c0c0c0',
@@ -523,8 +866,7 @@ export const STYLE_COMMUNE = {
   fillOpacity: 0.03,
 };
 
-/** Compat : ancien nom THEMES (liste plate) */
 export const THEMES = [
-  { value: THEME_PLACEHOLDER.value, label: THEME_PLACEHOLDER.label },
-  ...INDICATORS.map((i) => ({ value: i.value, label: i.label })),
+  THEME_PLACEHOLDER,
+  ...INDICATORS.map(({ value, label }) => ({ value, label })),
 ];

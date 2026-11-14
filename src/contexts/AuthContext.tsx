@@ -180,14 +180,39 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const logout = async () => {
     const name = user?.first_name || user?.username;
+
     try {
-      await fetch(`${DJANGO_BASE_URL}/login/logout/`, {
-        method: "POST",
+      const csrfResponse = await fetch(`${DJANGO_BASE_URL}/sig/csrf/`, {
+        method: "GET",
         credentials: "include",
       });
+
+      if (!csrfResponse.ok) {
+        throw new Error(`Récupération CSRF → ${csrfResponse.status}`);
+      }
+
+      const csrfData = await csrfResponse.json();
+
+      if (!csrfData?.csrfToken || typeof csrfData.csrfToken !== "string") {
+        throw new Error("Jeton CSRF invalide.");
+      }
+
+      const logoutResponse = await fetch(`${DJANGO_BASE_URL}/login/logout/`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "X-CSRFToken": csrfData.csrfToken,
+        },
+      });
+
+      if (!logoutResponse.ok) {
+        const text = await logoutResponse.text().catch(() => "");
+        throw new Error(`Déconnexion Django → ${logoutResponse.status} - ${text}`);
+      }
     } catch (e) {
       console.warn("Logout Django échoué:", e);
     }
+
     localStorage.removeItem("dpe_user");
     sessionStorage.removeItem("dpe_user");
     setUser(null);

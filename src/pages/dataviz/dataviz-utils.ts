@@ -5,7 +5,7 @@
  * Source de vérité : dataviz-indicators.ts
  */
 
-export type { Niveau, Polarity, IndicatorDef, ColorClass } from './dataviz-indicators';
+export type { Niveau, Polarity, MappingStatus, IndicatorDef, ColorClass } from './dataviz-indicators';
 
 export {
   NIVEAUX,

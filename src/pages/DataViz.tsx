@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
@@ -35,7 +36,7 @@ import {
   Loader2,
   Filter,
   RotateCcw,
-  Map,
+  Map as MapIcon,
   MapPin,
   Info,
   ChevronLeft,
@@ -46,9 +47,11 @@ import {
   FileImage,
   BarChart3,
 } from "lucide-react";
-import { datavizApi, dashboardApi, Dren } from "@/services/api";
-import { toast } from "sonner";
+import { datavizApi } from "@/services/api";
+import { getSchoolLevelIconHtml } from "@/lib/etablissementIcons";
+import { SchoolLevelIcon } from "@/components/SchoolLevelIcon";
 import html2canvas from "html2canvas";
+import { toast } from "sonner";
 import {
   NIVEAUX,
   THEMES,
@@ -71,6 +74,8 @@ import {
 } from "./dataviz/dataviz-utils";
 import "leaflet/dist/leaflet.css";
 import DataActionsBar from "@/components/admin/DataActionsBar";
+import logoMen from "@/assets/logoMen.jpg";
+import logoDpe from "@/assets/logoDpe.jpg";
 import { clampCapturePoint } from "../utils/mapCapture";
 
 // ─── Composants carte auxiliaires ───────────────────────────────────────────
@@ -164,17 +169,6 @@ const BaseLayerWatcher = ({ onChange }: { onChange: (name: string) => void }) =>
   return null;
 };
 
-// ─── Icônes établissements (même FA que SIG) ─────────────────────────────────
-// Convention unique : tous les établissements = fa-school (bâtiment), la couleur distingue le niveau
-// Couleur = code couleur thématique (blanc / vert / rouge)
-
-const NIVEAU_FA: Record<Niveau, string> = {
-  prescolaire: "fas fa-school",
-  primaire: "fas fa-school",
-  college: "fas fa-school",
-  lycee: "fas fa-school",
-};
-
 /** Directions de placement du libellé autour du marker (évite le chevauchement) */
 const LABEL_OFFSETS = [
   { top: 16, left: 0, tx: "-50%", textAlign: "center" }, // bas
@@ -214,7 +208,10 @@ function createEtabIcon(opts: {
   total?: number;
 }): L.DivIcon {
   const { niveau, fillColor, label, labelColor, index = 0, total = 1 } = opts;
-  const fa = NIVEAU_FA[niveau] || "fas fa-map-marker-alt";
+  const iconHtml = getSchoolLevelIconHtml(
+    niveau,
+    `color:${fillColor};width:18px;height:18px;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.45))`,
+  ) || `<i class="fas fa-map-marker-alt" style="color:${fillColor}" aria-hidden="true"></i>`;
   const showLabel = Boolean(label && label.trim());
   const lc = labelColor || etabLabelColor("OSM");
   const safeLabel = (label || "")
@@ -266,14 +263,7 @@ function createEtabIcon(opts: {
         justify-content: center;
         pointer-events: none;
       ">
-        <i class="${fa}" style="
-          color: ${fillColor};
-          font-size: 18px;
-          line-height: 1;
-          pointer-events: auto;
-          filter: drop-shadow(0 1px 2px rgba(0,0,0,0.45));
-          -webkit-text-stroke: ${fillColor === "#FFFFFF" ? "0.6px #666" : "0"};
-        "></i>
+        ${iconHtml}
         ${labelHtml}
       </div>
     `,
@@ -293,6 +283,8 @@ interface RecapData {
   medium: number;
   /** rouge */
   high: number;
+  /** valeur indisponible ou non calculable */
+  missing: number;
 }
 
 // ─── Helpers export / tooltip ───────────────────────────────────────────────
@@ -315,10 +307,29 @@ const niveauSlugFor = (niveau: Niveau) => {
   return map[niveau] ?? niveau;
 };
 
+/** Normalise les codes pour conserver la comparaison numérique utilisée par la carte. */
+const normalizeZoneCode = (value: unknown): string => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isNaN(parsed) ? raw : String(parsed);
+};
+
+function indexByZoneCode<T extends Record<string, any>>(rows: T[], field: string): Map<string, T> {
+  const index = new Map<string, T>();
+  rows.forEach((row) => {
+    const code = normalizeZoneCode(row[field]);
+    // Conserve le premier enregistrement, comme Array.find() auparavant.
+    if (code && !index.has(code)) index.set(code, row);
+  });
+  return index;
+}
+
 const EXCEL_COLORS = {
   inf: "FFFFFFFF",
   entre: "FF00AA00",
   sup: "FFFF0000",
+  missing: "FF9CA3AF",
 } as const;
 
 /** Construit le HTML de l'info-bulle (code, nom, champs sources, valeur indicatif) */
@@ -361,6 +372,10 @@ function buildTooltipHtml(opts: {
       <span style="color:#666">${themeLabel || "Indicateur"} :</span>
       <strong style="font-variant-numeric:tabular-nums">${formatThemeValue(ratio, theme)}${displayUnit}</strong>
     </div>`;
+  } else if (stat && theme !== "0") {
+    rows += `<div style="margin-top:4px;border-top:1px solid #ddd;padding-top:4px;color:#6b7280">
+      ${themeLabel || "Indicateur"} : donnée indisponible
+    </div>`;
   }
 
   rows += `</div>`;
@@ -370,8 +385,7 @@ function buildTooltipHtml(opts: {
 // ─── Composant principal ────────────────────────────────────────────────────
 
 const DataViz = () => {
-  const [drens, setDrens] = useState<Dren[]>([]);
-  const [niveau, setNiveau] = useState<Niveau>("primaire");
+  const [niveau, setNiveau] = useState<Niveau>("prescolaire");
   const [theme, setTheme] = useState("0");
   const [loading, setLoading] = useState(false);
   const [activeLayer, setActiveLayer] = useState<ActiveLayer>("dren");
@@ -382,7 +396,7 @@ const DataViz = () => {
    * Filtre markers etab par classe de couleur / statut indicateur
    * all | inf | entre | sup  (ou existe / non-existe pour indicateurs binaires)
    */
-  const [etabStatusFilter, setEtabStatusFilter] = useState<"all" | "inf" | "entre" | "sup">("all");
+  const [etabStatusFilter, setEtabStatusFilter] = useState<"all" | "inf" | "entre" | "sup" | "missing">("all");
   /** Fond de carte actif (pour couleur des libellés) */
   const [baseMap, setBaseMap] = useState("OSM");
 
@@ -423,6 +437,7 @@ const DataViz = () => {
     low: 0,
     medium: 0,
     high: 0,
+    missing: 0,
   });
   const [showRecap, setShowRecap] = useState(false);
 
@@ -440,20 +455,17 @@ const DataViz = () => {
   } | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const captureRootRef = useRef<HTMLDivElement>(null);
+  // Ignore les réponses d’un chargement devenu obsolète après une nouvelle interaction.
+  const dataRequestIdRef = useRef(0);
+  const previousNiveauRef = useRef(niveau);
 
   // Init couches de base
   useEffect(() => {
     const init = async () => {
       setLoading(true);
       try {
-        const [drensData, drenLayer, ciscoLayer] = await Promise.all([
-          dashboardApi.getDrens(),
-          datavizApi.getLayerDren(),
-          datavizApi.getLayerCisco(),
-        ]);
-        setDrens(drensData);
+        const drenLayer = await datavizApi.getLayerDren();
         if (drenLayer?.[0]?.shape) setDrenGeoJson(drenLayer[0].shape);
-        if (ciscoLayer?.[0]?.shape) setCiscoGeoJson(ciscoLayer[0].shape);
       } catch (err) {
         console.error("Init error:", err);
         toast.error("Erreur lors du chargement des couches de base");
@@ -484,20 +496,22 @@ const DataViz = () => {
   const computeRecap = useCallback(
     (items: any[], zone: string) => {
       if (!items?.length || appliedTheme === "0") {
-        setRecap({ zone, total: 0, low: 0, medium: 0, high: 0 });
+        setRecap({ zone, total: 0, low: 0, medium: 0, high: 0, missing: 0 });
         return;
       }
       let low = 0;
       let medium = 0;
       let high = 0;
+      let missing = 0;
       items.forEach((item) => {
         const ratio = calculateRatio(item, appliedTheme);
         const cls = classifyRatio(ratio, appliedBounds[0], appliedBounds[1], polarity);
         if (cls === "inf") low++;
         else if (cls === "sup") high++;
+        else if (cls === "missing") missing++;
         else medium++;
       });
-      setRecap({ zone, total: items.length, low, medium, high });
+      setRecap({ zone, total: items.length, low, medium, high, missing });
     },
     [appliedTheme, appliedBounds, polarity],
   );
@@ -514,6 +528,11 @@ const DataViz = () => {
   }, [theme]);
 
   useEffect(() => {
+    if (previousNiveauRef.current !== niveau) {
+      previousNiveauRef.current = niveau;
+      dataRequestIdRef.current += 1;
+      setLoading(false);
+    }
     if (appliedTheme === "0") return;
     setDataDren([]);
     setDataCisco([]);
@@ -557,6 +576,15 @@ const DataViz = () => {
       toast.error("Veuillez choisir un thème");
       return;
     }
+    const selectedIndicator = getIndicator(theme);
+    if (selectedIndicator && selectedIndicator.mappingStatus !== "ready") {
+      toast.warning(
+        selectedIndicator.mappingStatus === "ambiguous"
+          ? "La formule ou le libellé de cet indicateur nécessite un arbitrage."
+          : "Les données sources de cet indicateur seront raccordées pendant la phase backend.",
+      );
+    }
+    const requestId = ++dataRequestIdRef.current;
     setLoading(true);
     setDataEtab([]);
     setShowEtab(false);
@@ -566,12 +594,10 @@ const DataViz = () => {
     setRightPanelOpen(true);
     try {
       const niveauIndex = getNiveauNumber(niveau);
-      const [dren, cisco] = await Promise.all([
-        datavizApi.getDataDren(niveauIndex),
-        datavizApi.getDataCisco(niveauIndex),
-      ]);
+      const dren = await datavizApi.getDataDren(niveauIndex);
+      if (requestId !== dataRequestIdRef.current) return;
       setDataDren(dren || []);
-      setDataCisco(cisco || []);
+      setDataCisco([]);
       setAppliedTheme(theme);
       setAppliedBounds([...sliderValue]);
       setActiveLayer("dren");
@@ -579,10 +605,11 @@ const DataViz = () => {
       setDataCommune([]);
       toast.success("Carte thématique mise à jour");
     } catch (err) {
+      if (requestId !== dataRequestIdRef.current) return;
       console.error("Apply error:", err);
       toast.error("Erreur lors du chargement des données");
     } finally {
-      setLoading(false);
+      if (requestId === dataRequestIdRef.current) setLoading(false);
     }
   }, [theme, sliderValue, niveau]);
 
@@ -591,12 +618,14 @@ const DataViz = () => {
     async (code: number) => {
       if (appliedTheme === "0" || !drenGeoJson) return;
       const niveauIndex = getNiveauNumber(niveau);
+      const requestId = ++dataRequestIdRef.current;
       setLoading(true);
       try {
         const [layer, data] = await Promise.all([
           datavizApi.getLayerCommune(code),
           datavizApi.getDataCommune(code, niveauIndex),
         ]);
+        if (requestId !== dataRequestIdRef.current) return;
         if (layer?.[0]?.shape) setCommuneGeoJson(layer[0].shape);
         setDataCommune(data || []);
         setCommuneCode(code);
@@ -607,10 +636,11 @@ const DataViz = () => {
         setShowRecap(true);
         setRightPanelOpen(true);
       } catch (err) {
+        if (requestId !== dataRequestIdRef.current) return;
         console.error("Commune drill error:", err);
         toast.error("Erreur lors du chargement des communes");
       } finally {
-        setLoading(false);
+        if (requestId === dataRequestIdRef.current) setLoading(false);
       }
     },
     [appliedTheme, niveau, drenGeoJson],
@@ -624,6 +654,7 @@ const DataViz = () => {
     async (code: number) => {
       if (appliedTheme === "0" || !drenGeoJson) return;
       const niveauIndex = getNiveauNumber(niveau);
+      const requestId = ++dataRequestIdRef.current;
       setLoading(true);
       try {
         const [communeLayer, communeData, etabData] = await Promise.all([
@@ -631,6 +662,7 @@ const DataViz = () => {
           datavizApi.getDataCommune(code, niveauIndex),
           datavizApi.getDataEtab(code, niveauIndex),
         ]);
+        if (requestId !== dataRequestIdRef.current) return;
         if (communeLayer?.[0]?.shape) setCommuneGeoJson(communeLayer[0].shape);
         setDataCommune(communeData || []);
         setCommuneCode(code);
@@ -640,16 +672,19 @@ const DataViz = () => {
         setShowRecap(true);
         setRightPanelOpen(true);
       } catch (err) {
+        if (requestId !== dataRequestIdRef.current) return;
         console.error("Etab load error:", err);
         toast.error("Erreur lors du chargement des établissements");
       } finally {
-        setLoading(false);
+        if (requestId === dataRequestIdRef.current) setLoading(false);
       }
     },
     [appliedTheme, niveau, drenGeoJson],
   );
 
   const handleReset = useCallback(() => {
+    dataRequestIdRef.current += 1;
+    setLoading(false);
     setAppliedTheme("0");
     setTheme("0");
     setDataDren([]);
@@ -663,7 +698,7 @@ const DataViz = () => {
     setActiveLayer("dren");
     setContextMenu(null);
     setShowRecap(false);
-    setRecap({ zone: "", total: 0, low: 0, medium: 0, high: 0 });
+    setRecap({ zone: "", total: 0, low: 0, medium: 0, high: 0, missing: 0 });
   }, []);
 
   // ── Capture PNG : l'utilisateur trace la zone à télécharger ─────────────
@@ -884,12 +919,12 @@ const DataViz = () => {
 
     const buildRows = (
       raw: any[],
-    ): { rows: ExportRow[]; colorClasses: ("inf" | "entre" | "sup")[] } => {
+    ): { rows: ExportRow[]; colorClasses: ("inf" | "entre" | "sup" | "missing")[] } => {
       if (!raw?.length || appliedTheme === "0") {
         return { rows: [], colorClasses: [] };
       }
       const rows: ExportRow[] = [];
-      const colorClasses: ("inf" | "entre" | "sup")[] = [];
+      const colorClasses: ("inf" | "entre" | "sup" | "missing")[] = [];
 
       raw.forEach((row) => {
         const ratio = calculateRatio(row, appliedTheme);
@@ -933,7 +968,7 @@ const DataViz = () => {
       return { rows, colorClasses };
     };
 
-    let built: { rows: ExportRow[]; colorClasses: ("inf" | "entre" | "sup")[] };
+    let built: { rows: ExportRow[]; colorClasses: ("inf" | "entre" | "sup" | "missing")[] };
     let layerLabel: string;
 
     if (showEtab) {
@@ -964,6 +999,9 @@ const DataViz = () => {
         borne_max: maxBound,
         plage: `Plage : ${minBound} - ${maxBound}`,
         polarity: pol,
+        formula: ind?.formula ?? "",
+        mapping_status: ind?.mappingStatus ?? "pending",
+        mapping_note: ind?.mappingNote ?? null,
       },
     };
   }, [
@@ -990,10 +1028,27 @@ const DataViz = () => {
       return;
     }
     const headers = Object.keys(rows[0]);
+    const metadataRows: [string, unknown][] = [
+      ["Titre", meta.title],
+      ["Thème", meta.theme],
+      ["Code du thème", meta.theme_code],
+      ["Niveau", meta.niveau],
+      ["Code du niveau", meta.niveau_code],
+      ["Borne minimale", meta.borne_min],
+      ["Borne maximale", meta.borne_max],
+      ["Plage", meta.plage],
+      ["Polarité", meta.polarity],
+      ["Formule", meta.formula],
+      ["Statut du mapping", meta.mapping_status],
+      ["Note du mapping", meta.mapping_note],
+    ];
+    const csvCell = (value: unknown) =>
+      `"${String(value ?? "").replace(/"/g, '""')}"`;
     const csv = [
-      `"${meta.title}"`,
-      `"${meta.plage}"`,
-      headers.map((h) => `"${h}"`).join(";"),
+      ...metadataRows.map(([label, value]) =>
+        `${csvCell(label)};${csvCell(value)}`
+      ),
+      headers.map(csvCell).join(";"),
       ...rows.map((r) =>
         headers
           .map((h) => {
@@ -1023,6 +1078,29 @@ const DataViz = () => {
     try {
       const ExcelJS = await import("exceljs");
       const wb = new ExcelJS.Workbook();
+
+      const metadataWs = wb.addWorksheet("Métadonnées");
+      metadataWs.columns = [
+        { header: "Information", key: "label", width: 24 },
+        { header: "Valeur", key: "value", width: 60 },
+      ];
+      metadataWs.addRows([
+        { label: "Titre", value: meta.title },
+        { label: "Thème", value: meta.theme },
+        { label: "Code du thème", value: meta.theme_code },
+        { label: "Niveau", value: meta.niveau },
+        { label: "Code du niveau", value: meta.niveau_code },
+        { label: "Borne minimale", value: meta.borne_min },
+        { label: "Borne maximale", value: meta.borne_max },
+        { label: "Plage", value: meta.plage },
+        { label: "Polarité", value: meta.polarity },
+        { label: "Formule", value: meta.formula },
+        { label: "Statut du mapping", value: meta.mapping_status },
+        { label: "Note du mapping", value: meta.mapping_note ?? "" },
+      ]);
+      metadataWs.getRow(1).font = { bold: true };
+      metadataWs.views = [{ state: "frozen", ySplit: 1 }];
+
       const ws = wb.addWorksheet("Données", {
         views: [{ state: "frozen", ySplit: 3 }],
       });
@@ -1144,15 +1222,25 @@ const DataViz = () => {
         max: meta.borne_max,
       },
       polarite: meta.polarity,
+      formule: meta.formula,
+      statut_mapping: meta.mapping_status,
+      note_mapping: meta.mapping_note,
       code_couleur: {
         blanc: "inférieur (ou excellent selon polarité)",
         vert: "dans la plage",
         rouge: "supérieur (ou critique selon polarité)",
+        gris: "donnée indisponible ou non calculable",
       },
       donnees: rows.map((r, i) => ({
         ...r,
         _couleur:
-          colorClasses[i] === "inf" ? "blanc" : colorClasses[i] === "sup" ? "rouge" : "vert",
+          colorClasses[i] === "missing"
+            ? "non renseigné"
+            : colorClasses[i] === "inf"
+              ? "blanc"
+              : colorClasses[i] === "sup"
+                ? "rouge"
+                : "vert",
       })),
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
@@ -1211,13 +1299,19 @@ const DataViz = () => {
     [appliedTheme, handleShowEtab],
   );
 
+  // Indexation des statistiques : évite un .find() complet pour chaque polygone.
+  // Le coût passe ainsi d'une recherche répétée O(polygones × lignes) à O(lignes + polygones).
+  const drenStatsByCode = useMemo(() => indexByZoneCode(dataDren, "CODE_DREN"), [dataDren]);
+  const ciscoStatsByCode = useMemo(() => indexByZoneCode(dataCisco, "CODE_CISCO"), [dataCisco]);
+  const communeStatsByCode = useMemo(() => indexByZoneCode(dataCommune, "CODE_COMMUNE"), [dataCommune]);
+
   // ── Styles GeoJSON ──────────────────────────────────────────────────────
 
   const drenStyle = useCallback(
     (feature: any) => {
-      if (appliedTheme === "0" || !dataDren.length) return STYLE_DREN;
+      if (appliedTheme === "0" || !drenStatsByCode.size) return STYLE_DREN;
       const code = feature?.properties?.CODE;
-      const stat = dataDren.find((d: any) => parseInt(d.CODE_DREN) === parseInt(code));
+      const stat = drenStatsByCode.get(normalizeZoneCode(code));
       if (!stat) return STYLE_DREN;
       const ratio = calculateRatio(stat, appliedTheme);
       const color = getThematicColor(ratio, appliedBounds[0], appliedBounds[1], polarity);
@@ -1228,9 +1322,9 @@ const DataViz = () => {
 
   const ciscoStyle = useCallback(
     (feature: any) => {
-      if (appliedTheme === "0" || !dataCisco.length) return STYLE_CISCO;
+      if (appliedTheme === "0" || !ciscoStatsByCode.size) return STYLE_CISCO;
       const code = feature?.properties?.CODE;
-      const stat = dataCisco.find((d: any) => parseInt(d.CODE_CISCO) === parseInt(code));
+      const stat = ciscoStatsByCode.get(normalizeZoneCode(code));
       if (!stat) return STYLE_CISCO;
       const ratio = calculateRatio(stat, appliedTheme);
       const color = getThematicColor(ratio, appliedBounds[0], appliedBounds[1], polarity);
@@ -1256,9 +1350,9 @@ const DataViz = () => {
           weight: 1.5,
         };
       }
-      if (appliedTheme === "0" || !dataCommune.length) return STYLE_COMMUNE;
+      if (appliedTheme === "0" || !communeStatsByCode.size) return STYLE_COMMUNE;
       const code = feature?.properties?.CODE;
-      const stat = dataCommune.find((d: any) => parseInt(d.CODE_COMMUNE) === parseInt(code));
+      const stat = communeStatsByCode.get(normalizeZoneCode(code));
       if (!stat) return STYLE_COMMUNE;
       const ratio = calculateRatio(stat, appliedTheme);
       const color = getThematicColor(ratio, appliedBounds[0], appliedBounds[1], polarity);
@@ -1289,7 +1383,7 @@ const DataViz = () => {
     (feature: any, layer: L.Layer) => {
       const name = feature?.properties?.NAME || "";
       const code = feature?.properties?.CODE;
-      const stat = dataDren.find((d: any) => parseInt(d.CODE_DREN) === parseInt(code));
+      const stat = drenStatsByCode.get(normalizeZoneCode(code));
       const html = buildTooltipHtml({
         codeLabel: "Code_DREN",
         code,
@@ -1311,14 +1405,14 @@ const DataViz = () => {
         handleContextMenuOnLayer(parseInt(code), name, e);
       });
     },
-    [dataDren, appliedTheme, displayUnit, selectedThemeLabel, handleContextMenuOnLayer],
+    [drenStatsByCode, appliedTheme, displayUnit, selectedThemeLabel, handleContextMenuOnLayer],
   );
 
   const onEachCisco = useCallback(
     (feature: any, layer: L.Layer) => {
       const name = feature?.properties?.NAME || "";
       const code = feature?.properties?.CODE;
-      const stat = dataCisco.find((d: any) => parseInt(d.CODE_CISCO) === parseInt(code));
+      const stat = ciscoStatsByCode.get(normalizeZoneCode(code));
       const html = buildTooltipHtml({
         codeLabel: "Code_CISCO",
         code,
@@ -1340,7 +1434,7 @@ const DataViz = () => {
         handleContextMenuOnLayer(parseInt(code), name, e);
       });
     },
-    [dataCisco, appliedTheme, displayUnit, selectedThemeLabel, handleContextMenuOnLayer],
+    [ciscoStatsByCode, appliedTheme, displayUnit, selectedThemeLabel, handleContextMenuOnLayer],
   );
 
   const onEachCommune = useCallback(
@@ -1364,7 +1458,7 @@ const DataViz = () => {
 
       const name = feature?.properties?.NAME || "";
       const code = feature?.properties?.CODE;
-      const stat = dataCommune.find((d: any) => parseInt(d.CODE_COMMUNE) === parseInt(code));
+      const stat = communeStatsByCode.get(normalizeZoneCode(code));
       const html = buildTooltipHtml({
         codeLabel: "Code_COMMUNE",
         code,
@@ -1383,7 +1477,7 @@ const DataViz = () => {
         className: "dataviz-tooltip",
       });
     },
-    [dataCommune, appliedTheme, displayUnit, selectedThemeLabel, showEtab],
+    [communeStatsByCode, appliedTheme, displayUnit, selectedThemeLabel, showEtab],
   );
 
   const drenKey = useMemo(
@@ -1460,6 +1554,7 @@ const DataViz = () => {
     let low = 0;
     let medium = 0;
     let high = 0;
+    let missing = 0;
     let total = 0;
     dataEtab.forEach((etab: any) => {
       if (isNaN(parseFloat(etab.latitude)) || isNaN(parseFloat(etab.longitude))) return;
@@ -1468,9 +1563,10 @@ const DataViz = () => {
       const cls = classifyRatio(ratio, appliedBounds[0], appliedBounds[1], polarity);
       if (cls === "inf") low++;
       else if (cls === "sup") high++;
+      else if (cls === "missing") missing++;
       else medium++;
     });
-    setRecap({ zone: "ETABLISSEMENTS", total, low, medium, high });
+    setRecap({ zone: "ETABLISSEMENTS", total, low, medium, high, missing });
   }, [showEtab, dataEtab, appliedTheme, appliedBounds, polarity]);
 
   const activeBoundsData =
@@ -1482,22 +1578,99 @@ const DataViz = () => {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="px-4 py-2 bg-muted/50 border-b border-border">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <span className="text-sm font-semibold text-muted-foreground">
-            CARTE THEMATIQUE DES INDICATEURS
-          </span>
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setShowDownloadModal(true)}
-              disabled={loading}
+      <div className="sticky top-0 z-30 shrink-0 border-b border-border bg-card/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-card/80">
+        <div className="px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              <img
+                src={logoMen}
+                alt="Ministère de l'Éducation Nationale"
+                className="h-10 w-10 shrink-0 rounded-md bg-white p-0.5 object-contain ring-1 ring-border"
+              />
+              <img
+                src={logoDpe}
+                alt="Direction de la Planification de l'Éducation"
+                className="h-10 w-10 shrink-0 rounded-md bg-white p-0.5 object-contain ring-1 ring-border"
+              />
+              <div className="min-w-0">
+                <h1 className="text-base font-bold leading-tight text-foreground sm:text-lg">
+                  Carte thématique des indicateurs
+                </h1>
+                <p className="text-xs text-muted-foreground">
+                  Ministère de l'Éducation Nationale — Direction de la Planification de l'Éducation
+                </p>
+              </div>
+            </div>
+
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowDownloadModal(true)}
+                disabled={loading}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Télécharger
+              </Button>
+              <DataActionsBar table="sig_etablissement" tableLabel="SIG Établissement" compact />
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+            <nav
+              className="inline-flex flex-wrap items-center overflow-hidden rounded-md border border-border"
+              aria-label="Niveau scolaire"
             >
-              <Download className="w-4 h-4 mr-2" />
-              Télécharger
-            </Button>
-            <DataActionsBar table="sig_etablissement" tableLabel="SIG Établissement" compact />
+              {NIVEAUX.map((n) => {
+                const active = niveau === n.value;
+
+                return (
+                  <button
+                    key={n.value}
+                    type="button"
+                    onClick={() => setNiveau(n.value as Niveau)}
+                    aria-current={active ? "page" : undefined}
+                    className={[
+                      "inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide transition-colors",
+                      active
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                    ].join(" ")}
+                  >
+                    <SchoolLevelIcon level={n.value as Niveau} className="h-3 w-3" />
+                    {n.label}
+                  </button>
+                );
+              })}
+            </nav>
+
+            {theme !== "0" && (
+              <div
+                className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[11px] text-muted-foreground"
+                aria-label="Filtres sélectionnés"
+              >
+                <span className="font-semibold text-foreground">
+                  Filtres sélectionnés :
+                </span>
+                <span>
+                  Niveau : <strong className="font-semibold text-foreground">
+                    {NIVEAUX.find((n) => n.value === niveau)?.label || niveau}
+                  </strong>
+                </span>
+                <span
+                  className="max-w-[240px] truncate"
+                  title={getIndicator(theme)?.label || "Indicateur"}
+                >
+                  Thème : <strong className="font-semibold text-foreground">
+                    {getIndicator(theme)?.label || "Indicateur"}
+                  </strong>
+                </span>
+                <span>
+                  Plage : <strong className="font-semibold text-foreground tabular-nums">{sliderValue[0]}</strong>-
+                  <strong className="font-semibold text-foreground tabular-nums">{sliderValue[1]}</strong>
+                </span>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1506,12 +1679,13 @@ const DataViz = () => {
         {/* ═══ PANNEAU GAUCHE : Filtres + Guides ═══ */}
         <div
           data-sidebar-panel
-          className={
-            (sidebarOpen ? "w-[85vw] max-w-[320px] " : "w-0 ") +
-            "shrink-0 h-full bg-background border-r border-border overflow-hidden transition-[width] duration-300 ease-in-out"
-          }
+          className={`sig-side-panel sig-side-panel-left shrink-0 h-full bg-background border-r border-border overflow-hidden transition-[width,flex-basis] duration-300 ease-in-out motion-reduce:transition-none ${
+            sidebarOpen ? "sig-side-panel-open" : "sig-side-panel-closed"
+          }`}
         >
-          <div className="w-[85vw] max-w-[320px] h-full space-y-3 overflow-y-auto p-3">
+          <div className={`sig-side-panel-content sig-side-panel-content-left h-full space-y-3 overflow-y-auto overflow-x-hidden overscroll-contain p-3 transition-transform duration-300 ease-in-out motion-reduce:transition-none ${
+            sidebarOpen ? "translate-x-0" : "-translate-x-full"
+          }`}>
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2">
@@ -1550,6 +1724,13 @@ const DataViz = () => {
                       ))}
                     </SelectContent>
                   </Select>
+                  {theme !== "0" && getIndicator(theme)?.mappingNote && (
+                    <div className="rounded-md border bg-muted/30 p-2 text-[11px] leading-relaxed">
+                      <p className="text-amber-700 dark:text-amber-400">
+                        {getIndicator(theme)?.mappingNote}
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 {theme !== "0" && (
@@ -1562,13 +1743,43 @@ const DataViz = () => {
                       value={sliderValue}
                       onValueChange={(v) => setSliderValue(v as [number, number])}
                     />
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>
-                        Min: <strong className="text-foreground">{sliderValue[0]}</strong>
-                      </span>
-                      <span>
-                        Max: <strong className="text-foreground">{sliderValue[1]}</strong>
-                      </span>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label htmlFor="dataviz-min" className="text-xs text-muted-foreground">MIN</Label>
+                        <Input
+                          id="dataviz-min"
+                          type="number"
+                          min={sliderRange[0]}
+                          max={sliderValue[1]}
+                          step={1}
+                          value={sliderValue[0]}
+                          onChange={(event) => {
+                            const parsed = Number(event.target.value);
+                            if (!Number.isFinite(parsed)) return;
+                            const nextMin = Math.min(sliderValue[1], Math.max(sliderRange[0], Math.round(parsed)));
+                            setSliderValue([nextMin, sliderValue[1]]);
+                          }}
+                          className="h-8 text-sm tabular-nums"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor="dataviz-max" className="text-xs text-muted-foreground">MAX</Label>
+                        <Input
+                          id="dataviz-max"
+                          type="number"
+                          min={sliderValue[0]}
+                          max={sliderRange[1]}
+                          step={1}
+                          value={sliderValue[1]}
+                          onChange={(event) => {
+                            const parsed = Number(event.target.value);
+                            if (!Number.isFinite(parsed)) return;
+                            const nextMax = Math.max(sliderValue[0], Math.min(sliderRange[1], Math.round(parsed)));
+                            setSliderValue([sliderValue[0], nextMax]);
+                          }}
+                          className="h-8 text-sm tabular-nums"
+                        />
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1615,6 +1826,8 @@ const DataViz = () => {
                     <Switch
                       checked={activeLayer === "dren" && !showEtab}
                       onCheckedChange={() => {
+                        dataRequestIdRef.current += 1;
+                        setLoading(false);
                         setActiveLayer("dren");
                         setCommuneGeoJson(null);
                         setShowEtab(false);
@@ -1627,7 +1840,32 @@ const DataViz = () => {
                     <Label className="text-xs">CISCO</Label>
                     <Switch
                       checked={activeLayer === "cisco" && !showEtab}
-                      onCheckedChange={() => {
+                      onCheckedChange={async () => {
+                        const requestId = ++dataRequestIdRef.current;
+                        setLoading(true);
+                        try {
+                          const [ciscoLayer, ciscoData] = await Promise.all([
+                            ciscoGeoJson ? Promise.resolve(null) : datavizApi.getLayerCisco(),
+                            dataCisco.length ? Promise.resolve(dataCisco) : datavizApi.getDataCisco(getNiveauNumber(niveau)),
+                          ]);
+                          if (requestId !== dataRequestIdRef.current) return;
+                          if (!ciscoGeoJson && !ciscoLayer?.[0]?.shape) {
+                            toast.error("Aucune géométrie CISCO reçue depuis le serveur");
+                            return;
+                          }
+                          if (!ciscoGeoJson && ciscoLayer?.[0]?.shape) {
+                            setCiscoGeoJson(ciscoLayer[0].shape);
+                          }
+                          setDataCisco(ciscoData || []);
+                        } catch (err) {
+                          if (requestId !== dataRequestIdRef.current) return;
+                          console.error("Cisco layer/data load error:", err);
+                          toast.error("Erreur lors du chargement des données CISCO");
+                          return;
+                        } finally {
+                          if (requestId === dataRequestIdRef.current) setLoading(false);
+                        }
+                        if (requestId !== dataRequestIdRef.current) return;
                         setActiveLayer("cisco");
                         setCommuneGeoJson(null);
                         setShowEtab(false);
@@ -1675,8 +1913,8 @@ const DataViz = () => {
           type="button"
           onClick={() => setSidebarOpen((v) => !v)}
           title={sidebarOpen ? "Réduire le panneau gauche" : "Développer le panneau gauche"}
-          className="absolute top-1/2 -translate-y-1/2 z-[1500] bg-background border shadow-md rounded-full w-7 h-7 flex items-center justify-center hover:bg-muted transition-[left] duration-300 ease-in-out"
-          style={{ left: sidebarOpen ? "clamp(0px, 85vw, 320px)" : "0px" }}
+          className="absolute top-1/2 -translate-y-1/2 z-[1500] bg-background border shadow-md rounded-full w-7 h-7 flex items-center justify-center hover:bg-muted transition-[left] duration-300 ease-in-out motion-reduce:transition-none"
+          style={{ left: sidebarOpen ? "var(--sig-left-panel-open-width)" : "0px" }}
         >
           {sidebarOpen ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
         </button>
@@ -1703,7 +1941,7 @@ const DataViz = () => {
                   handleContextMenuCommune(contextMenu.code, contextMenu.name);
                 }}
               >
-                <Map className="w-4 h-4 text-blue-600" />
+                <MapIcon className="w-4 h-4 text-blue-600" />
                 <span>Carte par Commune</span>
               </button>
               <hr className="my-0.5 border-gray-200" />
@@ -1929,8 +2167,8 @@ const DataViz = () => {
           type="button"
           onClick={() => setRightPanelOpen((v) => !v)}
           title={rightPanelOpen ? "Réduire le panneau droit" : "Développer le panneau droit"}
-          className="absolute top-1/2 -translate-y-1/2 z-[1500] bg-background border shadow-md rounded-full w-7 h-7 flex items-center justify-center hover:bg-muted transition-[right] duration-300 ease-in-out"
-          style={{ right: rightPanelOpen ? "clamp(0px, 85vw, 320px)" : "0px" }}
+          className="absolute top-1/2 -translate-y-1/2 z-[1500] bg-background border shadow-md rounded-full w-7 h-7 flex items-center justify-center hover:bg-muted transition-[right] duration-300 ease-in-out motion-reduce:transition-none"
+          style={{ right: rightPanelOpen ? "var(--sig-right-panel-open-width)" : "0px" }}
         >
           {rightPanelOpen ? (
             <ChevronRight className="w-4 h-4" />
@@ -1942,12 +2180,13 @@ const DataViz = () => {
         {/* ═══ PANNEAU DROIT : Légende + option noms + Récapitulatif ═══ */}
         <div
           data-right-panel
-          className={
-            (rightPanelOpen ? "w-[85vw] max-w-[320px] " : "w-0 ") +
-            "shrink-0 h-full bg-background border-l border-border overflow-hidden transition-[width] duration-300 ease-in-out"
-          }
+          className={`sig-side-panel sig-side-panel-right shrink-0 h-full bg-background border-l border-border overflow-hidden transition-[width,flex-basis] duration-300 ease-in-out motion-reduce:transition-none ${
+            rightPanelOpen ? "sig-side-panel-open" : "sig-side-panel-closed"
+          }`}
         >
-          <div className="w-[85vw] max-w-[320px] h-full space-y-3 overflow-y-auto p-3">
+          <div className={`sig-side-panel-content sig-side-panel-content-right h-full space-y-3 overflow-y-auto overflow-x-hidden overscroll-contain p-3 transition-transform duration-300 ease-in-out motion-reduce:transition-none ${
+            rightPanelOpen ? "translate-x-0" : "translate-x-full"
+          }`}>
             {/* Légende */}
             {appliedTheme !== "0" && legendLabels ? (
               <Card>
@@ -1977,6 +2216,12 @@ const DataViz = () => {
                       {legendLabels.red}
                     </span>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-4 h-3 shrink-0" style={{ backgroundColor: "#9CA3AF" }} />
+                    <span className="flex-1 text-right tabular-nums leading-tight">
+                      {legendLabels.missing}
+                    </span>
+                  </div>
                   <div className="border-t pt-2 mt-2 space-y-1">
                     <div className="flex items-center gap-2">
                       <span className="w-4 h-3 shrink-0" style={{ backgroundColor: "#4e73df" }} />
@@ -1992,10 +2237,7 @@ const DataViz = () => {
                     </div>
                     {showEtab && (
                       <div className="flex items-center gap-2 pt-1">
-                        <i
-                          className={NIVEAU_FA[niveau]}
-                          style={{ color: "#00AA00", fontSize: 14 }}
-                        />
+                        <SchoolLevelIcon level={niveau} className="h-4 w-4 text-[#00AA00]" />
                         <span>
                           Établissement ({NIVEAUX.find((n) => n.value === niveau)?.label})
                         </span>
@@ -2063,6 +2305,11 @@ const DataViz = () => {
                                 : "Supérieur / rouge",
                             color: "#FF0000",
                           },
+                          {
+                            value: "missing" as const,
+                            label: "Donnée indisponible / gris",
+                            color: "#9CA3AF",
+                          },
                         ] as const
                       ).map((opt) => (
                         <label
@@ -2089,7 +2336,9 @@ const DataViz = () => {
                                 ? recap.low
                                 : opt.value === "entre"
                                   ? recap.medium
-                                  : recap.high}
+                                  : opt.value === "sup"
+                                    ? recap.high
+                                    : recap.missing}
                             </span>
                           )}
                           {opt.value === "all" && (
@@ -2140,6 +2389,11 @@ const DataViz = () => {
                       <span className="w-3 h-3 shrink-0" style={{ backgroundColor: "#FF0000" }} />
                       <span className="flex-1">Supérieur</span>
                       <span className="tabular-nums font-semibold">{recap.high}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="w-3 h-3 shrink-0" style={{ backgroundColor: "#9CA3AF" }} />
+                      <span className="flex-1">Donnée indisponible</span>
+                      <span className="tabular-nums font-semibold">{recap.missing}</span>
                     </div>
                   </div>
                 </CardContent>
@@ -2232,7 +2486,7 @@ const DataViz = () => {
                 onClick={startMapCapture}
                 variant="default"
                 className="w-full h-16 gap-2"
-                disabled={loading}
+                disabled={loading || captureBusy}
               >
                 <FileImage className="h-5 w-5" />
                 Choisir une zone à capturer (PNG)

@@ -1,27 +1,101 @@
-export type EtablissementIconType = "prescolaire" | "primaire" | "college" | "lycee" | "village";
+export type SchoolLevel = "prescolaire" | "primaire" | "college" | "lycee";
+export type EtablissementIconType = SchoolLevel | "village";
 
-/**
- * Convention visuelle unique (2026) : TOUS les établissements scolaires
- * utilisent le même pictogramme de bâtiment (`fas fa-school`). La distinction
- * entre les niveaux se fait uniquement par la couleur (voir
- * ETABLISSEMENT_ICON_COLORS). Les villages, eux, sont représentés par un
- * simple point (`fas fa-circle`).
- */
-export const ETABLISSEMENT_ICON_CLASSES: Record<EtablissementIconType, string> = {
-  prescolaire: "fas fa-school",
-  primaire: "fas fa-school",
-  college: "fas fa-school",
-  lycee: "fas fa-school",
-  village: "fas fa-circle",
+export const SCHOOL_LEVELS: readonly SchoolLevel[] = [
+  "prescolaire",
+  "primaire",
+  "college",
+  "lycee",
+];
+
+/** Silhouettes scolaires pleines, dessinées pour rester lisibles en 24 × 24. */
+export const SCHOOL_LEVEL_ICON_PATHS: Record<SchoolLevel, string> = {
+  // Préscolaire : volume doux, toit arrondi, fenêtres et entrée accueillante.
+  prescolaire:
+    "M22.43 17.23 L22.61 17.47 L22.55 17.64 L22.73 17.82 L22.37 18.17 L21.73 18.05 L21.73 17.94 L22.26 17.58ZM21.26 16.23 L20.79 16.53 L20.61 17.23 L20.79 17.64 L21.32 18.00 L20.49 18.29 L19.96 18.70 L19.61 19.11 L19.61 19.41 L19.79 19.58 L19.96 19.58 L20.32 19.29 L20.43 19.35 L19.85 20.76 L20.55 20.99 L20.61 21.76 L20.85 21.87 L21.08 21.82 L21.26 21.58 L21.26 21.05 L21.55 20.99 L21.67 21.64 L22.08 21.87 L22.37 21.58 L22.37 20.99 L22.96 20.88 L23.14 20.70 L22.43 18.99 L23.08 18.41 L23.43 17.88 L23.49 17.53 L23.31 17.29 L22.96 17.41 L22.84 17.00 L22.73 16.88 L22.37 16.88 L22.02 16.35ZM17.20 16.23 L16.85 16.47 L16.61 16.94 L16.67 17.41 L16.85 17.70 L17.20 17.94 L17.14 18.05 L16.44 17.94 L15.85 17.29 L15.56 17.35 L15.44 17.70 L15.73 18.23 L16.44 18.82 L16.26 21.64 L16.61 21.87 L16.85 21.82 L17.08 21.52 L17.20 20.70 L17.44 20.52 L17.61 20.82 L17.79 21.70 L18.20 21.87 L18.55 21.58 L18.44 18.88 L19.26 18.17 L19.55 17.58 L19.32 17.29 L19.14 17.29 L18.55 17.94 L17.73 18.05 L17.67 18.00 L18.08 17.76 L18.32 17.47 L18.38 16.88 L18.02 16.35 L17.79 16.23ZM4.92 15.88 L4.98 17.58 L7.33 17.64 L7.44 17.53 L7.44 15.88 L7.33 15.76 L5.03 15.76ZM16.14 13.65 L16.20 15.47 L18.55 15.47 L18.67 15.35 L18.67 13.76 L18.50 13.53 L16.32 13.53ZM4.92 13.70 L4.98 15.41 L6.86 15.47 L7.44 15.35 L7.44 13.65 L7.33 13.53 L5.09 13.53ZM15.97 2.95 L14.91 3.07 L13.26 2.42 L12.50 2.48 L12.15 2.07 L11.79 2.13 L11.56 2.54 L11.62 5.48 L11.50 5.59 L9.62 5.77 L7.09 6.59 L5.92 7.18 L4.27 8.24 L3.04 9.24 L1.98 10.35 L1.68 11.06 L1.74 11.71 L2.04 12.18 L2.68 12.65 L2.68 19.11 L2.57 19.23 L1.04 19.23 L0.74 19.41 L0.51 19.76 L0.45 20.17 L0.63 20.64 L0.86 20.88 L1.16 20.99 L14.79 20.99 L14.91 20.88 L14.91 19.41 L14.79 19.23 L14.44 19.11 L14.38 14.29 L13.91 13.35 L13.38 12.82 L12.91 12.53 L12.15 12.29 L11.44 12.29 L10.50 12.59 L10.15 12.82 L9.33 13.76 L9.03 14.76 L8.97 19.23 L3.86 19.23 L3.74 19.11 L3.74 12.71 L3.86 12.59 L4.74 12.47 L5.62 12.18 L6.62 11.65 L8.15 10.59 L9.68 9.94 L11.27 9.65 L12.32 9.65 L13.68 9.88 L15.26 10.53 L17.61 12.06 L18.79 12.47 L19.67 12.59 L19.73 16.23 L19.85 16.35 L20.26 16.35 L20.38 16.11 L20.85 15.76 L20.85 12.59 L21.61 12.00 L21.79 11.59 L21.79 10.88 L21.49 10.30 L20.61 9.35 L19.49 8.41 L17.50 7.12 L16.03 6.42 L14.67 5.95 L12.26 5.53 L12.26 4.77 L12.56 4.54 L13.26 4.54 L13.91 4.77 L14.67 4.77 L15.38 4.42 L16.03 3.54 L16.09 3.07Z",
+
+  // Primaire : école classique à deux pans et porte centrale.
+  primaire:
+    "M8.62 21.36 L8.81 21.17 L15.19 21.17 L15.31 21.56 L15.19 21.68 L8.75 21.68ZM18.40 17.05 L19.75 16.99 L19.95 17.12 L19.95 18.98 L19.82 19.11 L18.34 19.05ZM15.96 16.99 L17.24 16.99 L17.44 17.12 L17.37 19.11 L15.83 19.05 L15.83 17.12ZM6.56 17.05 L7.59 16.99 L8.11 17.12 L8.04 19.11 L6.63 19.11 L6.50 18.98ZM5.53 17.05 L5.60 18.98 L5.47 19.11 L4.12 19.11 L3.99 18.98 L3.99 17.12 L5.02 16.99ZM10.94 15.51 L11.65 15.25 L12.29 15.25 L13.00 15.51 L13.64 16.09 L13.96 16.86 L13.90 20.91 L9.97 20.85 L9.97 16.79 L10.29 16.09ZM18.40 14.03 L19.82 14.03 L19.95 14.16 L19.88 16.09 L18.34 16.02ZM15.96 14.03 L17.44 14.09 L17.37 16.09 L15.83 16.02 L15.83 14.16ZM6.63 14.03 L8.11 14.09 L8.04 16.09 L6.63 16.09 L6.50 15.96 L6.50 14.16ZM4.12 14.03 L5.47 14.03 L5.60 14.16 L5.60 15.96 L5.47 16.09 L3.99 16.02 L3.99 14.16ZM11.97 10.29 L11.84 10.42 L11.84 11.32 L11.65 11.52 L11.65 11.71 L11.90 12.03 L11.90 12.74 L12.03 12.74 L12.03 12.03 L12.48 11.71 L12.48 11.52 L12.29 11.52 L12.03 11.26 L12.10 10.42ZM11.52 9.78 L12.42 9.78 L12.93 9.97 L13.58 10.62 L13.83 11.26 L13.83 11.97 L13.45 12.80 L12.93 13.25 L12.23 13.51 L11.65 13.51 L11.00 13.25 L10.49 12.80 L10.10 12.03 L10.10 11.20 L10.36 10.62 L10.94 10.04ZM2.19 13.13 L2.19 20.85 L1.29 20.91 L1.09 21.04 L1.03 22.20 L1.22 22.39 L22.65 22.39 L22.91 22.13 L22.84 21.10 L22.58 20.91 L21.75 20.85 L21.75 13.13 L21.49 12.87 L12.03 7.40 L8.62 9.27ZM0.45 11.65 L0.58 12.16 L0.90 12.48 L1.48 12.55 L11.97 6.43 L16.92 9.20 L22.52 12.55 L23.04 12.48 L23.29 12.29 L23.49 11.90 L23.42 11.32 L22.78 10.75 L15.70 6.56 L12.29 4.70 L12.29 4.31 L12.55 4.12 L13.25 4.12 L13.90 4.38 L14.73 4.38 L15.25 4.18 L15.89 3.60 L16.28 2.64 L16.09 2.44 L14.80 2.57 L13.32 1.93 L12.35 1.99 L12.03 1.54 L11.58 1.67 L11.45 1.87 L11.39 4.89 L7.72 6.88 L0.90 10.94 L0.58 11.26Z",
+
+  // Collège : bloc à trois niveaux, avec fenêtres répétées et entrée centrale.
+  college:
+    "M7.91 21.29 L8.09 21.11 L15.85 21.11 L16.03 21.29 L16.03 21.47 L15.49 21.66 L8.27 21.66 L8.03 21.59ZM12.42 16.66 L14.29 16.66 L14.41 16.78 L14.35 20.69 L12.30 20.63 L12.30 16.78ZM9.59 16.66 L11.52 16.66 L11.64 16.78 L11.64 20.57 L11.52 20.69 L9.59 20.69 L9.47 20.57 L9.47 16.84ZM19.52 16.18 L20.96 16.18 L21.08 16.30 L21.08 18.47 L20.96 18.59 L19.52 18.59 L19.40 18.47 L19.40 16.36ZM16.93 16.18 L18.44 16.24 L18.50 18.47 L18.38 18.59 L16.93 18.59 L16.81 18.47 L16.81 16.30ZM5.56 16.18 L6.95 16.18 L7.13 16.36 L7.13 18.47 L7.01 18.59 L5.56 18.59 L5.44 18.47 L5.44 16.30ZM2.98 16.18 L4.36 16.18 L4.48 16.30 L4.48 18.47 L4.36 18.59 L2.98 18.59 L2.80 18.41 L2.86 16.30ZM19.52 12.21 L20.96 12.21 L21.08 12.33 L21.02 14.62 L19.58 14.68 L19.40 14.50 L19.40 12.39ZM16.93 12.21 L18.44 12.27 L18.50 14.50 L18.32 14.68 L16.99 14.68 L16.81 14.56 L16.81 12.33ZM12.84 12.21 L14.41 12.27 L14.47 14.50 L14.29 14.68 L12.84 14.68 L12.72 14.56 L12.72 12.33ZM9.47 12.21 L11.04 12.27 L11.10 14.50 L10.98 14.62 L9.53 14.68 L9.35 14.56 L9.35 12.33ZM5.56 12.21 L7.07 12.27 L7.13 14.50 L7.01 14.62 L5.62 14.68 L5.44 14.56 L5.44 12.33ZM2.98 12.21 L4.36 12.21 L4.48 12.33 L4.42 14.62 L2.98 14.68 L2.86 14.56 L2.80 12.45ZM12.00 7.58 L11.82 7.82 L11.88 9.26 L13.20 9.32 L13.32 9.20 L13.26 8.96 L12.30 8.84 L12.30 7.70ZM11.70 7.04 L12.54 7.04 L13.20 7.34 L13.80 7.94 L14.11 8.66 L14.11 9.32 L13.74 10.17 L13.26 10.65 L12.48 11.01 L11.64 11.01 L10.86 10.65 L10.32 10.04 L10.07 9.44 L10.07 8.60 L10.32 8.00 L10.80 7.46ZM0.99 9.80 L0.93 10.23 L1.05 10.29 L7.01 10.23 L7.19 10.47 L6.95 10.77 L1.47 10.77 L1.35 10.89 L1.35 20.81 L0.51 20.99 L0.45 22.08 L0.63 22.26 L23.31 22.26 L23.49 22.08 L23.43 20.99 L23.25 20.87 L22.71 20.87 L22.59 20.75 L22.59 10.83 L16.99 10.77 L16.81 10.65 L16.81 10.35 L16.93 10.23 L23.01 10.23 L23.01 9.86 L21.62 8.06 L21.26 7.94 L16.87 7.94 L16.75 7.10 L12.36 5.05 L11.82 5.05 L7.31 7.04 L7.13 7.28 L7.07 7.94 L2.44 8.00 L2.07 8.30ZM11.76 4.87 L12.06 4.81 L12.36 4.93 L12.42 4.39 L12.78 4.15 L13.38 4.15 L14.29 4.45 L15.25 4.27 L15.55 4.09 L16.15 3.37 L16.27 2.65 L16.09 2.53 L14.83 2.65 L13.44 2.04 L12.54 2.16 L12.48 1.86 L12.06 1.68 L11.76 1.98Z",
+
+  // Lycée : façade institutionnelle, fronton et entrée centrale monumentale.
+  lycee:
+    "M4.46 21.99 L4.51 22.55 L19.43 22.49 L19.38 21.94ZM5.29 20.88 L5.35 21.43 L18.48 21.43 L18.60 21.32 L18.60 20.99 L18.48 20.82ZM19.10 20.54 L19.15 21.43 L19.65 21.49 L19.88 21.71 L23.27 21.71 L23.44 21.55 L23.44 20.49 L23.33 20.38 L19.21 20.38ZM0.45 20.49 L0.45 21.55 L0.62 21.71 L4.01 21.71 L4.35 21.43 L4.68 21.43 L4.68 20.38 L0.56 20.38ZM6.18 19.82 L6.24 20.32 L17.59 20.27 L17.54 19.71 L6.29 19.71ZM21.05 16.43 L21.99 16.43 L22.10 16.54 L22.10 18.21 L21.94 18.37 L21.10 18.37 L20.93 18.26 L20.93 16.54ZM3.73 16.43 L4.68 16.43 L4.79 16.54 L4.79 18.26 L4.68 18.37 L3.73 18.37 L3.62 18.21 L3.62 16.54ZM20.10 16.37 L20.27 16.48 L20.27 18.26 L20.15 18.37 L19.21 18.37 L19.10 18.21 L19.10 16.54 L19.21 16.43ZM1.90 16.43 L2.79 16.37 L3.01 16.54 L3.01 18.21 L2.84 18.37 L1.95 18.37 L1.79 18.21 L1.79 16.54ZM21.05 13.59 L21.99 13.59 L22.10 13.70 L22.10 15.42 L21.99 15.53 L21.05 15.53 L20.93 15.42 L20.93 13.70ZM19.21 13.59 L20.15 13.59 L20.27 13.70 L20.27 15.42 L20.15 15.53 L19.21 15.53 L19.10 15.42 L19.10 13.75ZM3.73 13.59 L4.68 13.59 L4.79 13.70 L4.79 15.42 L4.68 15.53 L3.73 15.53 L3.62 15.42 L3.62 13.75ZM1.95 13.59 L2.90 13.59 L3.01 13.75 L3.01 15.37 L2.90 15.53 L1.90 15.53 L1.79 15.37 L1.79 13.75ZM15.59 11.25 L15.59 11.42 L15.31 11.64 L15.31 18.60 L15.53 18.71 L15.59 18.99 L16.59 18.99 L16.65 18.76 L16.93 18.54 L16.93 11.69 L16.65 11.47 L16.65 11.25ZM12.75 11.25 L12.70 11.53 L12.47 11.64 L12.47 18.54 L12.75 18.76 L12.75 18.99 L13.75 18.99 L13.81 18.76 L14.09 18.60 L14.09 11.64 L13.81 11.42 L13.81 11.25ZM9.97 11.25 L9.97 11.42 L9.69 11.64 L9.69 18.60 L9.91 18.76 L9.97 18.99 L10.97 18.99 L11.30 18.43 L11.30 11.92 L11.03 11.25ZM7.19 11.25 L7.13 11.47 L6.85 11.64 L6.85 18.54 L7.13 18.76 L7.19 18.99 L8.19 18.99 L8.24 18.71 L8.47 18.60 L8.47 11.64 L8.24 11.47 L8.19 11.25ZM18.87 9.91 L18.82 11.14 L18.43 11.25 L18.37 11.47 L18.10 11.69 L18.10 18.54 L18.37 18.76 L18.37 18.93 L18.65 19.10 L18.65 19.88 L22.99 19.88 L23.10 19.76 L23.05 12.53 L19.15 12.47 L18.99 12.31 L18.99 12.14 L19.15 11.97 L23.44 11.97 L23.49 11.69 L22.16 9.97 L21.71 9.86ZM5.40 9.91 L5.46 10.36 L18.48 10.30 L18.43 9.86ZM1.90 9.91 L1.51 10.19 L0.45 11.69 L0.51 11.97 L4.68 11.97 L4.90 12.25 L4.68 12.47 L0.95 12.47 L0.84 12.58 L0.84 19.82 L5.18 19.88 L5.24 19.04 L5.40 18.93 L5.40 18.76 L5.68 18.60 L5.68 11.64 L5.46 11.53 L5.40 11.25 L5.01 11.08 L5.01 9.91 L4.90 9.86ZM10.58 7.80 L10.80 7.74 L11.81 8.19 L12.03 8.19 L13.20 7.74 L13.25 8.63 L13.03 8.86 L12.25 9.13 L11.86 9.19 L11.36 9.08 L10.58 8.69ZM9.80 7.07 L11.69 6.18 L12.14 6.18 L13.92 6.96 L14.09 7.13 L13.98 7.24 L13.98 8.19 L14.09 8.58 L13.98 8.74 L13.70 8.74 L13.59 8.63 L13.70 7.35 L12.25 7.96 L11.81 8.02 L9.86 7.24ZM4.62 8.86 L4.62 9.13 L4.90 9.41 L18.93 9.41 L19.21 9.19 L19.21 8.86 L18.93 8.52 L12.75 4.85 L12.08 4.57 L11.58 4.62 L4.85 8.58ZM11.64 4.29 L12.25 4.29 L12.25 3.85 L12.64 3.62 L13.03 3.62 L13.86 3.90 L14.76 3.79 L15.42 3.29 L15.70 2.84 L15.81 2.34 L15.65 2.18 L14.64 2.29 L13.64 1.84 L12.97 1.67 L12.42 1.79 L12.19 1.40 L11.86 1.40 L11.64 1.62Z",
 };
 
-/** Couleur distinctive par niveau — seul élément différenciant les niveaux. */
+const VILLAGE_ICON_PATH =
+  "M1 11.2 6.2 6.8l5.1 4.4V21H1zM7.1 8.9 12 4.5l5 4.4V21H7.1zM14 11.2l4.3-3.8 4.7 3.8V21H14z";
+
+const SCHOOL_LEVEL_ALIASES: Record<string, SchoolLevel> = {
+  prescolaire: "prescolaire",
+  presco: "prescolaire",
+  n0: "prescolaire",
+  primaire: "primaire",
+  n1: "primaire",
+  college: "college",
+  n2: "college",
+  lycee: "lycee",
+  n3: "lycee",
+};
+
+export const normalizeSchoolLevel = (value: unknown): SchoolLevel | null => {
+  if (typeof value !== "string") return null;
+  const key = value.trim().toLocaleLowerCase("fr-FR").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return SCHOOL_LEVEL_ALIASES[key] ?? null;
+};
+
+export const getSchoolLevelIconPath = (value: unknown): string | null => {
+  const level = normalizeSchoolLevel(value);
+  return level ? SCHOOL_LEVEL_ICON_PATHS[level] : null;
+};
+
+const escapeAttribute = (value: string) =>
+  value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+const toSvg = (path: string, size: number, style: string, className: string, evenOdd = false) => {
+  const safeStyle = escapeAttribute(style);
+  const safeClassName = escapeAttribute(className.trim());
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${size}" height="${size}" fill="currentColor"${evenOdd ? ' fill-rule="evenodd"' : ""}${safeClassName ? ` class="${safeClassName}"` : ""}${safeStyle ? ` style="${safeStyle}"` : ""} aria-hidden="true"><path d="${path}"/></svg>`;
+};
+
+/** SVG plein pour les niveaux scolaires, utilisé dans Leaflet. */
+export const getSchoolLevelIconHtml = (
+  value: unknown,
+  style = "",
+  className = "",
+  size = 20,
+): string | null => {
+  const path = getSchoolLevelIconPath(value);
+  return path ? toSvg(path, size, style, className, true) : null;
+};
+
+/** HTML centralisé des marqueurs d'établissement et du village. */
+export const getEtablissementIconHtml = (
+  type: EtablissementIconType,
+  color: string,
+  size = 20,
+): string => {
+  const style = `color:${color};filter:drop-shadow(0 1px 2px rgba(15,23,42,.35))`;
+  return type === "village"
+    ? toSvg(VILLAGE_ICON_PATH, size, style, "")
+    : getSchoolLevelIconHtml(type, style, "", size) ?? "";
+};
+
 export const ETABLISSEMENT_ICON_COLORS: Record<EtablissementIconType, string> = {
-  prescolaire: "#f59e0b", // orange
-  primaire: "#00bfcd", // cyan
-  college: "#16a34a", // vert
-  lycee: "#8b5cf6", // violet
-  village: "#888888", // gris (point)
+  prescolaire: "#f59e0b",
+  primaire: "#00bfcd",
+  college: "#16a34a",
+  lycee: "#8b5cf6",
+  village: "#888888",
+};
+
+export const SECTOR_COLORS: Record<"public" | "private", string> = {
+  public: "#2563eb",
+  private: "#f59e0b",
 };
 
 export const ETABLISSEMENT_ICON_ORDER: EtablissementIconType[] = [
@@ -32,8 +106,10 @@ export const ETABLISSEMENT_ICON_ORDER: EtablissementIconType[] = [
   "village",
 ];
 
-export const getEtablissementIconClass = (type: EtablissementIconType): string =>
-  ETABLISSEMENT_ICON_CLASSES[type];
-
 export const getEtablissementIconColor = (type: EtablissementIconType): string =>
   ETABLISSEMENT_ICON_COLORS[type];
+
+export const getSectorColor = (sector: number | string | null | undefined): string => {
+  const normalized = sector === null || sector === undefined ? "private" : Number(sector) === 0 ? "public" : "private";
+  return SECTOR_COLORS[normalized] ?? SECTOR_COLORS.private;
+};

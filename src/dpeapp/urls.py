@@ -18,7 +18,6 @@ urlpatterns = [
     path('dashboard/',include('dashboard.urls')),
     path('',index,name="home"),
     path('referentiel/',include('referentiel.urls')),
-    path('sig/',include('sig.urls')),
     path('orsprimaire/',include('orsprimaire.urls')),
     path('orscollege/',include('orscollege.urls')),
     path('orslycee/',include('orslycee.urls')),
