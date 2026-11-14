@@ -85,6 +85,15 @@ export const getEtablissementIconHtml = (
     : getSchoolLevelIconHtml(type, style, "", size) ?? "";
 };
 
+/** Classes Font Awesome historiques utilisées par la carte ORS et la légende. */
+export const ETABLISSEMENT_ICON_CLASSES: Record<EtablissementIconType, string> = {
+  prescolaire: "fas fa-school",
+  primaire: "fas fa-school",
+  college: "fas fa-school",
+  lycee: "fas fa-school",
+  village: "fas fa-circle",
+};
+
 export const ETABLISSEMENT_ICON_COLORS: Record<EtablissementIconType, string> = {
   prescolaire: "#f59e0b",
   primaire: "#00bfcd",

@@ -77,6 +77,11 @@ export async function executeTdbDrenNiveau(client: any, codeDren: number, annee:
     ? `, SUM(${c.grades.flatMap((g, i) => g.flatMap((sec) => [`${sec}_G${c.ageSuffixes![i]}`, `${sec}_F${c.ageSuffixes![i]}`]))
       .map((col) => n(`e."${col}"`)).join('+')}) AS eleves_age`
     : '';
+  // Enfants de moins de 3 ans hors petite section : invariant de plausibilité de la
+  // ventilation par âge du préscolaire (un enfant de 2 ans ne peut pas être en MS/GS).
+  const moins3HorsPsCol = niveau === 'presco'
+    ? `, SUM(${['MS', 'GS'].flatMap((g) => [`${g}_G_MOINS_3ANS`, `${g}_F_MOINS_3ANS`]).map((col) => n(`e."${col}"`)).join('+')}) AS moins3_hors_ps`
+    : '';
   // Élèves réinsérés (CRAN) du niveau.
   const cranCols = c.cran
     ? `, SUM(${c.grades.flatMap((g) => g.flatMap((sec) => [`${sec}_G_CRAN`, `${sec}_F_CRAN`]))
@@ -91,7 +96,7 @@ export async function executeTdbDrenNiveau(client: any, codeDren: number, annee:
         COUNT(DISTINCT CASE WHEN upper(COALESCE(a."EST_ALIMENTE_EAU"::text,'')) IN ('1','OUI','TRUE') THEN a."CODE_ETAB" END) AS eau,
         COUNT(DISTINCT CASE WHEN ${n('a."EXISTE_PRIMAIRE"')}=1 THEN a."CODE_ETAB" END) AS avec_primaire
         FROM fpe_a1 a WHERE ${n('a."ANNEE_SCOLAIRE"')}=${year} AND ${n(`a."${c.exist}"`)}=1 ${s} GROUP BY 1`),
-      safe('eff', `SELECT ${n('a."SECTEUR"')}::int AS s, ${gradeCols()}${ageCols}${cranCols} ${join('e', c.eff, year)} AND ${n('e."SECTEUR"')}=${n('a."SECTEUR"')} ${s} GROUP BY 1`),
+      safe('eff', `SELECT ${n('a."SECTEUR"')}::int AS s, ${gradeCols()}${ageCols}${moins3HorsPsCol}${cranCols} ${join('e', c.eff, year)} AND ${n('e."SECTEUR"')}=${n('a."SECTEUR"')} ${s} GROUP BY 1`),
       c.km ? safe('km', `SELECT ${n('a."SECTEUR"')}::int AS s ${kmCols} ${join('e', c.eff, year)} AND ${n('e."SECTEUR"')}=${n('a."SECTEUR"')} ${s} GROUP BY 1`) : Promise.resolve([]),
       safe('g1', `SELECT ${n('a."SECTEUR"')}::int AS s, SUM(${sum(c.sections, 'g', '_SECTION')}) AS sections ${join('g', 'fpe_g1', year)} ${s} GROUP BY 1`),
       safe('j1', `SELECT ${n('a."SECTEUR"')}::int AS s, SUM(${n(`j."SDC_${c.sdc}_BON_ETAT"`)}+${n(`j."SDC_${c.sdc}_MAUVAIS_ETAT"`)}) AS salles ${join('j', 'fpe_j1', year)} ${s} GROUP BY 1`),
@@ -203,13 +208,32 @@ export async function executeTdbDrenNiveau(client: any, codeDren: number, annee:
     safe('meta', `SELECT (SELECT COUNT(*) FROM v_cisco WHERE "CODE_DREN"=${codeDren}) AS nb_cisco, (SELECT COUNT(*) FROM v_zap WHERE "CODE_DREN"=${codeDren}) AS nb_zap`),
     safe('nom', `SELECT "DREN" FROM v_dren WHERE "CODE_DREN"=${codeDren}`),
   ]);
+  // La ventilation par âge est facultative à la collecte, et celle de 2026 est
+  // incohérente dans fpe_e1 : à Alaotra-Mangoro, 15 263 enfants de « moins de 3 ans »
+  // en moyenne/grande section (296 en 2025) et 34 198 « moins de 6 ans » en T2-T5.
+  // Un TNS calculé sur ces colonnes serait un artefact : on le laisse manquant (« — »)
+  // tant que la saisie n'est pas corrigée. Référence 2024-2025 : 0,8 % hors PS.
+  function guardPrescoAges(data: Record<string, Record<string, number>>) {
+    if (niveau !== 'presco') return data;
+    const sum = (fn: (sector: Record<string, number>) => number) => ['0', '1'].reduce((acc, k) => acc + (fn(data[k]) || 0), 0);
+    const effectifTotal = sum((x) => ['1_g', '1_f', '2_g', '2_f', '3_g', '3_f'].reduce((a, g) => a + (x[`eff${g}`] || 0), 0));
+    const horsPs = sum((x) => x.moins3_hors_ps ?? 0);
+    const plausible = effectifTotal <= 0 || horsPs / effectifTotal <= 0.05;
+    if (!plausible) console.warn('DREN preschool age breakdown implausible: TNS hidden', { annee, effectifTotal, horsPs });
+    for (const k of ['0', '1']) {
+      // Compteur de contrôle interne : il n'a pas à figurer dans la réponse.
+      delete data[k].moins3_hors_ps;
+      if (!plausible) delete data[k].eleves_age;
+    }
+    return data;
+  }
   const hasNext = (s: Record<string, Record<string, number>>) => Object.keys(s['0']).length + Object.keys(s['1']).length > 0;
   return {
     niveau, annee, code_dren: codeDren,
     names: { DREN: nom[0]?.DREN || '' },
     nb_cisco: Number(meta[0]?.nb_cisco || 0), nb_zap: Number(meta[0]?.nb_zap || 0),
     grades: c.grades.length,
-    dren, mada,
+    dren: guardPrescoAges(dren), mada: guardPrescoAges(mada),
     dren_next: hasNext(drenNext) ? drenNext : null, mada_next: hasNext(madaNext) ? madaNext : null,
     pop_dren: popDren, pop_mada: popMada,
     ciscos: cisco,

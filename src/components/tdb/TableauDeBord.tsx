@@ -510,11 +510,11 @@ export function TableauDeBord({ data, niveau, codeDren }: Props) {
       <Banner>RESSOURCES</Banner>
       <div className="tdb-cols-2">
         <div>
-          <DataTable table={report.human} onMeta={openFiche} />
           {report.manuals && <DataTable table={report.manuals} onMeta={openFiche} manuals={niveau === 'primaire'} />}
           {report.finance && <DataTable table={report.finance} onMeta={openFiche} />}
         </div>
         <div>
+          <DataTable table={report.human} onMeta={openFiche} />
           <DataTable table={report.other} onMeta={openFiche} />
         </div>
       </div>

@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { DEFAULT_SCHOOL_YEAR } from "@/utils/anneeScolaire";
 
 const DEFAULT_DJANGO_BACKEND_URL = "https://dpe-men.mg";
 
@@ -168,10 +169,15 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> 
 export async function fetchDjangoOrFallback<T>(
   endpoint: string,
   action: string,
-  params: Record<string, string | number> = {}
+  params: Record<string, string | number> = {},
+  accepts?: (data: T) => boolean
 ): Promise<T> {
   try {
-    return await fetchAPI<T>(endpoint);
+    const data = await fetchAPI<T>(endpoint);
+    if (!accepts || accepts(data)) return data;
+    console.warn(
+      `Django endpoint ${endpoint} returned data for another school year; falling back to Supabase action ${action}.`
+    );
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     // Les erreurs de droits sont définitives : ne jamais les contourner via
@@ -184,8 +190,96 @@ export async function fetchDjangoOrFallback<T>(
     }
 
     console.warn(`Django endpoint ${endpoint} is unavailable; falling back to Supabase action ${action}.`);
-    return fetchDB<T>(action, params);
   }
+  const fallback = await fetchDB<T>(action, params);
+  if (accepts && !accepts(fallback)) {
+    // Ne jamais présenter une autre année sous l'étiquette demandée, même si
+    // la fonction Supabase déployée n'a pas encore été mise à jour.
+    console.warn(
+      `Supabase action ${action} also returned data for another school year; returning no rows.`
+    );
+    return [] as unknown as T;
+  }
+  return fallback;
+}
+
+// Certains déploiements Django ignorent le paramètre `annee` et renvoient
+// toujours l'année courante : on refuse ces lignes pour ne pas afficher des
+// données 2025 sous l'étiquette 2025-2026.
+function isRequestedSchoolYear(rows: unknown, annee: number | string): boolean {
+  if (!Array.isArray(rows)) return true;
+  const expected = String(annee);
+  const withYear = rows.filter(
+    (row): row is { ANNEE_SCOLAIRE?: unknown } =>
+      !!row && typeof row === "object" && "ANNEE_SCOLAIRE" in row &&
+      (row as { ANNEE_SCOLAIRE?: unknown }).ANNEE_SCOLAIRE != null
+  );
+  if (withYear.length === 0) return true;
+  return withYear.every((row) => String(row.ANNEE_SCOLAIRE) === expected);
+}
+
+// Les vues Supabase `v_*_n*` restent figées sur 2025 : pour les millésimes
+// récents on interroge d'abord l'endpoint serveur `/api/donnees`, qui lit
+// PostgreSQL directement avec le même SQL que `db-query`.
+const RECENT_ENDPOINT_MIN_YEAR = 2026;
+const RECENT_ACTIONS = new Set([
+  'getDataPrescolaire',
+  'getDataPrimaire',
+  'getDataCollege',
+  'getDataLycee',
+]);
+
+async function fetchRecentEndpoint<T>(
+  action: string,
+  params: Record<string, string | number>,
+): Promise<T | null> {
+  if (!RECENT_ACTIONS.has(action)) return null;
+
+  const query = new URLSearchParams({ action });
+  Object.entries(params).forEach(([key, value]) => query.append(key, String(value)));
+
+  try {
+    const response = await fetch(`/api/donnees?${query.toString()}`);
+    if (!response.ok) {
+      console.warn(`/api/donnees a répondu ${response.status} pour ${action}; repli sur Supabase.`);
+      return null;
+    }
+    return (await response.json()) as T;
+  } catch (error) {
+    console.warn(`/api/donnees est indisponible pour ${action}; repli sur Supabase.`, error);
+    return null;
+  }
+}
+
+/**
+ * Fiches établissements : Django ne connaît pas les années > 2025 et renvoie
+ * toujours 2025. Pour ces millésimes on saute Django et on passe par
+ * `/api/donnees`, puis par la fonction Supabase en secours. Aucune autre
+ * année n'est jamais présentée sous le libellé demandé.
+ */
+async function fetchDonneesEtab<T>(
+  endpoint: string,
+  action: string,
+  params: Record<string, string | number>,
+): Promise<T> {
+  const accepts = (data: unknown) => isRequestedSchoolYear(data, params.annee);
+  const annee = Number(params.annee);
+
+  if (Number.isFinite(annee) && annee >= RECENT_ENDPOINT_MIN_YEAR) {
+    const recent = await fetchRecentEndpoint<T>(action, params);
+    if (recent != null && accepts(recent)) return recent;
+
+    const fallback = await fetchDB<T>(action, params);
+    if (!accepts(fallback)) {
+      console.warn(
+        `Aucune source ne fournit l'année ${annee} pour ${action}; aucune ligne renvoyée.`,
+      );
+      return [] as unknown as T;
+    }
+    return fallback;
+  }
+
+  return fetchDjangoOrFallback<T>(endpoint, action, params, accepts);
 }
 
 // Direct fetch for downloads (bypass proxy for file downloads)
@@ -411,17 +505,17 @@ export const tdbApi = {
     fetchDB<Cisco[]>('getCiscos', { code_dren: codeDren }),
   getZaps: (codeCisco: number) =>
     fetchDB<Zap[]>('getTdbZapsByCisco', { code_cisco: codeCisco }),
-  getTdbZapData: (codeZap: number, codeCisco: number, codeDren: number, annee: number = 2025) =>
+  getTdbZapData: (codeZap: number, codeCisco: number, codeDren: number, annee: number = DEFAULT_SCHOOL_YEAR) =>
     fetchDB<any>('getTdbZapData', { code_zap: codeZap, code_cisco: codeCisco, code_dren: codeDren, annee }),
-  getTdbCiscoData: (codeCisco: number, codeDren: number, annee: number = 2025) =>
+  getTdbCiscoData: (codeCisco: number, codeDren: number, annee: number = DEFAULT_SCHOOL_YEAR) =>
     fetchDB<any>('getTdbCiscoData', { code_cisco: codeCisco, code_dren: codeDren, annee }),
-  getTdbDrenData: (codeDren: number, annee: number = 2025) =>
+  getTdbDrenData: (codeDren: number, annee: number = DEFAULT_SCHOOL_YEAR) =>
     fetchDB<any>('getTdbDrenData', { code_dren: codeDren, annee }),
   getTdbDrenNiveau: (codeDren: number, annee: number, niveau: 'presco' | 'college' | 'lycee') =>
     fetchDB<any>('getTdbDrenNiveau', { code_dren: codeDren, annee, niveau }),
- getEcolesByZap: (codeZap: number, annee: number = 2025, niveau: 'primaire' | 'college' | 'lycee' = 'primaire') =>
+ getEcolesByZap: (codeZap: number, annee: number = DEFAULT_SCHOOL_YEAR, niveau: 'primaire' | 'college' | 'lycee' = 'primaire') =>
    fetchDB<Array<{ CODE_ETAB: number; NOM_ETAB: string; SECTEUR: number }>>('getEcolesByZap', { code_zap: codeZap, annee, niveau }),
-  getTdbEcoleData: (codeEtab: number, codeZap: number, codeCisco: number, codeDren: number, annee: number = 2025, niveau: 'primaire' | 'college' | 'lycee' = 'primaire') =>
+  getTdbEcoleData: (codeEtab: number, codeZap: number, codeCisco: number, codeDren: number, annee: number = DEFAULT_SCHOOL_YEAR, niveau: 'primaire' | 'college' | 'lycee' = 'primaire') =>
     fetchDB<any>('getTdbEcoleData', { code_etab: codeEtab, code_zap: codeZap, code_cisco: codeCisco, code_dren: codeDren, annee, niveau }),
   getTdbMadaSnapshot: () =>
     fetchDB<any>('getTdbMadaSnapshot', {}),
@@ -600,9 +694,9 @@ export const donneesApi = {
     codeCommune: number = 0,
     codeZap: number = 0,
     secteur: number = 2,
-    annee: number | string = 2025
+    annee: number | string = DEFAULT_SCHOOL_YEAR
   ) =>
-    fetchDjangoOrFallback<any[]>(
+    fetchDonneesEtab<any[]>(
       `/donnees/dataPrescolaire/${codeDren}/${codeCisco}/${codeCommune}/${codeZap}/${secteur}?annee=${annee}`,
       'getDataPrescolaire',
       {
@@ -612,7 +706,7 @@ export const donneesApi = {
         code_zap: codeZap,
         secteur,
         annee,
-      }
+      },
     ),
 
   getEtabN1: (
@@ -621,9 +715,9 @@ export const donneesApi = {
     codeCommune: number = 0,
     codeZap: number = 0,
     secteur: number = 2,
-    annee: number | string = 2025
+    annee: number | string = DEFAULT_SCHOOL_YEAR
   ) =>
-    fetchDjangoOrFallback<any[]>(
+    fetchDonneesEtab<any[]>(
       `/donnees/dataPrimaire/${codeDren}/${codeCisco}/${codeCommune}/${codeZap}/${secteur}?annee=${annee}`,
       'getDataPrimaire',
       {
@@ -633,7 +727,7 @@ export const donneesApi = {
         code_zap: codeZap,
         secteur,
         annee,
-      }
+      },
     ),
 
   getEtabN2: (
@@ -642,9 +736,9 @@ export const donneesApi = {
     codeCommune: number = 0,
     codeZap: number = 0,
     secteur: number = 2,
-    annee: number | string = 2025
+    annee: number | string = DEFAULT_SCHOOL_YEAR
   ) =>
-    fetchDjangoOrFallback<any[]>(
+    fetchDonneesEtab<any[]>(
       `/donnees/dataCollege/${codeDren}/${codeCisco}/${codeCommune}/${codeZap}/${secteur}?annee=${annee}`,
       'getDataCollege',
       {
@@ -654,7 +748,7 @@ export const donneesApi = {
         code_zap: codeZap,
         secteur,
         annee,
-      }
+      },
     ),
 
   getEtabN3: (
@@ -663,9 +757,9 @@ export const donneesApi = {
     codeCommune: number = 0,
     codeZap: number = 0,
     secteur: number = 2,
-    annee: number | string = 2025
+    annee: number | string = DEFAULT_SCHOOL_YEAR
   ) =>
-    fetchDjangoOrFallback<any[]>(
+    fetchDonneesEtab<any[]>(
       `/donnees/dataLycee/${codeDren}/${codeCisco}/${codeCommune}/${codeZap}/${secteur}?annee=${annee}`,
       'getDataLycee',
       {
@@ -675,7 +769,7 @@ export const donneesApi = {
         code_zap: codeZap,
         secteur,
         annee,
-      }
+      },
     ),
 
   getListeEtablissements: (
@@ -685,9 +779,9 @@ export const donneesApi = {
     codeZap: number,
     niveau: number,
     secteur: number,
-    annee: number = 2025
+    annee: number = DEFAULT_SCHOOL_YEAR
   ) =>
-    fetchDjangoOrFallback<any[]>(
+    fetchDonneesEtab<any[]>(
       `/donnees/listeEtablissements/${codeDren}/${codeCisco}/${codeCommune}/${codeZap}/${niveau}/${secteur}?annee=${annee}`,
       'getListeEtablissements',
       {
@@ -715,17 +809,17 @@ export const besoinsApi = {
       code_commune: 0,
     }),
 
-  getBesoinsN1: (codeDren = 0, codeCisco = 0, codeZap = 0, annee = 2025) =>
+  getBesoinsN1: (codeDren = 0, codeCisco = 0, codeZap = 0, annee = DEFAULT_SCHOOL_YEAR) =>
     fetchDjangoOrFallback<any[]>(`/besoins/n1/${codeDren}/${codeCisco}/${codeZap}/${annee}/`, 'getBesoinsPrimaire', {
       code_dren: codeDren, code_cisco: codeCisco, code_zap: codeZap, annee,
     }),
 
-  getBesoinsN2: (codeDren = 0, codeCisco = 0, codeZap = 0, annee = 2025) =>
+  getBesoinsN2: (codeDren = 0, codeCisco = 0, codeZap = 0, annee = DEFAULT_SCHOOL_YEAR) =>
     fetchDjangoOrFallback<any[]>(`/besoins/n2/${codeDren}/${codeCisco}/${codeZap}/${annee}/`, 'getBesoinsCollege', {
       code_dren: codeDren, code_cisco: codeCisco, code_zap: codeZap, annee,
     }),
 
-  getBesoinsN3: (codeDren = 0, codeCisco = 0, codeZap = 0, annee = 2025) =>
+  getBesoinsN3: (codeDren = 0, codeCisco = 0, codeZap = 0, annee = DEFAULT_SCHOOL_YEAR) =>
     fetchDjangoOrFallback<any[]>(`/besoins/n3/${codeDren}/${codeCisco}/${codeZap}/${annee}/`, 'getBesoinsLycee', {
       code_dren: codeDren, code_cisco: codeCisco, code_zap: codeZap, annee,
     }),

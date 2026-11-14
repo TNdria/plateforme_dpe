@@ -9,6 +9,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, LineChart, Line, XAx
 import { dashboardApi, Dren, Cisco } from "@/services/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { DEFAULT_SCHOOL_YEAR } from "@/utils/anneeScolaire";
 
 const YEARS_STORAGE_KEY = "dpe_dashboard_enabled_years";
 const YEARS_SETTINGS_KEY = "dashboard_enabled_years";
@@ -115,7 +116,7 @@ const Dashboard = () => {
 
   // Derived: latest year from display years
   const latestYear = useMemo(() => {
-    if (displayYears.length === 0) return 2025;
+    if (displayYears.length === 0) return DEFAULT_SCHOOL_YEAR;
     return Math.max(...displayYears);
   }, [displayYears]);
 

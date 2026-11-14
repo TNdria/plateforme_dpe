@@ -41,6 +41,11 @@ import { besoinsApi, donneesApi, type Dren, type Cisco, type Zap } from "@/servi
 import { notify } from "@/contexts/NotificationsContext";
 import { toast } from "sonner";
 import DataTable from "@/components/donnees/DataTable";
+import {
+  DEFAULT_SCHOOL_YEAR,
+  SCHOOL_YEARS,
+  formatAnneeScolaire,
+} from "@/utils/anneeScolaire";
 // Normes officielles centralisées (horaires, utilisation SDC), colocalisées
 // avec ce module dans components/besoins/, comme les autres modules.
 import {
@@ -971,7 +976,7 @@ const Besoins = () => {
   const [drens, setDrens] = useState<Dren[]>([]);
   const [ciscos, setCiscos] = useState<Cisco[]>([]);
   const [zaps, setZaps] = useState<Zap[]>([]);
-  const [annee, setAnnee] = useState<number>(2025); // Année par défaut
+  const [annee, setAnnee] = useState<number>(DEFAULT_SCHOOL_YEAR); // Année par défaut
   const [selectedSecteur, setSelectedSecteur] = useState("2");
   const [codeDren, setCodeDren] = useState<string>(drenLocked ? String(userDren) : "0");
   const [codeCisco, setCodeCisco] = useState<string>(ciscoLocked ? String(userCisco) : "0");
@@ -1031,7 +1036,7 @@ const Besoins = () => {
       cd: number,
       cc: number,
       cz: number,
-      an: number = 2025,
+      an: number = DEFAULT_SCHOOL_YEAR,
       opts: { silent?: boolean; force?: boolean } = {},
     ) => {
       const cacheKey = `${niveau}:${cd}:${cc}:${cz}:${an}`;
@@ -1117,7 +1122,7 @@ const Besoins = () => {
       setCodeCisco(String(initialCisco));
       setCodeZap("0");
       setZaps([]);
-      setAnnee(2025); // Année par défaut
+      setAnnee(DEFAULT_SCHOOL_YEAR); // Année par défaut
 
       if (drenLocked) {
         try {
@@ -1131,7 +1136,7 @@ const Besoins = () => {
       }
 
       // Chargement initial des données avec l'année
-      await fetchData(initialDren, initialCisco, 0, 2025, { silent: true });
+      await fetchData(initialDren, initialCisco, 0, DEFAULT_SCHOOL_YEAR, { silent: true });
     })();
 
     return () => {
@@ -1263,11 +1268,11 @@ const Besoins = () => {
     setCiscos([]);
     setZaps([]);
 
-    setAnnee(2025);
+    setAnnee(DEFAULT_SCHOOL_YEAR);
     setSelectedSecteur("2");
     setIsFilterDirty(false);
 
-    fetchData(0, 0, 0, 2025, { force: true });
+    fetchData(0, 0, 0, DEFAULT_SCHOOL_YEAR, { force: true });
     setTimeout(() => setIsResetting(false), 0);
   };
 
@@ -1850,7 +1855,7 @@ const Besoins = () => {
                 <p className="text-xs text-muted-foreground">
                   Ministère de l'Éducation Nationale · Année scolaire{" "}
                   <strong className="text-foreground">
-                    {annee - 1}-{annee}
+                    {formatAnneeScolaire(annee)}
                   </strong>
                 </p>
               </div>
@@ -2083,10 +2088,11 @@ const Besoins = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent side="bottom" position="popper">
-                    <SelectItem value="2025">2024-2025</SelectItem>
-                    <SelectItem value="2024">2023-2024</SelectItem>
-                    <SelectItem value="2023">2022-2023</SelectItem>
-                    <SelectItem value="2022">2021-2022</SelectItem>
+                    {[...SCHOOL_YEARS].reverse().map((year) => (
+                      <SelectItem key={year} value={String(year)}>
+                        {formatAnneeScolaire(year)}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </FilterField>

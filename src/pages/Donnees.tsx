@@ -45,6 +45,11 @@ import { getZoneInfo } from "@/lib/zone";
 import logoMen from "@/assets/logoMen.jpg";
 import logoDpe from "@/assets/logoDpe.jpg";
 import { buildSectorGroups, getTotalEleves, type Niveau } from "@/utils/donneesSectors";
+import {
+  DEFAULT_SCHOOL_YEAR,
+  SCHOOL_YEARS,
+  formatAnneeScolaire,
+} from "@/utils/anneeScolaire";
 
 type Section = "ecoles" | "eleves" | "personnels";
 type ExportFormat = "csv" | "xlsx";
@@ -80,7 +85,8 @@ const NIVEAU_META: Record<
   },
 };
 
-const ANNEES = ["2022", "2023", "2024", "2025"];
+const ANNEES = SCHOOL_YEARS.map(String);
+const HISTORICAL_EFFECTIF_YEARS = [2022, 2023, 2024, 2025];
 
 const secteurLabel: Record<string, string> = {
   "2": "Tous",
@@ -142,7 +148,7 @@ const zoneColumn = {
   },
 };
 
-const getEcolesColumns = (annee: string = "2025") => [
+const getEcolesColumns = (annee: string = String(DEFAULT_SCHOOL_YEAR)) => [
   { key: "CODE_ETAB", label: "CODE", width: 120 },
   { key: "DREN", label: "DREN", width: 90 },
   { key: "CISCO", label: "CISCO", width: 90 },
@@ -164,7 +170,10 @@ const getEcolesColumns = (annee: string = "2025") => [
   { key: "TYPE_SOURCE_ELECTRICITE", label: "ÉLECTRICITÉ", width: 130 },
 ];
 
-const getElevesColumns = (niveau: Niveau) => {
+const getElevesColumns = (
+  niveau: Niveau,
+  annee: string = String(DEFAULT_SCHOOL_YEAR),
+) => {
   const baseColumns = [
     { key: "CODE_ETAB", label: "CODE", width: 120 },
     { key: "DREN", label: "DREN", width: 90 },
@@ -197,6 +206,16 @@ const getElevesColumns = (niveau: Niveau) => {
       align: "right" as const,
       width: 100,
     },
+    ...(HISTORICAL_EFFECTIF_YEARS.includes(Number(annee))
+      ? []
+      : [
+          {
+            key: `eff_${annee}`,
+            label: `EFF. ${annee}`,
+            align: "right" as const,
+            width: 100,
+          },
+        ]),
   ];
 
   const classeColumns: Record<
@@ -231,7 +250,7 @@ const getElevesColumns = (niveau: Niveau) => {
   return [...baseColumns, ...(classeColumns[niveau] || [])];
 };
 
-const getPersonnelsColumns = (annee: string = "2025") => [
+const getPersonnelsColumns = (annee: string = String(DEFAULT_SCHOOL_YEAR)) => [
   { key: "CODE_ETAB", label: "CODE", width: 120 },
   { key: "DREN", label: "DREN", width: 90 },
   { key: "CISCO", label: "CISCO", width: 90 },
@@ -288,7 +307,7 @@ const getPersonnelsColumns = (annee: string = "2025") => [
 
 const SECTION_COLUMNS: Record<Section, (niveau: Niveau, annee: string) => any[]> = {
   ecoles: (_niveau, annee) => getEcolesColumns(annee),
-  eleves: (niveau) => getElevesColumns(niveau),
+  eleves: (niveau, annee) => getElevesColumns(niveau, annee),
   personnels: (_niveau, annee) => getPersonnelsColumns(annee),
 };
 
@@ -324,7 +343,7 @@ const Donnees = () => {
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportFormat, setExportFormat] = useState<ExportFormat>("xlsx");
-  const [selectedAnnee, setSelectedAnnee] = useState("2025");
+  const [selectedAnnee, setSelectedAnnee] = useState(String(DEFAULT_SCHOOL_YEAR));
   const filters = useDonneesFilters();
 
   const markFilterDirty = () => {
@@ -444,7 +463,7 @@ const Donnees = () => {
       id: "eleves",
       label: "Données élèves",
       icon: Users,
-      getColumns: () => getElevesColumns(niveau),
+      getColumns: () => getElevesColumns(niveau, selectedAnnee),
     },
     {
       id: "personnels",
@@ -586,7 +605,7 @@ const Donnees = () => {
                 Section : <strong>{activeSectionMeta.label}</strong> — Années Scolaire :{" "}
                 <strong>
                   {" "}
-                  {Number(selectedAnnee) - 1}-{selectedAnnee}
+                  {formatAnneeScolaire(selectedAnnee)}
                 </strong>
               </span>
             </div>
@@ -772,7 +791,7 @@ const Donnees = () => {
                 <SelectContent>
                   {[...ANNEES].reverse().map((a) => (
                     <SelectItem key={a} value={a}>
-                      {Number(a) - 1}-{a}
+                      {formatAnneeScolaire(a)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1022,7 +1041,7 @@ const Donnees = () => {
                 <SelectContent>
                   {[...ANNEES].reverse().map((a) => (
                     <SelectItem key={a} value={a}>
-                      Année scolaire {Number(a) - 1}-{a}
+                      Année scolaire {formatAnneeScolaire(a)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1030,7 +1049,7 @@ const Donnees = () => {
               <p className="mt-1.5 text-[11px] text-muted-foreground">
                 {isFilterDirty
                   ? "Période modifiée : cliquez sur Appliquer pour recharger les données avant le téléchargement."
-                  : `Le fichier contiendra uniquement l'année scolaire ${Number(selectedAnnee) - 1}-${selectedAnnee}.`}
+                  : `Le fichier contiendra uniquement l'année scolaire ${formatAnneeScolaire(selectedAnnee)}.`}
               </p>
             </div>
 

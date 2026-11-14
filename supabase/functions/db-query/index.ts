@@ -4,6 +4,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { Client } from "https://deno.land/x/postgres@v0.17.0/mod.ts";
 import { executeDiagnosticDataset } from "./diagnostic.ts";
+import { buildDonneesRecentSql, type DataRecentLevel } from "../_shared/donneesRecent.ts";
 import { executeTdbDrenNiveau, type NiveauDren } from "./tdbDrenNiveau.ts";
 import { ensureRefTables, CE_SRC, popSource, importReference } from "./refImport.ts";
 import { repairReferenceBatch } from "./refBatch.ts";
@@ -12,7 +13,17 @@ import {
   importTdbRows, latestTdbRow, ensureTdbTables, isTdbTable, updateTdbRow, insertTdbRow, listTdbRows,
   type TdbTable,
 } from "./tdbStore.ts";
-const VERSION = "v63-20261109-dren-primary-formulas";
+const VERSION = "v64-20261113-annee-scolaire-2026";
+
+// Année scolaire de repli (libellé 2025-2026) pour les appels sans `annee`.
+const DEFAULT_ANNEE_SCOLAIRE = 2026;
+
+function parseAnneeScolaire(raw: string | null): number {
+  const value = parseInt(raw || String(DEFAULT_ANNEE_SCOLAIRE));
+  return Number.isFinite(value) && value >= 2000 && value <= 2100
+    ? value
+    : DEFAULT_ANNEE_SCOLAIRE;
+}
 
 // Aménagements accessibles aux élèves en situation de handicap (fiche j2).
 const ACCES_ESH_COLS = [
@@ -931,18 +942,26 @@ serve(async (req: Request) => {
       case "getCommunes":
         result = await executeGetCommunes(client, codeDren, codeCisco, codeZap);
         break;
-      case "getDataPrescolaire":
-        result = await executeGetDataN0(client, codeDren, codeCisco, codeCommune, codeZap, secteur);
+      case "getDataPrescolaire": {
+        const annee = parseAnneeScolaire(url.searchParams.get("annee"));
+        result = await executeGetDataN0(client, codeDren, codeCisco, codeCommune, codeZap, secteur, annee);
         break;
-      case "getDataPrimaire":
-        result = await executeGetDataN1(client, codeDren, codeCisco, codeCommune, codeZap, secteur);
+      }
+      case "getDataPrimaire": {
+        const annee = parseAnneeScolaire(url.searchParams.get("annee"));
+        result = await executeGetDataN1(client, codeDren, codeCisco, codeCommune, codeZap, secteur, annee);
         break;
-      case "getDataCollege":
-        result = await executeGetDataN2(client, codeDren, codeCisco, codeCommune, codeZap, secteur);
+      }
+      case "getDataCollege": {
+        const annee = parseAnneeScolaire(url.searchParams.get("annee"));
+        result = await executeGetDataN2(client, codeDren, codeCisco, codeCommune, codeZap, secteur, annee);
         break;
-      case "getDataLycee":
-        result = await executeGetDataN3(client, codeDren, codeCisco, codeCommune, codeZap, secteur);
+      }
+      case "getDataLycee": {
+        const annee = parseAnneeScolaire(url.searchParams.get("annee"));
+        result = await executeGetDataN3(client, codeDren, codeCisco, codeCommune, codeZap, secteur, annee);
         break;
+      }
 
       case "getTdbNbrStdDren": {
         const tdbResult = await executeTdbNbrStdDren(client, codeDren);
@@ -2672,7 +2691,7 @@ async function executeStatsEnseignants(client: Client, codeDren: number, codeCis
 
 async function executeStatsPlaces(client: Client, codeDren: number, codeCisco: number, secteur: number) {
   const years = await getAvailableYearsFromDB(client);
-  const latestYear = years.length > 0 ? Math.max(...years) : 2025;
+  const latestYear = years.length > 0 ? Math.max(...years) : DEFAULT_ANNEE_SCOLAIRE;
   let whereClause = `WHERE v."ANNEE_SCOLAIRE" = ${latestYear}`;
   if (codeDren > 0 && codeCisco === 0) { whereClause += ` AND v."CODE_DREN" = ${codeDren}`; }
   else if (codeCisco > 0) { whereClause += ` AND v."CODE_CISCO" = ${codeCisco}`; }
@@ -2721,7 +2740,24 @@ async function executeGetCommunes(client: Client, codeDren: number, codeCisco: n
   return await client.queryObject(`SELECT * FROM v_commune WHERE "CODE_DREN" ${opDren} ${valDren} AND "CODE_CISCO" ${opCisco} ${valCisco} AND "CODE_ZAP" ${opZap} ${valZap} ORDER BY "COMMUNE"`);
 }
 
-async function executeGetDataN0(client: Client, codeDren: number, codeCisco: number, codeCommune: number, codeZap: number, secteur: number) {
+async function executeGetDataRecent(
+  client: Client,
+  level: DataRecentLevel,
+  codeDren: number,
+  codeCisco: number,
+  codeCommune: number,
+  codeZap: number,
+  secteur: number,
+  annee: number,
+) {
+  // SQL partagé avec l'endpoint Vercel `api/donnees` (voir _shared/donneesRecent.ts)
+  return await client.queryObject(
+    buildDonneesRecentSql(level, { codeDren, codeCisco, codeCommune, codeZap, secteur, annee }),
+  );
+}
+
+async function executeGetDataN0(client: Client, codeDren: number, codeCisco: number, codeCommune: number, codeZap: number, secteur: number, annee: number) {
+  if (annee > 2025) return executeGetDataRecent(client, "n0", codeDren, codeCisco, codeCommune, codeZap, secteur, annee);
   const opDren = codeDren === 0 ? ">" : "="; const valDren = codeDren === 0 ? 0 : codeDren;
   const opCisco = codeCisco === 0 ? ">" : "="; const valCisco = codeCisco === 0 ? 0 : codeCisco;
   const opCommune = codeCommune === 0 ? ">" : "="; const valCommune = codeCommune === 0 ? 0 : codeCommune;
@@ -2729,22 +2765,26 @@ async function executeGetDataN0(client: Client, codeDren: number, codeCisco: num
   const sect = secteur > 1 ? ">= 0" : `= ${secteur}`;
   const cols = `vf."CODE_ETAB", vf."DREN", vf."CISCO", vf."COMMUNE", vf."ZAP", vf."FOKONTANY",
     vf."NOM_ETAB", vf."CATEGORIE_COMMUNE", vf."CODE_DREN", vf."CODE_CISCO", vf."CODE_COMMUNE", vf."CODE_ZAP",
-    vf."SECTEUR", vf."ANNEE_SCOLAIRE", vf.places, vf.sdc_be, vf.sdc_me,
+    vf."SECTEUR", vf.places, vf.sdc_be, vf.sdc_me,
     vf."TYPE_SOURCE_EAU", vf."TYPE_SOURCE_ELECTRICITE",
     vf.eff_2022, vf.eff_2023, vf.eff_2024, vf.eff_2025,
     vf.pers_total, vf.en_classe, vf.fonctionnaire, vf.fram_sub, vf.fram_nonsub,
     vf.bepc, vf.bacc, vf.qualifiee`;
+  // Les vues historiques s'arrêtent à eff_2025 : pour l'année en cours, on
+  // expose l'effectif total de l'année sous la même clé `eff_<annee>`.
+  const currentEffCol = annee > 2025 ? `, v.eff_total AS "eff_${annee}"` : "";
   return await client.queryObject(`
-    SELECT ${cols}, v.eff_ps, v.eff_ms, v.eff_gs
+    SELECT ${cols}, v.eff_ps, v.eff_ms, v.eff_gs${currentEffCol}, v."ANNEE_SCOLAIRE" AS "ANNEE_SCOLAIRE"
     FROM v_fiche_ecole_n0 vf
-    INNER JOIN v_effectif_n0 v ON v."CODE_ETAB" = vf."CODE_ETAB" AND v."ANNEE_SCOLAIRE" = vf."ANNEE_SCOLAIRE"
+    INNER JOIN v_effectif_n0 v ON v."CODE_ETAB" = vf."CODE_ETAB" AND v."ANNEE_SCOLAIRE" = ${annee}
     WHERE vf."CODE_DREN" ${opDren} ${valDren} AND vf."CODE_CISCO" ${opCisco} ${valCisco} 
     AND vf."CODE_COMMUNE" ${opCommune} ${valCommune} AND vf."CODE_ZAP" ${opZap} ${valZap} 
-    AND vf."SECTEUR" ${sect} AND vf."ANNEE_SCOLAIRE" = 2025
+    AND vf."SECTEUR" ${sect} AND vf."ANNEE_SCOLAIRE" = (SELECT MAX("ANNEE_SCOLAIRE") FROM v_fiche_ecole_n0)
   `);
 }
 
-async function executeGetDataN1(client: Client, codeDren: number, codeCisco: number, codeCommune: number, codeZap: number, secteur: number) {
+async function executeGetDataN1(client: Client, codeDren: number, codeCisco: number, codeCommune: number, codeZap: number, secteur: number, annee: number) {
+  if (annee > 2025) return executeGetDataRecent(client, "n1", codeDren, codeCisco, codeCommune, codeZap, secteur, annee);
   const opDren = codeDren === 0 ? ">" : "="; const valDren = codeDren === 0 ? 0 : codeDren;
   const opCisco = codeCisco === 0 ? ">" : "="; const valCisco = codeCisco === 0 ? 0 : codeCisco;
   const opCommune = codeCommune === 0 ? ">" : "="; const valCommune = codeCommune === 0 ? 0 : codeCommune;
@@ -2752,22 +2792,24 @@ async function executeGetDataN1(client: Client, codeDren: number, codeCisco: num
   const sect = secteur > 1 ? ">= 0" : `= ${secteur}`;
   const cols = `vf."CODE_ETAB", vf."DREN", vf."CISCO", vf."COMMUNE", vf."ZAP", vf."FOKONTANY",
     vf."NOM_ETAB", vf."CATEGORIE_COMMUNE", vf."CODE_DREN", vf."CODE_CISCO", vf."CODE_COMMUNE", vf."CODE_ZAP",
-    vf."SECTEUR", vf."ANNEE_SCOLAIRE", vf.places, vf.sdc_be, vf.sdc_me,
+    vf."SECTEUR", vf.places, vf.sdc_be, vf.sdc_me,
     vf."TYPE_SOURCE_EAU", vf."TYPE_SOURCE_ELECTRICITE",
     vf.eff_2022, vf.eff_2023, vf.eff_2024, vf.eff_2025,
     vf.pers_total, vf.en_classe, vf.fonctionnaire, vf.fram_sub, vf.fram_nonsub,
     vf.bepc, vf.bacc, vf.qualifiee`;
+  const currentEffCol = annee > 2025 ? `, v.eff_total AS "eff_${annee}"` : "";
   return await client.queryObject(`
-    SELECT ${cols}, v.eff_t1, v.eff_t2, v.eff_t3, v.eff_t4, v.eff_t5
+    SELECT ${cols}, v.eff_t1, v.eff_t2, v.eff_t3, v.eff_t4, v.eff_t5${currentEffCol}, v."ANNEE_SCOLAIRE" AS "ANNEE_SCOLAIRE"
     FROM v_fiche_ecole_n1 vf
-    INNER JOIN v_effectif_n1 v ON v."CODE_ETAB" = vf."CODE_ETAB" AND v."ANNEE_SCOLAIRE" = vf."ANNEE_SCOLAIRE"
+    INNER JOIN v_effectif_n1 v ON v."CODE_ETAB" = vf."CODE_ETAB" AND v."ANNEE_SCOLAIRE" = ${annee}
     WHERE vf."CODE_DREN" ${opDren} ${valDren} AND vf."CODE_CISCO" ${opCisco} ${valCisco} 
     AND vf."CODE_COMMUNE" ${opCommune} ${valCommune} AND vf."CODE_ZAP" ${opZap} ${valZap} 
-    AND vf."SECTEUR" ${sect} AND vf."ANNEE_SCOLAIRE" = 2025
+    AND vf."SECTEUR" ${sect} AND vf."ANNEE_SCOLAIRE" = (SELECT MAX("ANNEE_SCOLAIRE") FROM v_fiche_ecole_n1)
   `);
 }
 
-async function executeGetDataN2(client: Client, codeDren: number, codeCisco: number, codeCommune: number, codeZap: number, secteur: number) {
+async function executeGetDataN2(client: Client, codeDren: number, codeCisco: number, codeCommune: number, codeZap: number, secteur: number, annee: number) {
+  if (annee > 2025) return executeGetDataRecent(client, "n2", codeDren, codeCisco, codeCommune, codeZap, secteur, annee);
   const opDren = codeDren === 0 ? ">" : "="; const valDren = codeDren === 0 ? 0 : codeDren;
   const opCisco = codeCisco === 0 ? ">" : "="; const valCisco = codeCisco === 0 ? 0 : codeCisco;
   const opCommune = codeCommune === 0 ? ">" : "="; const valCommune = codeCommune === 0 ? 0 : codeCommune;
@@ -2775,22 +2817,24 @@ async function executeGetDataN2(client: Client, codeDren: number, codeCisco: num
   const sect = secteur > 1 ? ">= 0" : `= ${secteur}`;
   const cols = `vf."CODE_ETAB", vf."DREN", vf."CISCO", vf."COMMUNE", vf."ZAP", vf."FOKONTANY",
     vf."NOM_ETAB", vf."CATEGORIE_COMMUNE", vf."CODE_DREN", vf."CODE_CISCO", vf."CODE_COMMUNE", vf."CODE_ZAP",
-    vf."SECTEUR", vf."ANNEE_SCOLAIRE", vf.places, vf.sdc_be, vf.sdc_me,
+    vf."SECTEUR", vf.places, vf.sdc_be, vf.sdc_me,
     vf."TYPE_SOURCE_EAU", vf."TYPE_SOURCE_ELECTRICITE",
     vf.eff_2022, vf.eff_2023, vf.eff_2024, vf.eff_2025,
     vf.pers_total, vf.en_classe, vf.fonctionnaire, vf.fram_sub, vf.fram_nonsub,
     vf.bepc, vf.bacc, vf.qualifiee`;
+  const currentEffCol = annee > 2025 ? `, v.eff_total AS "eff_${annee}"` : "";
   return await client.queryObject(`
-    SELECT ${cols}, v.eff_t6, v.eff_t7, v.eff_t8, v.eff_t9
+    SELECT ${cols}, v.eff_t6, v.eff_t7, v.eff_t8, v.eff_t9${currentEffCol}, v."ANNEE_SCOLAIRE" AS "ANNEE_SCOLAIRE"
     FROM v_fiche_ecole_n2 vf
-    INNER JOIN v_effectif_n2 v ON v."CODE_ETAB" = vf."CODE_ETAB" AND v."ANNEE_SCOLAIRE" = vf."ANNEE_SCOLAIRE"
+    INNER JOIN v_effectif_n2 v ON v."CODE_ETAB" = vf."CODE_ETAB" AND v."ANNEE_SCOLAIRE" = ${annee}
     WHERE vf."CODE_DREN" ${opDren} ${valDren} AND vf."CODE_CISCO" ${opCisco} ${valCisco}
     AND vf."CODE_COMMUNE" ${opCommune} ${valCommune} AND vf."CODE_ZAP" ${opZap} ${valZap} 
-    AND vf."SECTEUR" ${sect} AND vf."ANNEE_SCOLAIRE" = 2025
+    AND vf."SECTEUR" ${sect} AND vf."ANNEE_SCOLAIRE" = (SELECT MAX("ANNEE_SCOLAIRE") FROM v_fiche_ecole_n2)
   `);
 }
 
-async function executeGetDataN3(client: Client, codeDren: number, codeCisco: number, codeCommune: number, codeZap: number, secteur: number) {
+async function executeGetDataN3(client: Client, codeDren: number, codeCisco: number, codeCommune: number, codeZap: number, secteur: number, annee: number) {
+  if (annee > 2025) return executeGetDataRecent(client, "n3", codeDren, codeCisco, codeCommune, codeZap, secteur, annee);
   const opDren = codeDren === 0 ? ">" : "="; const valDren = codeDren === 0 ? 0 : codeDren;
   const opCisco = codeCisco === 0 ? ">" : "="; const valCisco = codeCisco === 0 ? 0 : codeCisco;
   const opCommune = codeCommune === 0 ? ">" : "="; const valCommune = codeCommune === 0 ? 0 : codeCommune;
@@ -2798,18 +2842,19 @@ async function executeGetDataN3(client: Client, codeDren: number, codeCisco: num
   const sect = secteur > 1 ? ">= 0" : `= ${secteur}`;
   const cols = `vf."CODE_ETAB", vf."DREN", vf."CISCO", vf."COMMUNE", vf."ZAP", vf."FOKONTANY",
     vf."NOM_ETAB", vf."CATEGORIE_COMMUNE", vf."CODE_DREN", vf."CODE_CISCO", vf."CODE_COMMUNE", vf."CODE_ZAP",
-    vf."SECTEUR", vf."ANNEE_SCOLAIRE", vf.places, vf.sdc_be, vf.sdc_me,
+    vf."SECTEUR", vf.places, vf.sdc_be, vf.sdc_me,
     vf."TYPE_SOURCE_EAU", vf."TYPE_SOURCE_ELECTRICITE",
     vf.eff_2022, vf.eff_2023, vf.eff_2024, vf.eff_2025,
     vf.pers_total, vf.en_classe, vf.fonctionnaire, vf.fram_sub, vf.fram_nonsub,
     vf.bepc, vf.bacc, vf.qualifiee`;
+  const currentEffCol = annee > 2025 ? `, v.eff_total AS "eff_${annee}"` : "";
   return await client.queryObject(`
-    SELECT ${cols}, v._2nde, v._1re, v.tle
+    SELECT ${cols}, v._2nde, v._1re, v.tle${currentEffCol}, v."ANNEE_SCOLAIRE" AS "ANNEE_SCOLAIRE"
     FROM v_fiche_ecole_n3 vf
-    INNER JOIN v_effectif_n3 v ON v."CODE_ETAB" = vf."CODE_ETAB" AND v."ANNEE_SCOLAIRE" = vf."ANNEE_SCOLAIRE"
+    INNER JOIN v_effectif_n3 v ON v."CODE_ETAB" = vf."CODE_ETAB" AND v."ANNEE_SCOLAIRE" = ${annee}
     WHERE vf."CODE_DREN" ${opDren} ${valDren} AND vf."CODE_CISCO" ${opCisco} ${valCisco} 
     AND vf."CODE_COMMUNE" ${opCommune} ${valCommune} AND vf."CODE_ZAP" ${opZap} ${valZap} 
-    AND vf."SECTEUR" ${sect} AND vf."ANNEE_SCOLAIRE" = 2025
+    AND vf."SECTEUR" ${sect} AND vf."ANNEE_SCOLAIRE" = (SELECT MAX("ANNEE_SCOLAIRE") FROM v_fiche_ecole_n3)
   `);
 }
 
@@ -2961,14 +3006,38 @@ async function executeTdbDrenData(client: Client, codeDren: number, annee: numbe
   }
 
   // Effectifs par âge : TNS (élèves de 6-10 ans) et TNA (nouveaux de 6 ans en T1).
+  // La ventilation par âge est facultative à la collecte : quand les colonnes
+  // T*_*_NANS sont mal saisies (2026 : 3 168 enfants de 6 ans pour 72 514 élèves
+  // de CP1 à Alaotra-Mangoro, et 34 000 « moins de 6 ans » en T2-T5), le TNA tombe
+  // à 4 % et le TNS à 75 % sans qu'aucun effectif n'ait bougé. Ces taux sont alors
+  // des artefacts de saisie : mieux vaut « — » qu'un pourcentage faux.
+  // Références validées : 43 à 44 % des élèves de CP1 ont 6 ans (2024, 2025).
+  const CP1_AGE6_MIN_SHARE = 0.2;
+  const MOINS6_MAX_SHARE_HORS_CP1 = 0.05;
   async function getAges(where: string) {
     try {
       const ages610 = [1, 2, 3, 4, 5].flatMap((k) => ['G', 'F'].flatMap((g) => [6, 7, 8, 9, 10].map((a) => si(`e1."T${k}_${g}_${a}ANS"`)))).join('+');
+      const horsCp1 = [2, 3, 4, 5].flatMap((k) => ['G', 'F'].map((g) => si(`e1."T${k}_${g}"`))).join('+');
+      const horsCp1Moins6Expr = [2, 3, 4, 5].flatMap((k) => ['G', 'F'].map((g) => si(`e1."T${k}_${g}_MOINS_6ANS"`))).join('+');
       const q = `SELECT SUM(${ages610}) AS eleves_6_10ans,
-        GREATEST(SUM(${si('e1."T1_G_6ANS"')}+${si('e1."T1_F_6ANS"')}) - SUM(${si('e1."T1_G_RED_6ANS"')}+${si('e1."T1_F_RED_6ANS"')}), 0) AS nouveaux_cp1_6ans
+        GREATEST(SUM(${si('e1."T1_G_6ANS"')}+${si('e1."T1_F_6ANS"')}) - SUM(${si('e1."T1_G_RED_6ANS"')}+${si('e1."T1_F_RED_6ANS"')}), 0) AS nouveaux_cp1_6ans,
+        SUM(${si('e1."T1_G"')}+${si('e1."T1_F"')}) AS eff_cp1,
+        SUM(${si('e1."T1_G_6ANS"')}+${si('e1."T1_F_6ANS"')}) AS cp1_6ans,
+        SUM(${horsCp1}) AS eff_hors_cp1,
+        SUM(${horsCp1Moins6Expr}) AS hors_cp1_moins_6ans
         FROM fpe_a1 a1 JOIN fpe_e1 e1 ON e1."CODE_ETAB"=a1."CODE_ETAB" AND e1."ANNEE_SCOLAIRE"=a1."ANNEE_SCOLAIRE" AND e1."SECTEUR"=a1."SECTEUR"
         WHERE a1."ANNEE_SCOLAIRE"=${annee} AND a1."EXISTE_PRIMAIRE"=1 AND e1."EXISTE_PRIMAIRE"=1 ${where}`;
-      return (await client.queryObject(q)).rows[0] || {};
+      const row: any = (await client.queryObject(q)).rows[0] || {};
+      const cp1 = Number(row.eff_cp1 || 0), cp1Age6 = Number(row.cp1_6ans || 0);
+      const horsCp1Total = Number(row.eff_hors_cp1 || 0), horsCp1Moins6 = Number(row.hors_cp1_moins_6ans || 0);
+      const plausible = cp1 > 0
+        && cp1Age6 / cp1 >= CP1_AGE6_MIN_SHARE
+        && (horsCp1Total === 0 || horsCp1Moins6 / horsCp1Total <= MOINS6_MAX_SHARE_HORS_CP1);
+      if (!plausible) {
+        console.warn('DREN age breakdown implausible: TNS/TNA hidden', { annee, cp1, cp1Age6, horsCp1Total, horsCp1Moins6 });
+        return { eleves_6_10ans: null, nouveaux_cp1_6ans: null };
+      }
+      return { eleves_6_10ans: row.eleves_6_10ans, nouveaux_cp1_6ans: row.nouveaux_cp1_6ans };
     } catch (e) { console.error('DREN age breakdown unavailable', e); return {}; }
   }
 
