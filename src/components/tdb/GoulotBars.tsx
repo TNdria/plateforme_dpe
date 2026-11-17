@@ -8,8 +8,8 @@ export function GoulotBars({ items, title = "Goulots d’étranglement — Indic
     <table className="tdb-bottleneck-table"><tbody>{items.map(it => {
       const value = it.value === null ? null : bounded(it.value);
       const status = bottleneckStatus(value);
-      return <tr key={it.name}><td>{it.name}</td><td><div className="tdb-bar-track"><div className={`tdb-bar ${barClasses[status]}`} style={{ width: `${(value ?? 0) / 120 * 100}%` }} /></div></td><td className={valueClasses[status]}>{value === null ? 'n/d' : `${value.toFixed(1)} %`}</td></tr>;
-    })}<tr><td /><td><div className="tdb-bar-axis">{[0, 50, 100, 120].map(n => <span key={n}>{n}</span>)}</div></td><td /></tr></tbody></table>
+      return <tr key={it.name}><td>{it.name}</td><td><div className="tdb-bar-track"><div className={`tdb-bar ${barClasses[status]}`} style={{ width: `${(value ?? 0)}%` }} /></div></td><td className={valueClasses[status]}>{value === null ? 'n/d' : `${value.toFixed(1)} %`}</td></tr>;
+    })}<tr><td /><td><div className="tdb-bar-axis">{[0, 50, 100].map(n => <span key={n}>{n}</span>)}</div></td><td /></tr></tbody></table>
     <div className="tdb-chart-note">Pourcentage (%)</div>
     <div className="tdb-chart-legend"><span className="tdb-value-critical">● &lt; 50 % (Critique)</span><span className="tdb-value-warning">● 50–75 % (Attention)</span><span className="tdb-value-good">● &gt; 75 % (Bon)</span></div>
   </div>;

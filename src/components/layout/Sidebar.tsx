@@ -2,7 +2,6 @@ import { useState, useMemo } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import {
-  LayoutDashboard,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -47,7 +46,21 @@ const menuItems: { section?: string; items: MenuItem[] }[] = [
   {
     items: [
       { label: "Accueil", icon: Home, path: "/" },
-      { label: "Dashboard", icon: LayoutDashboard, path: "/dashboard" },
+    ],
+  },
+  {
+    section: "STATISTIQUES",
+    items: [
+      {
+        label: "Données",
+        icon: Database,
+        children: [
+          { label: "Préscolaire", path: "/donnees/prescolaire" },
+          { label: "Primaire", path: "/donnees/primaire" },
+          { label: "Collège", path: "/donnees/college" },
+          { label: "Lycée", path: "/donnees/lycee" },
+        ],
+      },
     ],
   },
   {
@@ -66,27 +79,27 @@ const menuItems: { section?: string; items: MenuItem[] }[] = [
     ],
   },
   {
-    section: "STATISTIQUES",
+    section: "DIAGNOSTIC",
     items: [
       {
-        label: "Données",
-        icon: Database,
-        children: [
-          { label: "Préscolaire", path: "/donnees/prescolaire" },
-          { label: "Primaire", path: "/donnees/primaire" },
-          { label: "Collège", path: "/donnees/college" },
-          { label: "Lycée", path: "/donnees/lycee" },
-        ],
+        label: "Diagnostic",
+        icon: FileText,
+        path: "/diagnostic",
+        requiresAuth: true,
       },
+    ],
+  },
+  {
+    section: "ORS",
+    items: [
       {
-        label: "Besoins",
-        icon: GraduationCap,
+        label: "ORS",
+        icon: School,
         requiresAuth: true,
         children: [
-          { label: "Besoins Préscolaire", path: "/besoins/prescolaire" },
-          { label: "Besoins Primaire", path: "/besoins/primaire" },
-          { label: "Besoins Collège", path: "/besoins/college" },
-          { label: "Besoins Lycée", path: "/besoins/lycee" },
+          { label: "ORS Primaire", path: "/ors/primaire", requiresAuth: true },
+          { label: "ORS Collège", path: "/ors/college", requiresAuth: true },
+          { label: "ORS Lycée", path: "/ors/lycee", requiresAuth: true },
         ],
       },
     ],
@@ -106,24 +119,32 @@ const menuItems: { section?: string; items: MenuItem[] }[] = [
     ],
   },
   {
+    section: "BESOINS",
+    items: [
+      {
+        label: "Besoins",
+        icon: GraduationCap,
+        requiresAuth: true,
+        children: [
+          { label: "Besoins Préscolaire", path: "/besoins/prescolaire" },
+          { label: "Besoins Primaire", path: "/besoins/primaire" },
+          { label: "Besoins Collège", path: "/besoins/college" },
+          { label: "Besoins Lycée", path: "/besoins/lycee" },
+        ],
+      },
+    ],
+  },
+  {
     section: "CARTOGRAPHIE",
     items: [
       {
-        label: "Géolocalisation",
-        icon: MapPin,
-        children: [{ label: "Établissement", path: "/sig" }],
-      },
-      {
-        label: "ORS",
-        icon: School,
-        requiresAuth: true,
+        label: "Cartographie",
+        icon: Map,
         children: [
-          { label: "ORS Primaire", path: "/ors/primaire", requiresAuth: true },
-          { label: "ORS Collège", path: "/ors/college", requiresAuth: true },
-          { label: "ORS Lycée", path: "/ors/lycee", requiresAuth: true },
+          { label: "Géolocalisation", path: "/sig" },
+          { label: "Carte Thématique", path: "/dataviz" },
         ],
       },
-      { label: "Carte Thématique", icon: Map, path: "/dataviz" },
     ],
   },
   {
@@ -134,12 +155,6 @@ const menuItems: { section?: string; items: MenuItem[] }[] = [
         icon: ClipboardList,
         path: "/referentiel",
         adminOnly: true,
-      },
-      {
-        label: "Diagnostic",
-        icon: FileText,
-        path: "/diagnostic",
-        requiresAuth: true,
       },
       { label: "Mon Profil", icon: User, path: "/profil", requiresAuth: true },
       { label: "EAGER", icon: Settings, path: "/eager", adminOnly: true },
@@ -157,10 +172,11 @@ const Sidebar = () => {
   const [openMenus, setOpenMenus] = useState<string[]>([
     "Tableau de Bord",
     "Données",
+    "Diagnostic",
+    "ORS",
     "Besoins",
     "Ouverture",
-    "Géolocalisation",
-    "ORS",
+    "Cartographie",
   ]);
 
   // Filter menu items based on auth/admin state

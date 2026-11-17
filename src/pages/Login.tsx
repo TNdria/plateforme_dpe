@@ -71,7 +71,11 @@ const Login = () => {
       
       if (result.success) {
         toast.success("Connexion réussie");
-        navigate(result.redirect || '/dashboard');
+        // Le serveur peut encore renvoyer l'ancien /dashboard : on ne s'y rend plus.
+        const destination = !result.redirect || result.redirect === '/dashboard'
+          ? '/donnees/prescolaire'
+          : result.redirect;
+        navigate(destination);
       } else {
         setError(result.error || "Identifiants invalides");
       }

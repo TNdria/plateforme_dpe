@@ -63,6 +63,20 @@ describe('TableauDeBord', () => {
     expect(html).toContain('print:hidden');
   });
 
+  it('plafonne à 100 % l’affichage d’un goulot supérieur à 100 %', () => {
+    const html = renderToStaticMarkup(<TableauDeBord data={{
+      ...primary,
+      dren: {
+        ...primary.dren,
+        ressources: { ...primary.dren.ressources, nbr_eleve_t4_t5: 44000 },
+        manuels: { manuel_t4_t5: 88000 },
+      },
+    }} niveau="primaire" codeDren="12" />);
+    expect(html).toContain('Couverture en manuels T4-T5 (%)');
+    expect(html).not.toContain('200.0%');
+    expect(html).toContain('>100.0%</td>');
+  });
+
   it('trace le nuage avec les autres DREN comparées', () => {
     const html = renderToStaticMarkup(<TableauDeBord data={{
       ...primary,

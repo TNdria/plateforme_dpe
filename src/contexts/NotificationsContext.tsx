@@ -47,11 +47,11 @@ const seedNotifications = (): AppNotification[] => [
   {
     id: "data-1",
     title: "Données 2025-2026 disponibles",
-    message: "Les statistiques de l'année scolaire 2025-2026 sont maintenant accessibles dans le dashboard.",
+    message: "Les statistiques de l'année scolaire 2025-2026 sont maintenant accessibles dans la section Données.",
     type: "success",
     createdAt: Date.now() - 1000 * 60 * 60 * 2,
     read: false,
-    link: "/dashboard",
+    link: "/donnees/prescolaire",
   },
 ];
 

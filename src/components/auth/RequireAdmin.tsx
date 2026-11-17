@@ -7,7 +7,7 @@ interface RequireAdminProps {
   children: ReactNode;
 }
 
-/** Restrict access to admin/staff users only. Guests get redirected to /login, regular users to /dashboard. */
+/** Restrict access to admin/staff users only. Guests get redirected to /login, regular users to /donnees/prescolaire. */
 const RequireAdmin = ({ children }: RequireAdminProps) => {
   const { isAuthenticated, isLoading, user } = useAuth();
   const location = useLocation();
@@ -26,7 +26,7 @@ const RequireAdmin = ({ children }: RequireAdminProps) => {
 
   const isAdmin = !!user?.is_superuser || !!user?.is_staff;
   if (!isAdmin) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/donnees/prescolaire" replace />;
   }
 
   return <>{children}</>;

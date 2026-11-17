@@ -72,7 +72,7 @@ function Cell({ cell, onClick }: { cell: ReportCell; onClick?: (meta?: Indicator
   if (cell.icon !== undefined) {
     return (
       <td className={cellClass(cell)} colSpan={cell.span} onClick={() => onClick?.(cell.meta)}>
-        {cell.icon ? <DisparityIcon kind={cell.icon} size={18} /> : <span className="tdb-dash">—</span>}
+        {cell.icon ? <DisparityIcon kind={cell.icon} size={30} /> : <span className="tdb-dash">—</span>}
       </td>
     );
   }
@@ -364,7 +364,7 @@ function GoulotBars({ items, onMeta }: { items: GoulotItem[]; onMeta: (meta?: In
                   </div>
                 </td>
                 <td className={`tdb-goulot-value${item.value === null ? ' tdb-goulot-missing' : ''}`}>
-                  {item.value === null ? '—' : formatDrenValue(item.raw, item.meta.unit === '%' ? '%' : '', item.meta.digits ?? 1)}
+                  {item.value === null ? '—' : formatDrenValue(item.meta.unit === '%' ? item.value : item.raw, item.meta.unit === '%' ? '%' : '', item.meta.digits ?? 1)}
                 </td>
               </tr>
             );

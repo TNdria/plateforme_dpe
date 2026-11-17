@@ -1364,7 +1364,7 @@ serve(async (req: Request) => {
         // Check for custom user model fields (dren, cisco)
         const dren = user.dren;
         const cisco = user.cisco;
-        const redirect = user.username === 'eager' ? '/eager' : '/dashboard';
+        const redirect = user.username === 'eager' ? '/eager' : '/donnees/prescolaire';
         const sessionToken = await issueTdbSession(Number(user.id), user.password, Deno.env.get('TDB_SESSION_SECRET') || '');
         await client.end();
         return new Response(JSON.stringify({

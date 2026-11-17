@@ -379,7 +379,7 @@ const Home = () => {
                 size="lg"
                 variant="outline"
                 className="h-16 px-12 text-lg font-semibold border-2 border-white/20 text-white bg-white/5 backdrop-blur-lg hover:bg-white/10 hover:border-white/40 transform transition-all duration-300 hover:scale-105"
-                onClick={() => navigate("/dashboard")}
+                onClick={() => navigate("/donnees/prescolaire")}
               >
                 <span className="mr-3">Explorer les données</span>
                 <ChevronRight className="h-5 w-5" />

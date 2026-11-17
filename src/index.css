@@ -1016,8 +1016,8 @@
 .tdb-cell-review { background: #FFFF00 !important; color: #000; }
 .tdb-cell-attention { background: #FF0000 !important; color: #fff; font-weight: 700; }
 .tdb-cell-na { background: #C8C8C8 !important; color: transparent; }
-.tdb-cell-icon { text-align: center !important; padding: .2mm !important; }
-.tdb-cell-icon img { height: 4.2mm; }
+.tdb-cell-icon { text-align: center !important; padding: .8mm !important; }
+.tdb-cell-icon img { height: 7mm; }
 
 /* CEPE results table: reference 9-column layout. */
 .tdb-exam .tdb-table.tdb-cepe { table-layout: fixed; color: #000; }
