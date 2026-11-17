@@ -72,7 +72,7 @@ function Cell({ cell, onClick }: { cell: ReportCell; onClick?: (meta?: Indicator
   if (cell.icon !== undefined) {
     return (
       <td className={cellClass(cell)} colSpan={cell.span} onClick={() => onClick?.(cell.meta)}>
-        {cell.icon ? <DisparityIcon kind={cell.icon} size={30} /> : <span className="tdb-dash">—</span>}
+        {cell.icon ? <DisparityIcon kind={cell.icon} size={36} /> : <span className="tdb-dash">—</span>}
       </td>
     );
   }

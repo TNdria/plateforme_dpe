@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
-import { FileText, Target, ShieldCheck, Activity, Sparkles, Building2, Sigma } from 'lucide-react';
+import { Target, ShieldCheck, Activity, Sparkles, Building2, Sigma } from 'lucide-react';
 import { dashboardApi, Dren, Cisco } from '@/services/api';
 import { supabase } from '@/integrations/supabase/client';
 import { useDiagnosticDataset } from '@/hooks/useDiagnosticDataset';
@@ -16,7 +16,6 @@ import FormulesIndicateurs from '@/components/diagnostic/FormulesIndicateurs';
 import DataActionsBar from '@/components/admin/DataActionsBar';
 import logoMen from '@/assets/logoMen.jpg';
 import logoDpe from '@/assets/logoDpe.jpg';
-import { Badge } from '@/components/ui/badge';
 
 interface DiagnosticResult {
   diagnostic: string; drenName: string; ciscoName: string;
@@ -170,33 +169,22 @@ const Diagnostic = () => {
 
   return (
     <div className="flex h-full flex-col bg-background">
-      <div className="relative border-b border-border bg-card/90 px-4 py-3 backdrop-blur">
-        <div className="absolute inset-x-0 top-0 flex h-1">
-          <span className="h-full flex-[6] bg-primary" />
-          <span className="h-full flex-1 bg-secondary" />
-          <span className="h-full flex-1 bg-destructive" />
-        </div>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <img src={logoMen} alt="Logo Ministère de l'Éducation Nationale" className="h-12 w-12 rounded-lg object-contain bg-card p-0.5 shadow-sm ring-1 ring-secondary/30" />
-            <div className="leading-tight">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                Ministère de l'Éducation Nationale — Direction de la Planification de l'Éducation
-              </p>
-              <h1 className="flex items-center gap-2 text-base font-bold uppercase tracking-wide text-primary">
-                <FileText className="h-4 w-4 text-primary" />
-                Diagnostic du système éducatif
-              </h1>
-              <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                <Badge className="bg-primary text-primary-foreground hover:bg-primary/90 text-[10px]">{scopeLabel}</Badge>
-                <Badge variant="outline" className="border-secondary/50 text-[10px] text-secondary">Année {annee || '—'}</Badge>
-                <Badge variant="outline" className="border-border text-[10px] text-muted-foreground">Plan officiel MEN</Badge>
-              </div>
+      <div className="sticky top-0 z-30 border-b border-border/70 bg-card/95 shadow-md ring-1 ring-border/40 backdrop-blur-md text-foreground">
+        <div className="mx-auto max-w-none px-4 py-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2 shrink-0">
+              <img src={logoMen} alt="MEN" className="h-10 w-10 rounded-md object-contain ring-1 ring-border bg-white p-0.5 shadow-sm" />
+              <img src={logoDpe} alt="DPE" className="h-10 w-10 rounded-md object-contain ring-1 ring-border bg-white p-0.5 shadow-sm" />
             </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <DataActionsBar table="fpe_a1" tableLabel="Données diagnostic" compact />
-            <img src={logoDpe} alt="Logo DPE" className="hidden h-12 w-12 rounded-lg object-contain bg-card p-0.5 shadow-sm ring-1 ring-primary/20 md:block" />
+            <div className="flex-1 min-w-[220px]">
+              <h1 className="text-base sm:text-lg font-bold leading-tight text-primary drop-shadow-sm">Diagnostic du système éducatif</h1>
+              <p className="text-xs text-muted-foreground">
+                Ministère de l'Éducation Nationale · {scopeLabel} · Année scolaire <strong className="text-primary">{annee || '—'}</strong>
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <DataActionsBar table="fpe_a1" tableLabel="Données diagnostic" compact />
+            </div>
           </div>
         </div>
       </div>

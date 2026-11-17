@@ -8,7 +8,7 @@ import garcons from "@/assets/score/garcons.png";
  */
 export const DisparityIcon = ({
   kind,
-  size = 42,
+  size = 48,
 }: {
   kind: "f" | "g" | null | undefined;
   size?: number;

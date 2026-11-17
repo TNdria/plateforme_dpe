@@ -354,7 +354,7 @@ const TDBCisco = () => {
                                       const rg = Number(lvl.ressources?.eff_t1_g||0) > 0 ? Number(lvl.ressources?.eff_t5_g||0) / Number(lvl.ressources?.eff_t1_g||1) * 100 : 0;
                                       const rf = Number(lvl.ressources?.eff_t1_f||0) > 0 ? Number(lvl.ressources?.eff_t5_f||0) / Number(lvl.ressources?.eff_t1_f||1) * 100 : 0;
                                       const kind: 'f' | 'g' | null = Math.abs(rg - rf) < 0.01 ? null : rg < rf ? 'g' : 'f';
-                                      return <td key={i} style={{ ...styles.td, textAlign: 'center', padding: 6 }}><DisparityIcon kind={kind} /></td>;
+                                      return <td key={i} style={{ ...styles.td, textAlign: 'center', padding: 8 }}><DisparityIcon kind={kind} /></td>;
                                     })}
                                   </tr>
                                 </>
@@ -402,7 +402,7 @@ const TDBCisco = () => {
                                       const rg = pctVal(lvl.ressources.red_g, lvl.ressources.nbr_eleve_g);
                                       const rf = pctVal(lvl.ressources.red_f, lvl.ressources.nbr_eleve_f);
                                       const kind: 'f' | 'g' | null = Math.abs(rg - rf) < 0.01 ? null : rg > rf ? 'g' : 'f';
-                                      return <td key={i} style={{ ...styles.td, textAlign: 'center', padding: 6 }}><DisparityIcon kind={kind} /></td>;
+                                      return <td key={i} style={{ ...styles.td, textAlign: 'center', padding: 8 }}><DisparityIcon kind={kind} /></td>;
                                     })}
                                   </tr>
                                 </>
@@ -512,7 +512,7 @@ const TDBCisco = () => {
                         const txG = pctVal(lvl.cepe?.admis_g, lvl.cepe?.nbr_g);
                         const txF = pctVal(lvl.cepe?.admis_f, lvl.cepe?.nbr_f);
                         const kind: 'f' | 'g' | null = Math.abs(txG - txF) < 0.01 ? null : txG < txF ? 'g' : 'f';
-                        return <td key={i} style={{ ...styles.td, textAlign: 'center', padding: 6 }}><DisparityIcon kind={kind} /></td>;
+                        return <td key={i} style={{ ...styles.td, textAlign: 'center', padding: 8 }}><DisparityIcon kind={kind} /></td>;
                       })}
                     </tr>
                   </tbody>

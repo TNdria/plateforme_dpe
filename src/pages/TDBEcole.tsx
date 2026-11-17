@@ -366,7 +366,7 @@ const TDBEcole = () => {
                           <tr><td style={s.td}>Garçons</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'right' }}>{ret(l, `eff_${lastT}_g`, 'eff_t1_g')}</td>)}</tr>
                           <tr><td style={s.td}>Filles</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'right' }}>{ret(l, `eff_${lastT}_f`, 'eff_t1_f')}</td>)}</tr>
                           <tr><td style={s.td}>Ensemble</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'right' }}>{pct(l.ressources?.[`eff_${lastT}`], l.ressources?.eff_t1)}</td>)}</tr>
-                          <tr><td style={s.td}>Disparité aux dépens des</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'center', padding: 6 }}><DisparityIcon kind={depens(l)} /></td>)}</tr>
+                          <tr><td style={s.td}>Disparité aux dépens des</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'center', padding: 8 }}><DisparityIcon kind={depens(l)} /></td>)}</tr>
                         </>);
                       })()}
                     </tbody>
@@ -391,7 +391,7 @@ const TDBEcole = () => {
                           <tr><td style={s.td}>Garçons</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'right' }}>{rG(l)}</td>)}</tr>
                           <tr><td style={s.td}>Filles</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'right' }}>{rF(l)}</td>)}</tr>
                           <tr><td style={s.td}>Ensemble</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'right' }}>{rE(l)}</td>)}</tr>
-                          <tr><td style={s.td}>Disparité aux dépens des</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'center', padding: 6 }}><DisparityIcon kind={depensRed(l)} /></td>)}</tr>
+                          <tr><td style={s.td}>Disparité aux dépens des</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'center', padding: 8 }}><DisparityIcon kind={depensRed(l)} /></td>)}</tr>
                         </>);
                       })()}
                     </tbody>
@@ -508,7 +508,7 @@ const TDBEcole = () => {
                       <tr><td style={s.td}>Garçons</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'center' }}>{gP(l)}</td>)}</tr>
                       <tr><td style={s.td}>Filles</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'center' }}>{fP(l)}</td>)}</tr>
                       <tr><td style={s.td}>Ensemble</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'center' }}>{eP(l)}</td>)}</tr>
-                      <tr><td style={s.td}>Disparité aux dépens des</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'center', padding: 6 }}><DisparityIcon kind={depensAdmis(l)} /></td>)}</tr>
+                      <tr><td style={s.td}>Disparité aux dépens des</td>{[e, z, c].map((l, i) => <td key={i} style={{ ...s.td, textAlign: 'center', padding: 8 }}><DisparityIcon kind={depensAdmis(l)} /></td>)}</tr>
                     </tbody>
                   </table>
                   {selectedNiveau === 'lycee' && (
