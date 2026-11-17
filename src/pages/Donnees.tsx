@@ -47,6 +47,7 @@ import logoDpe from "@/assets/logoDpe.jpg";
 import { buildSectorGroups, getTotalEleves, type Niveau } from "@/utils/donneesSectors";
 import {
   DEFAULT_SCHOOL_YEAR,
+  FIRST_SCHOOL_YEAR,
   SCHOOL_YEARS,
   formatAnneeScolaire,
 } from "@/utils/anneeScolaire";
@@ -367,7 +368,7 @@ const Donnees = () => {
     setHasLoadedOnce(false);
   }, [niveau]);
 
-  const handleFilter = async () => {
+  const handleFilter = async (overrideAnnee?: number, silent = false) => {
     // Un périmètre à 0 signifie « national » (toutes les DREN / CISCO / …).
     setIsFilterDirty(false);
 
@@ -376,7 +377,7 @@ const Donnees = () => {
     const commune = filters.selectedCommune !== "0" ? Number(filters.selectedCommune) : 0;
     const zap = filters.selectedZap !== "0" ? Number(filters.selectedZap) : 0;
     const secteur = Number(filters.selectedSecteur);
-    const annee = Number(selectedAnnee);
+    const annee = overrideAnnee ?? Number(selectedAnnee);
     setLoading(true);
     try {
       let result: any[] = [];
@@ -400,14 +401,18 @@ const Donnees = () => {
       setHasLoadedOnce(true);
       setLastUpdate(new Date());
 
-      if (nextData.length === 0) {
-        toast.info("Aucune donnée ne correspond à ces filtres");
-      } else {
-        toast.success(`${formatNumber(nextData.length)} établissements chargés`);
+      if (!silent) {
+        if (nextData.length === 0) {
+          toast.info("Aucune donnée ne correspond à ces filtres");
+        } else {
+          toast.success(`${formatNumber(nextData.length)} établissements chargés`);
+        }
       }
+      return nextData;
     } catch (err) {
       console.error(err);
-      toast.error("Erreur lors du chargement des données");
+      if (!silent) toast.error("Erreur lors du chargement des données");
+      return [];
     } finally {
       setLoading(false);
     }
@@ -438,9 +443,25 @@ const Donnees = () => {
   // géographique sélectionné manuellement). Le périmètre 0 = national.
   useEffect(() => {
     let cancelled = false;
-    const timer = window.setTimeout(() => {
+    const timer = window.setTimeout(async () => {
       if (cancelled) return;
-      handleFilter();
+      // Charge la donnée la plus récente disponible : si le millésime par
+      // défaut (ex. 2026) ne renvoie rien (déploiement sans /api/donnees ou
+      // données absentes), on remonte d'une année jusqu'à trouver des lignes.
+      let year = Number(selectedAnnee);
+      while (!cancelled && year >= FIRST_SCHOOL_YEAR) {
+        const rows = await handleFilter(year, true);
+        if (cancelled) return;
+        if (Array.isArray(rows) && rows.length > 0) {
+          if (year !== Number(selectedAnnee)) setSelectedAnnee(String(year));
+          toast.success(`${formatNumber(rows.length)} établissements chargés`);
+          break;
+        }
+        year -= 1;
+      }
+      if (!cancelled && year < FIRST_SCHOOL_YEAR) {
+        toast.info("Aucune donnée ne correspond à ces filtres");
+      }
     }, 0);
     return () => {
       cancelled = true;
