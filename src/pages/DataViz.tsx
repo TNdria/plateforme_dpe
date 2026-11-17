@@ -1576,6 +1576,39 @@ const DataViz = () => {
         ? ciscoGeoJson
         : drenGeoJson;
 
+  // La légende grise n'apparaît que si un polygone visible
+  // possède une statistique dont le ratio est réellement indisponible.
+  const hasMissingZoneData = useMemo(() => {
+    if (appliedTheme === "0" || showEtab) return false;
+
+    const statsByCode =
+      activeLayer === "commune"
+        ? communeStatsByCode
+        : activeLayer === "cisco"
+          ? ciscoStatsByCode
+          : drenStatsByCode;
+
+    const features = activeBoundsData?.features ?? [];
+
+    return features.some((feature: any) => {
+      const code = normalizeZoneCode(feature?.properties?.CODE);
+      const stat = statsByCode.get(code);
+
+      if (!stat) return false;
+
+      const ratio = calculateRatio(stat, appliedTheme);
+      return !Number.isFinite(ratio);
+    });
+  }, [
+    activeBoundsData,
+    activeLayer,
+    showEtab,
+    appliedTheme,
+    drenStatsByCode,
+    ciscoStatsByCode,
+    communeStatsByCode,
+  ]);
+
   return (
     <div className="h-full flex flex-col">
       <div className="sticky top-0 z-30 shrink-0 border-b border-border bg-card/95 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-card/80">
@@ -2216,23 +2249,34 @@ const DataViz = () => {
                       {legendLabels.red}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="w-4 h-3 shrink-0" style={{ backgroundColor: "#9CA3AF" }} />
-                    <span className="flex-1 text-right tabular-nums leading-tight">
-                      {legendLabels.missing}
-                    </span>
-                  </div>
+                  {hasMissingZoneData && (
+                    <div className="flex items-center gap-2">
+                      <span className="w-4 h-3 shrink-0" style={{ backgroundColor: "#9CA3AF" }} />
+                      <span className="flex-1 text-right tabular-nums leading-tight">
+                        {legendLabels.missing}
+                      </span>
+                    </div>
+                  )}
                   <div className="border-t pt-2 mt-2 space-y-1">
                     <div className="flex items-center gap-2">
-                      <span className="w-4 h-3 shrink-0" style={{ backgroundColor: "#4e73df" }} />
+                      <span
+                        className="w-4 h-3 shrink-0 bg-transparent"
+                        style={{ border: "1px solid #4e73df" }}
+                      />
                       <span>Limite DREN</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="w-4 h-3 shrink-0" style={{ backgroundColor: "#22afbe" }} />
+                      <span
+                        className="w-4 h-3 shrink-0 bg-transparent"
+                        style={{ border: "1px solid #22afbe" }}
+                      />
                       <span>Limite CISCO</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="w-4 h-3 shrink-0" style={{ backgroundColor: "#c0c0c0" }} />
+                      <span
+                        className="w-4 h-3 shrink-0 bg-transparent"
+                        style={{ border: "2px solid #c0c0c0" }}
+                      />
                       <span>Limite Commune</span>
                     </div>
                     {showEtab && (
