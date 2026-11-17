@@ -4,7 +4,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { Client } from "https://deno.land/x/postgres@v0.17.0/mod.ts";
 import { executeDiagnosticDataset } from "./diagnostic.ts";
-import { buildDonneesRecentSql, type DataRecentLevel } from "../_shared/donneesRecent.ts";
+import {
+  MIN_DONNEES_ANNEE,
+  buildDonneesRecentSql,
+  type DataRecentLevel,
+} from "../_shared/donneesRecent.ts";
 import { executeTdbDrenNiveau, type NiveauDren } from "./tdbDrenNiveau.ts";
 import { ensureRefTables, CE_SRC, popSource, importReference } from "./refImport.ts";
 import { repairReferenceBatch } from "./refBatch.ts";
@@ -2757,7 +2761,9 @@ async function executeGetDataRecent(
 }
 
 async function executeGetDataN0(client: Client, codeDren: number, codeCisco: number, codeCommune: number, codeZap: number, secteur: number, annee: number) {
-  if (annee > 2025) return executeGetDataRecent(client, "n0", codeDren, codeCisco, codeCommune, codeZap, secteur, annee);
+  // Toutes les années servies par l'application passent par le SQL reconstruit :
+  // les vues `v_fiche_ecole_n*` ne sont valides que pour leur propre millésime.
+  if (annee >= MIN_DONNEES_ANNEE) return executeGetDataRecent(client, "n0", codeDren, codeCisco, codeCommune, codeZap, secteur, annee);
   const opDren = codeDren === 0 ? ">" : "="; const valDren = codeDren === 0 ? 0 : codeDren;
   const opCisco = codeCisco === 0 ? ">" : "="; const valCisco = codeCisco === 0 ? 0 : codeCisco;
   const opCommune = codeCommune === 0 ? ">" : "="; const valCommune = codeCommune === 0 ? 0 : codeCommune;
@@ -2784,7 +2790,7 @@ async function executeGetDataN0(client: Client, codeDren: number, codeCisco: num
 }
 
 async function executeGetDataN1(client: Client, codeDren: number, codeCisco: number, codeCommune: number, codeZap: number, secteur: number, annee: number) {
-  if (annee > 2025) return executeGetDataRecent(client, "n1", codeDren, codeCisco, codeCommune, codeZap, secteur, annee);
+  if (annee >= MIN_DONNEES_ANNEE) return executeGetDataRecent(client, "n1", codeDren, codeCisco, codeCommune, codeZap, secteur, annee);
   const opDren = codeDren === 0 ? ">" : "="; const valDren = codeDren === 0 ? 0 : codeDren;
   const opCisco = codeCisco === 0 ? ">" : "="; const valCisco = codeCisco === 0 ? 0 : codeCisco;
   const opCommune = codeCommune === 0 ? ">" : "="; const valCommune = codeCommune === 0 ? 0 : codeCommune;
@@ -2809,7 +2815,7 @@ async function executeGetDataN1(client: Client, codeDren: number, codeCisco: num
 }
 
 async function executeGetDataN2(client: Client, codeDren: number, codeCisco: number, codeCommune: number, codeZap: number, secteur: number, annee: number) {
-  if (annee > 2025) return executeGetDataRecent(client, "n2", codeDren, codeCisco, codeCommune, codeZap, secteur, annee);
+  if (annee >= MIN_DONNEES_ANNEE) return executeGetDataRecent(client, "n2", codeDren, codeCisco, codeCommune, codeZap, secteur, annee);
   const opDren = codeDren === 0 ? ">" : "="; const valDren = codeDren === 0 ? 0 : codeDren;
   const opCisco = codeCisco === 0 ? ">" : "="; const valCisco = codeCisco === 0 ? 0 : codeCisco;
   const opCommune = codeCommune === 0 ? ">" : "="; const valCommune = codeCommune === 0 ? 0 : codeCommune;
@@ -2834,7 +2840,7 @@ async function executeGetDataN2(client: Client, codeDren: number, codeCisco: num
 }
 
 async function executeGetDataN3(client: Client, codeDren: number, codeCisco: number, codeCommune: number, codeZap: number, secteur: number, annee: number) {
-  if (annee > 2025) return executeGetDataRecent(client, "n3", codeDren, codeCisco, codeCommune, codeZap, secteur, annee);
+  if (annee >= MIN_DONNEES_ANNEE) return executeGetDataRecent(client, "n3", codeDren, codeCisco, codeCommune, codeZap, secteur, annee);
   const opDren = codeDren === 0 ? ">" : "="; const valDren = codeDren === 0 ? 0 : codeDren;
   const opCisco = codeCisco === 0 ? ">" : "="; const valCisco = codeCisco === 0 ? 0 : codeCisco;
   const opCommune = codeCommune === 0 ? ">" : "="; const valCommune = codeCommune === 0 ? 0 : codeCommune;

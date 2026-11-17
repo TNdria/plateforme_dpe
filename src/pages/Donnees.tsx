@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -50,6 +50,7 @@ import {
   DEFAULT_SCHOOL_YEAR,
   SCHOOL_YEARS,
   formatAnneeScolaire,
+  parseSchoolYear,
 } from "@/utils/anneeScolaire";
 
 type Section = "ecoles" | "eleves" | "personnels";
@@ -348,6 +349,10 @@ const Donnees = () => {
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportFormat, setExportFormat] = useState<ExportFormat>("xlsx");
   const [selectedAnnee, setSelectedAnnee] = useState(String(DEFAULT_SCHOOL_YEAR));
+  // Une requête nationale peut durer plusieurs dizaines de secondes : si
+  // l'utilisateur change de filtre entre-temps, seule la dernière réponse doit
+  // être affichée (sinon une réponse plus ancienne écrase la plus récente).
+  const requestIdRef = useRef(0);
   const filters = useDonneesFilters(filterScope);
 
   const markFilterDirty = () => {
@@ -385,70 +390,63 @@ const Donnees = () => {
       !perimeter && filters.selectedCommune !== "0" ? Number(filters.selectedCommune) : 0;
     const zap = !perimeter && filters.selectedZap !== "0" ? Number(filters.selectedZap) : 0;
     const secteur = Number(filters.selectedSecteur);
-    const requestedYear = overrideAnnee ?? Number(selectedAnnee);
+    // `overrideAnnee` vient parfois d'un gestionnaire d'événements : seul un
+    // millésime entier est retenu, sinon on utilise le sélecteur. Sans ce
+    // garde-fou la requête partait avec l'événement React comme année et ne
+    // renvoyait aucune ligne pour les millésimes historiques.
+    const requestedYear =
+      parseSchoolYear(overrideAnnee) ?? parseSchoolYear(selectedAnnee) ?? DEFAULT_SCHOOL_YEAR;
+    const requestId = ++requestIdRef.current;
 
     setLoading(true);
     try {
-      // Si le millésime demandé ne renvoie rien (données absentes pour ce
-      // périmètre) ou si la source échoue (ex. /api/donnees non configuré en
-      // production), on essaie les autres millésimes — le plus récent
-      // d'abord — jusqu'à trouver des lignes, afin que les filtres
-      // (DREN, CISCO, …) affichent toujours des résultats.
-      const yearsToTry = [
-        requestedYear,
-        ...[...SCHOOL_YEARS]
-          .filter((y) => y !== requestedYear)
-          .sort((a, b) => b - a),
-      ];
-      let foundYear: number | null = null;
+      // Le millésime choisi est autoritaire : on n'affiche jamais les
+      // données d'une autre année sous l'étiquette sélectionnée. Une année
+      // sans résultat pour ce périmètre reste un résultat vide, avec un
+      // message explicite — pas un repli silencieux sur un autre millésime.
       let result: any[] = [];
       let lastError: unknown = null;
-      for (const year of yearsToTry) {
-        try {
-          let r: any[] = [];
-          switch (niveau) {
-            case "prescolaire":
-              r = await donneesApi.getEtabN0(dren, cisco, commune, zap, secteur, year);
-              break;
-            case "primaire":
-              r = await donneesApi.getEtabN1(dren, cisco, commune, zap, secteur, year);
-              break;
-            case "college":
-              r = await donneesApi.getEtabN2(dren, cisco, commune, zap, secteur, year);
-              break;
-            case "lycee":
-              r = await donneesApi.getEtabN3(dren, cisco, commune, zap, secteur, year);
-              break;
-          }
-          result = Array.isArray(r) ? r : [];
-          lastError = null;
-        } catch (err) {
-          // Une année indisponible ne doit pas bloquer le repli sur les
-          // autres millésimes (source distante absente, permissions, réseau…).
-          console.warn(`Chargement ${niveau} ${year} impossible, repli autre année.`, err);
-          lastError = err;
-          result = [];
+      try {
+        let r: any[] = [];
+        switch (niveau) {
+          case "prescolaire":
+            r = await donneesApi.getEtabN0(dren, cisco, commune, zap, secteur, requestedYear);
+            break;
+          case "primaire":
+            r = await donneesApi.getEtabN1(dren, cisco, commune, zap, secteur, requestedYear);
+            break;
+          case "college":
+            r = await donneesApi.getEtabN2(dren, cisco, commune, zap, secteur, requestedYear);
+            break;
+          case "lycee":
+            r = await donneesApi.getEtabN3(dren, cisco, commune, zap, secteur, requestedYear);
+            break;
         }
-        if (result.length > 0) {
-          foundYear = year;
-          break;
-        }
+        result = Array.isArray(r) ? r : [];
+      } catch (err) {
+        // Une erreur de source ne doit pas laisser croire à une absence de
+        // données : on la remonte à l'utilisateur.
+        console.warn(`Chargement ${niveau} ${requestedYear} impossible.`, err);
+        lastError = err;
+        result = [];
       }
+
+      // Réponse obsolète : un chargement plus récent est déjà en cours.
+      if (requestId !== requestIdRef.current) return result;
 
       const nextData = result;
       setData(nextData);
       setHasLoadedOnce(true);
       setLastUpdate(new Date());
-      if (foundYear !== null && foundYear !== requestedYear) {
-        setSelectedAnnee(String(foundYear));
-      }
 
       if (!silent) {
         if (nextData.length === 0) {
           if (lastError) {
             toast.error("Erreur lors du chargement des données");
           } else {
-            toast.info("Aucune donnée ne correspond à ces filtres");
+            toast.info(
+              `Aucune donnée pour l'année scolaire ${formatAnneeScolaire(String(requestedYear))} avec ces filtres`,
+            );
           }
         } else {
           toast.success(`${formatNumber(nextData.length)} établissements chargés`);
@@ -456,7 +454,8 @@ const Donnees = () => {
       }
       return nextData;
     } finally {
-      setLoading(false);
+      // Le spinner suit la requête la plus récente uniquement.
+      if (requestId === requestIdRef.current) setLoading(false);
     }
   };
 
@@ -879,7 +878,7 @@ const Donnees = () => {
             </FilterField>
 
             <div className="flex items-end gap-2">
-              <Button onClick={handleFilter} disabled={loading} className="flex-1 h-10 shadow-sm">
+              <Button onClick={() => handleFilter()} disabled={loading} className="flex-1 h-10 shadow-sm">
                 {loading ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 ) : (

@@ -1,10 +1,12 @@
 /**
- * Endpoint serveur — données scolaires des millésimes récents (2026+).
+ * Endpoint serveur — données scolaires par établissement, tous millésimes
+ * servis par l'application (2022 → aujourd'hui).
  *
- * La fonction Supabase `db-query` peut renvoyer des données figées sur 2025.
- * Cet endpoint interroge directement PostgreSQL, côté serveur, pour les années
- * postérieures, en réutilisant exactement le SQL partagé de
- * `supabase/functions/_shared/donneesRecent.ts`.
+ * La fonction Supabase `db-query` s'appuie sur des vues figées sur 2025 pour
+ * ses colonnes annexes ; cet endpoint interroge directement PostgreSQL, côté
+ * serveur, avec le SQL partagé de
+ * `supabase/functions/_shared/donneesRecent.ts`, qui lit les tables de collecte
+ * de l'année demandée.
  *
  * GET /api/donnees?action=getDataPrimaire&code_dren=0&code_cisco=0&code_commune=0&code_zap=0&secteur=2&annee=2026
  *
@@ -16,7 +18,7 @@
 import pg from "pg";
 import {
   DATA_RECENT_ACTIONS,
-  MIN_RECENT_ANNEE,
+  MIN_DONNEES_ANNEE,
   buildDonneesRecentSql,
   type DataRecentLevel,
   // Extension explicite obligatoire : le projet est en ESM (`type: module`),
@@ -46,9 +48,12 @@ function getConnectionConfig(): pg.PoolConfig {
   if (connectionString) {
     return {
       connectionString,
-      max: 3,
-      idleTimeoutMillis: 10_000,
-      connectionTimeoutMillis: 10_000,
+      max: 10,
+      idleTimeoutMillis: 30_000,
+      // Les requêtes nationales dépassent la minute : attendre une connexion
+      // libre plutôt que d'échouer, ce qui provoquait des 500 sous la
+      // concurrence (plusieurs niveaux / onglets / rechargements).
+      connectionTimeoutMillis: 60_000,
       ssl:
         process.env.DB_SSL === "true" ||
         /sslmode=(require|verify)/.test(connectionString) ||
@@ -80,9 +85,9 @@ function getConnectionConfig(): pg.PoolConfig {
     database,
     user,
     password,
-    max: 3,
-    idleTimeoutMillis: 10_000,
-    connectionTimeoutMillis: 10_000,
+    max: 10,
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 60_000,
     ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : undefined,
   };
 }
@@ -132,17 +137,21 @@ function parseCode(raw: string | null | undefined, name: string): number {
   return value;
 }
 
+// Millésime par défaut quand `annee` est absent : le plus récent servi
+// (voir `LATEST_SCHOOL_YEAR` dans `src/utils/anneeScolaire.ts`).
+const DEFAULT_ANNEE = 2026;
+
 export function parseDonneesQuery(input: QueryInput): DonneesQuery {
   const action = firstValue(input.action) ?? "";
   if (!(action in DATA_RECENT_ACTIONS)) {
     throw new DonneesRequestError(400, `Action non supportée: ${action || "(vide)"}`);
   }
 
-  const annee = parseInteger(firstValue(input.annee), MIN_RECENT_ANNEE);
-  if (annee == null || annee < MIN_RECENT_ANNEE || annee > 2100) {
+  const annee = parseInteger(firstValue(input.annee), DEFAULT_ANNEE);
+  if (annee == null || annee < MIN_DONNEES_ANNEE || annee > 2100) {
     throw new DonneesRequestError(
       400,
-      `Année invalide: seules les années >= ${MIN_RECENT_ANNEE} sont servies par cet endpoint.`,
+      `Année invalide: seules les années >= ${MIN_DONNEES_ANNEE} sont servies par cet endpoint.`,
     );
   }
 

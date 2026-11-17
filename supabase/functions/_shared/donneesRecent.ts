@@ -1,10 +1,13 @@
 /**
- * Requêtes « millésime récent » (année > 2025) partagées entre la fonction
- * Supabase `db-query` (Deno) et l'endpoint Vercel `api/donnees` (Node).
+ * Requêtes « fiche établissement » partagées entre la fonction Supabase
+ * `db-query` (Deno) et l'endpoint Vercel `api/donnees` (Node).
  *
- * Les vues `v_effectif_n*` / `v_fiche_ecole_n*` sont figées sur 2025. Pour les
- * années suivantes on reconstruit la fiche depuis les tables réelles de
- * collecte (fpe_a1, fpe_e1/fpe_e4, v_personnel, v_sdc, v_place_assises).
+ * Les vues `v_fiche_ecole_n*` figées ne décrivent qu'une seule année : leurs
+ * colonnes annexes (places, SDC, personnels) sont celles de leur millésime de
+ * référence, pas celui demandé. Pour toutes les années servies par
+ * l'application on reconstruit donc la fiche depuis les tables réelles de
+ * collecte (fpe_a1, fpe_e1/fpe_e4, v_personnel, v_sdc, v_place_assises) et
+ * leurs colonnes `ANNEE_SCOLAIRE`.
  *
  * Ce module ne dépend d'aucun runtime : uniquement des constantes et une
  * fonction qui construit une chaîne SQL à partir de paramètres déjà validés.
@@ -19,8 +22,20 @@ export const DATA_RECENT_ACTIONS: Record<string, DataRecentLevel> = {
   getDataLycee: "n3",
 };
 
-/** Première année nécessitant la reconstruction (les vues sont figées sur 2025). */
-export const MIN_RECENT_ANNEE = 2026;
+/**
+ * Première année servie par la reconstruction. Correspond à
+ * `FIRST_SCHOOL_YEAR` de `src/utils/anneeScolaire.ts` : les millésimes
+ * antérieurs n'existent pas dans les tables de collecte.
+ */
+export const MIN_DONNEES_ANNEE = 2022;
+
+/**
+ * Dernière année couverte par les colonnes historiques `eff_2022`…`eff_2025`
+ * (vues `v_evolution_effectif_n*`). Au-delà, l'effectif de l'année demandée
+ * est ajouté sous `eff_<annee>` ; en deçà il ferait doublon avec une de ces
+ * colonnes.
+ */
+export const HISTORICAL_EFFECTIF_MAX_ANNEE = 2025;
 
 export interface DonneesRecentParams {
   codeDren: number;
@@ -155,8 +170,8 @@ export function buildDonneesRecentSql(
   level: DataRecentLevel,
   { codeDren, codeCisco, codeCommune, codeZap, secteur, annee }: DonneesRecentParams,
 ): string {
-  if (!Number.isInteger(annee) || annee < MIN_RECENT_ANNEE) {
-    throw new Error(`Annee recente invalide: ${annee}`);
+  if (!Number.isInteger(annee) || annee < MIN_DONNEES_ANNEE) {
+    throw new Error(`Annee invalide: ${annee}`);
   }
 
   const cfg = DATA_RECENT_LEVELS[level];
@@ -167,6 +182,10 @@ export function buildDonneesRecentSql(
   const opCommune = codeCommune === 0 ? ">" : "="; const valCommune = codeCommune === 0 ? 0 : codeCommune;
   const opZap = codeZap === 0 ? ">" : "="; const valZap = codeZap === 0 ? 0 : codeZap;
   const sect = secteur > 1 ? ">= 0" : `= ${secteur}`;
+  // Avant 2026 l'effectif de l'année est déjà exposé par la colonne historique
+  // `eff_<annee>` de la vue d'évolution : ne pas la redoubler.
+  const currentEffCol =
+    annee > HISTORICAL_EFFECTIF_MAX_ANNEE ? `, v.eff_total AS "eff_${annee}"` : "";
 
   return `
     SELECT a1."CODE_ETAB", a1."DREN", a1."CISCO", a1."COMMUNE", a1."ZAP", a1."FOKONTANY",
@@ -177,7 +196,7 @@ export function buildDonneesRecentSql(
       COALESCE(eveff.eff_2024, 0) AS eff_2024, COALESCE(eveff.eff_2025, 0) AS eff_2025,
       pers.total AS pers_total, pers.en_classe, pers.fonctionnaire,
       pers.fram_sub, pers.fram_nonsub, pers.bepc, pers.bacc, pers.qualifiee,
-      ${cfg.effCols}, v.eff_total AS "eff_${annee}", ${annee} AS "ANNEE_SCOLAIRE"
+      ${cfg.effCols}${currentEffCol}, ${annee} AS "ANNEE_SCOLAIRE"
     FROM fpe_a1 a1
     LEFT JOIN ${cfg.evolutionView} eveff ON eveff."CODE_ETAB" = a1."CODE_ETAB"
     LEFT JOIN v_sdc sdc ON sdc."CODE_ETAB" = a1."CODE_ETAB" AND sdc."ANNEE_SCOLAIRE" = ${annee}

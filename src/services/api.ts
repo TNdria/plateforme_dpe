@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import { DEFAULT_SCHOOL_YEAR } from "@/utils/anneeScolaire";
+import { DEFAULT_SCHOOL_YEAR, FIRST_SCHOOL_YEAR } from "@/utils/anneeScolaire";
 
 const DEFAULT_DJANGO_BACKEND_URL = "https://dpe-men.mg";
 
@@ -228,10 +228,11 @@ function isRequestedSchoolYear(rows: unknown, annee: number | string): boolean {
   return withYear.every((row) => String(row.ANNEE_SCOLAIRE) === expected);
 }
 
-// Les vues Supabase `v_*_n*` restent figées sur 2025 : pour les millésimes
-// récents on interroge d'abord l'endpoint serveur `/api/donnees`, qui lit
-// PostgreSQL directement avec le même SQL que `db-query`.
-const RECENT_ENDPOINT_MIN_YEAR = 2026;
+// Les vues Supabase `v_*_n*` restent figées sur 2025 (colonnes annexes de
+// l'année 2024-2025) : pour tous les millésimes servis par l'application on
+// interroge d'abord l'endpoint serveur `/api/donnees`, qui lit les tables de
+// collecte de l'année demandée avec le même SQL que `db-query`.
+const RECENT_ENDPOINT_MIN_YEAR = FIRST_SCHOOL_YEAR;
 const RECENT_ACTIONS = new Set([
   'getDataPrescolaire',
   'getDataPrimaire',
@@ -275,7 +276,14 @@ async function fetchDonneesEtab<T>(
   const accepts = (data: unknown) => isRequestedSchoolYear(data, params.annee);
   const annee = Number(params.annee);
 
-  if (Number.isFinite(annee) && annee >= RECENT_ENDPOINT_MIN_YEAR) {
+  // Une année non entière (événement d'interface, valeur vide) ne doit pas
+  // partir vers Django : celui-ci ignore le paramètre et renverrait une autre
+  // année sous l'étiquette demandée.
+  if (!Number.isInteger(annee)) {
+    throw new Error(`Année scolaire invalide: ${String(params.annee)}`);
+  }
+
+  if (annee >= RECENT_ENDPOINT_MIN_YEAR) {
     const recent = await fetchRecentEndpoint<T>(action, params);
     if (recent != null && accepts(recent)) return recent;
 
