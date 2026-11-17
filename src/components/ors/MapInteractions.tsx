@@ -4,42 +4,32 @@ import L from "leaflet";
 import * as turf from "@turf/turf";
 import { Etablissement, Village } from "@/hooks/useMapData";
 import { ORS_COLORS } from "./orsColors";
+import {
+  analyseVillage as analyserVillageNC,
+  type NcAnalysis,
+  type VillageAnalysisResult,
+} from "./nouvelleCreation";
+
+export type { VillageAnalysisResult };
 
 /**
  * Couche d'interactions impératives sur la carte ORS, portage du Django original :
  *  - Clic droit sur un établissement → menu (Centrer / Voir l'aire / Analyse proximité)
- *  - Clic droit sur un village → menu (Centrer / Analyser éligibilité)
+ *  - Clic droit sur un village → menu (Centrer / Analyser éligibilité Nouvelle Création)
  *  - Affichage d'un buffer (cercle) + lignes vers villages dans l'aire (auto-effacé 12s)
- *  - Émet un évènement `ors:village-analysis` avec le résultat (le parent ouvre la modal)
+ *  - Transmet le résultat d'analyse au parent (qui ouvre la modal)
  *
  * On reste 100 % impératif (pas de VDOM par marqueur) pour éviter tout freeze sur 5k+ items.
  */
-
-export interface VillageAnalysisResult {
-  village: { name: string; population: number; lat: number; lng: number };
-  /** Établissement le plus proche (peut être absent) */
-  nearestEtab?: { name: string; distanceKm: number };
-  /** Établissements à <= rayon (km) */
-  nearbyEtabs: Array<{ name: string; distanceKm: number }>;
-  /** Villages satellites à <= rayon */
-  satelliteVillages: Array<{ name: string; population: number; distanceKm: number }>;
-  /** Population scolarisable cumulée (village + satellites) */
-  totalPopulation: number;
-  /** Verdict d'éligibilité Nouvelle Création (seuil pop. 300, aucune école dans le rayon) */
-  eligible: boolean;
-  reason: string;
-  radiusMeters: number;
-}
 
 interface Props {
   etablissements: Etablissement[];
   villages: Village[];
   /** Rayon en mètres (slider) */
   radius: number;
-  /** Niveau ORS affiché. Détermine si l'action "Nouvelle Création" (seuil
-   * 300 habitants, logique pensée pour l'école primaire) a un sens métier :
-   * elle ne s'applique qu'au primaire, cf. audit du 19/08/2026. */
-  niveau: "primaire" | "college" | "lycee";
+  /** Résultat du calcul Nouvelle Création (aire fixe par niveau, seuils paramétrables).
+   * Source unique partagée avec la carte, le récapitulatif et l'export. */
+  nc?: NcAnalysis | null;
   onVillageAnalysis?: (r: VillageAnalysisResult) => void;
   /** Isole l'aire de recrutement (rayon fixe) de cet établissement — règles
    * du 03/09/2026. Le parent (ORSMap) gère l'activation de la couche et
@@ -53,7 +43,7 @@ export const MapInteractions = ({
   etablissements,
   villages,
   radius,
-  niveau,
+  nc = null,
   onVillageAnalysis,
   onShowAireRecrutement,
 }: Props) => {
@@ -150,77 +140,40 @@ export const MapInteractions = ({
     };
 
     const analyseVillage = (v: Village) => {
-      const radiusKm = radius / 1000;
-      const p1 = turf.point([v.longitude, v.latitude]);
-      const nearbyEtabs: Array<{ name: string; distanceKm: number }> = [];
-      let nearest: { name: string; distanceKm: number } | undefined;
-      for (const e of etabsWithCoords) {
-        const d = turf.distance(p1, turf.point([e.longitude!, e.latitude!]), TURF_OPTS);
-        if (!nearest || d < nearest.distanceKm)
-          nearest = { name: e.NOM_ETAB || "Inconnu", distanceKm: d };
-        if (d <= radiusKm) nearbyEtabs.push({ name: e.NOM_ETAB || "Inconnu", distanceKm: d });
-      }
-      const satellites: Array<{ name: string; population: number; distanceKm: number }> = [];
-      for (const vv of villagesWithCoords) {
-        if (vv === v) continue;
-        const d = turf.distance(p1, turf.point([vv.longitude, vv.latitude]), TURF_OPTS);
-        if (d <= radiusKm)
-          satellites.push({ name: vv.name, population: vv.population || 0, distanceKm: d });
-      }
-      const totalPop = (v.population || 0) + satellites.reduce((s, x) => s + x.population, 0);
-      let eligible = false;
-      let reason = "";
-      if (nearbyEtabs.length > 0) {
-        reason = `Une école existe déjà à proximité (< ${radiusKm} km). Renforcer l'école existante.`;
-      } else if (totalPop < 300) {
-        reason = `Population scolarisable insuffisante (${totalPop} habitants, seuil 300).`;
-      } else {
-        eligible = true;
-        reason = `Critères remplis : aucune école dans un rayon de ${radiusKm} km, population de ${totalPop}.`;
-      }
+      if (!nc) return;
+      const res = analyserVillageNC(nc, v);
+      if (!res) return;
 
-      // Visual overlay
+      // Overlay : aire de recrutement FIXE du niveau (et non le slider)
       if (autoClearTimeoutRef.current) clearTimeout(autoClearTimeoutRef.current);
       tempLayer.clearLayers();
-      L.circle([v.latitude, v.longitude], {
-        radius,
+      L.circle([res.village.lat, res.village.lng], {
+        radius: res.radiusMeters,
         color: "#facc15",
         fillOpacity: 0.15,
         weight: 2,
       }).addTo(tempLayer);
-      for (const s of satellites) {
-        const sv = villagesWithCoords.find((x) => x.name === s.name);
-        if (sv)
-          L.polyline(
-            [
-              [v.latitude, v.longitude],
-              [sv.latitude, sv.longitude],
-            ],
-            { color: "#facc15", weight: 1.5 },
-          ).addTo(tempLayer);
+      for (const c of res.contributeurs) {
+        if (c.isCentre) continue;
+        L.polyline(
+          [
+            [res.village.lat, res.village.lng],
+            [c.lat, c.lng],
+          ],
+          { color: "#facc15", weight: 1.5 },
+        ).addTo(tempLayer);
       }
-      for (const e of etabsWithCoords) {
-        const d = turf.distance(p1, turf.point([e.longitude!, e.latitude!]), TURF_OPTS);
-        if (d <= radiusKm)
-          L.polyline(
-            [
-              [v.latitude, v.longitude],
-              [e.latitude!, e.longitude!],
-            ],
-            { color: "#ef4444", weight: 1.2 },
-          ).addTo(tempLayer);
+      for (const e of res.existantsDansAire) {
+        L.polyline(
+          [
+            [res.village.lat, res.village.lng],
+            [e.lat, e.lng],
+          ],
+          { color: "#ef4444", weight: 1.2 },
+        ).addTo(tempLayer);
       }
 
-      onAnalysisRef.current?.({
-        village: { name: v.name, population: v.population || 0, lat: v.latitude, lng: v.longitude },
-        nearestEtab: nearest,
-        nearbyEtabs,
-        satelliteVillages: satellites,
-        totalPopulation: totalPop,
-        eligible,
-        reason,
-        radiusMeters: radius,
-      });
+      onAnalysisRef.current?.(res);
     };
 
     const buildMenu = (e: L.LeafletMouseEvent, hit: ReturnType<typeof findNearest>) => {
@@ -247,19 +200,13 @@ export const MapInteractions = ({
           label: `🏘️ Voir aire — ${(v.name || "").slice(0, 28)}`,
           action: () => showAire(v.latitude, v.longitude, v.name, "#facc15"),
         });
-        // Analyse Nouvelle Création : disponible primaire / collège / lycée.
-        // Seuil population 300 + absence d'établissement du niveau dans le
-        // rayon (slider / outils carte). Libellé adapté au niveau.
-        const ncLabel =
-          niveau === "college"
-            ? "Analyser éligibilité Nouvelle Création (CEG)"
-            : niveau === "lycee"
-              ? "Analyser éligibilité Nouvelle Création (lycée)"
-              : "Analyser éligibilité Nouvelle Création (école primaire)";
-        items.unshift({
-          label: `🧪 ${ncLabel}`,
-          action: () => analyseVillage(v),
-        });
+        // Analyse Nouvelle Création (3 niveaux) : mêmes règles que la carte.
+        if (nc) {
+          items.unshift({
+            label: `🧪 Analyser éligibilité Nouvelle Création (${nc.config.uniteCreation})`,
+            action: () => analyseVillage(v),
+          });
+        }
       }
       items.push({
         label: "🧹 Effacer les overlays",
@@ -307,7 +254,7 @@ export const MapInteractions = ({
       }
       tempLayer.remove();
     };
-  }, [map, etablissements, villages, radius, niveau]);
+  }, [map, etablissements, villages, radius, nc]);
 
   return null;
 };

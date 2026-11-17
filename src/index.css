@@ -860,6 +860,111 @@
   vertical-align: middle;
   accent-color: #0517b9 !important;
 }
+
+/* SIG side panels and Leaflet controls hosted inside the right panel. */
+:root {
+  --sig-left-panel-open-width: min(320px, 42vw);
+  --sig-right-panel-open-width: min(320px, 42vw);
+}
+
+.sig-side-panel {
+  min-width: 0;
+}
+
+.sig-side-panel-left {
+  --sig-panel-open-width: var(--sig-left-panel-open-width);
+}
+
+.sig-side-panel-right {
+  --sig-panel-open-width: var(--sig-right-panel-open-width);
+}
+
+.sig-side-panel-open {
+  width: var(--sig-panel-open-width);
+  flex-basis: var(--sig-panel-open-width);
+}
+
+.sig-side-panel-closed {
+  width: 0;
+  flex-basis: 0;
+}
+
+.sig-side-panel-content-left {
+  width: var(--sig-panel-open-width);
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.sig-side-panel-content-right {
+  width: 100%;
+  min-width: 0;
+}
+
+.sig-layer-panel-host,
+.sig-legend-panel-host,
+.sig-tools-panel-host {
+  width: 100%;
+  min-width: 0;
+}
+
+.sig-layer-panel-host > .leaflet-control,
+.sig-legend-panel-host > .leaflet-control,
+.sig-tools-panel-host > .leaflet-control {
+  float: none !important;
+  clear: both !important;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0 !important;
+  box-sizing: border-box;
+}
+
+.sig-layer-panel-host .leaflet-control-layers,
+.sig-tools-panel-host .control-aire {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.sig-layer-panel-host .leaflet-control-layers-list label,
+.sig-tools-panel-host .control-aire label {
+  white-space: normal !important;
+}
+
+.sig-legend-panel-host .legend {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+}
+
+.sig-legend-panel-host .legend p {
+  margin-top: 0;
+}
+
+.sig-legend-panel-host .sig-legend-items > div {
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+  gap: 0.25rem;
+}
+
+.sig-legend-panel-host .sig-legend-items > div > i {
+  flex: 0 0 18px;
+  margin-top: 0.25em;
+}
+
+.sig-legend-panel-host .sig-legend-items {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 767px) {
+  :root {
+    --sig-left-panel-open-width: min(85vw, 300px);
+    --sig-right-panel-open-width: min(85vw, 300px);
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Tableau de bord DREN — gabarit administratif A4                     */
 /* ------------------------------------------------------------------ */
@@ -1280,4 +1385,3 @@
   .home-module { min-height: 160px; padding: 20px; } .home-module-title { font-size: 16px; } .home-module-detail { font-size: 11px; } .home-module-top { margin-bottom: 18px; }
   .home-footer-inner { flex-direction: column; align-items: start; padding-block: 32px; } .home-footer-brand { gap: 10px; flex-wrap: wrap; } .home-footer-brand img { width: 38px; height: 38px; } .home-footer-brand div { flex-basis: 100%; margin-top: 6px; } .home-footer-contact { text-align: left; }
 }
-

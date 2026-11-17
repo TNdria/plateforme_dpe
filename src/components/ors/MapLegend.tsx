@@ -1,5 +1,6 @@
 import { MapPin } from "lucide-react";
 import { ORS_COLORS, NIVEAU_MAIN_COLOR } from "./orsColors";
+import { EtablissementIcon, SchoolLevelIcon } from "@/components/SchoolLevelIcon";
 
 interface LegendItem {
   icon: React.ReactNode;
@@ -20,14 +21,14 @@ interface MapLegendProps {
 
 const primaireLegendItems: LegendItem[] = [
   {
-    icon: <i className="fas fa-school w-4 text-center" style={{ color: ORS_COLORS.default }} />,
+    icon: <SchoolLevelIcon level="primaire" className="h-4 w-4" style={{ color: ORS_COLORS.default }} />,
     label: "École Primaire Publique",
     color: ORS_COLORS.default,
     description: "EPP existant",
   },
 
   {
-    icon: <i className="fas fa-school w-4 text-center" style={{ color: ORS_COLORS.prive }} />,
+    icon: <SchoolLevelIcon level="primaire" className="h-4 w-4" style={{ color: ORS_COLORS.prive }} />,
     label: "École Primaire Privée",
     color: ORS_COLORS.prive,
     description: "Établissement privé",
@@ -56,7 +57,7 @@ const primaireLegendItems: LegendItem[] = [
 
   {
     icon: (
-      <i className="fas fa-circle w-4 text-center" style={{ color: ORS_COLORS.villageHorsZone }} />
+      <EtablissementIcon type="village" className="h-4 w-4 shrink-0" style={{ color: ORS_COLORS.villageHorsZone }} />
     ),
     label: "Village hors zone",
     color: ORS_COLORS.villageHorsZone,
@@ -65,7 +66,7 @@ const primaireLegendItems: LegendItem[] = [
 
   {
     icon: (
-      <i className="fas fa-circle w-4 text-center" style={{ color: ORS_COLORS.villageCouvert }} />
+      <EtablissementIcon type="village" className="h-4 w-4 shrink-0" style={{ color: ORS_COLORS.villageCouvert }} />
     ),
     label: "Village couvert",
     color: ORS_COLORS.villageCouvert,
@@ -74,19 +75,19 @@ const primaireLegendItems: LegendItem[] = [
 
   // Limites : fa fa-square uniquement
   {
-    icon: <i className="w-6 h-1 fa fa-square" style={{ color: ORS_COLORS.limiteDren }} />,
+    icon: <span className="inline-block h-3 w-6 shrink-0 border-2 bg-transparent" style={{ borderColor: ORS_COLORS.limiteDren }} />,
     label: "Limite DREN",
     color: ORS_COLORS.limiteDren,
   },
 
   {
-    icon: <i className="w-6 h-1 fa fa-square" style={{ color: ORS_COLORS.limiteCisco }} />,
+    icon: <span className="inline-block h-3 w-6 shrink-0 border-2 bg-transparent" style={{ borderColor: ORS_COLORS.limiteCisco }} />,
     label: "Limite CISCO",
     color: ORS_COLORS.limiteCisco,
   },
 
   {
-    icon: <i className="w-6 h-1 fa fa-square" style={{ color: "#c0c0c0" }} />,
+    icon: <span className="inline-block h-3 w-6 shrink-0 border-2 bg-transparent" style={{ borderColor: "#c0c0c0" }} />,
     label: "Limite Commune",
     color: "#c0c0c0",
   },
@@ -99,7 +100,7 @@ const primaireLegendItems: LegendItem[] = [
 const collegeLegendItems: LegendItem[] = [
   {
     icon: (
-      <i className="fas fa-school w-5 text-center" style={{ color: NIVEAU_MAIN_COLOR.college }} />
+      <SchoolLevelIcon level="college" className="h-5 w-5" style={{ color: NIVEAU_MAIN_COLOR.college }} />
     ),
     label: "CEG (Collège public)",
     color: NIVEAU_MAIN_COLOR.college,
@@ -107,7 +108,7 @@ const collegeLegendItems: LegendItem[] = [
   },
 
   {
-    icon: <i className="fas fa-school w-4 text-center" style={{ color: ORS_COLORS.default }} />,
+    icon: <SchoolLevelIcon level="primaire" className="h-4 w-4" style={{ color: ORS_COLORS.default }} />,
     label: "EPP dans zone CEG",
     color: ORS_COLORS.default,
     description: "École couverte par un CEG",
@@ -115,7 +116,7 @@ const collegeLegendItems: LegendItem[] = [
 
   {
     icon: (
-      <i className="fas fa-school w-4 text-center" style={{ color: ORS_COLORS.nonEligible }} />
+      <SchoolLevelIcon level="primaire" className="h-4 w-4" style={{ color: ORS_COLORS.nonEligible }} />
     ),
     label: "EPP HORS zone",
     color: ORS_COLORS.nonEligible,
@@ -123,7 +124,7 @@ const collegeLegendItems: LegendItem[] = [
   },
 
   {
-    icon: <i className="fas fa-school w-4 text-center" style={{ color: ORS_COLORS.prive }} />,
+    icon: <SchoolLevelIcon level="primaire" className="h-4 w-4" style={{ color: ORS_COLORS.prive }} />,
     label: "École privée",
     color: ORS_COLORS.prive,
     description: "Hors analyse d'éligibilité",
@@ -131,7 +132,7 @@ const collegeLegendItems: LegendItem[] = [
 
   {
     icon: (
-      <i className="fas fa-circle w-4 text-center" style={{ color: ORS_COLORS.villageHorsZone }} />
+      <EtablissementIcon type="village" className="h-4 w-4 shrink-0" style={{ color: ORS_COLORS.villageHorsZone }} />
     ),
     label: "Village hors zone",
     color: ORS_COLORS.villageHorsZone,
@@ -140,7 +141,7 @@ const collegeLegendItems: LegendItem[] = [
 
   {
     icon: (
-      <i className="fas fa-circle w-4 text-center" style={{ color: ORS_COLORS.villageCouvert }} />
+      <EtablissementIcon type="village" className="h-4 w-4 shrink-0" style={{ color: ORS_COLORS.villageCouvert }} />
     ),
     label: "Village couvert",
     color: ORS_COLORS.villageCouvert,
@@ -149,19 +150,19 @@ const collegeLegendItems: LegendItem[] = [
 
   // Limites : fa fa-square uniquement
   {
-    icon: <i className="w-6 h-1 fa fa-square" style={{ color: ORS_COLORS.limiteDren }} />,
+    icon: <span className="inline-block h-3 w-6 shrink-0 border-2 bg-transparent" style={{ borderColor: ORS_COLORS.limiteDren }} />,
     label: "Limite DREN",
     color: ORS_COLORS.limiteDren,
   },
 
   {
-    icon: <i className="w-6 h-1 fa fa-square" style={{ color: ORS_COLORS.limiteCisco }} />,
+    icon: <span className="inline-block h-3 w-6 shrink-0 border-2 bg-transparent" style={{ borderColor: ORS_COLORS.limiteCisco }} />,
     label: "Limite CISCO",
     color: ORS_COLORS.limiteCisco,
   },
 
   {
-    icon: <i className="w-6 h-1 fa fa-square" style={{ color: "#c0c0c0" }} />,
+    icon: <span className="inline-block h-3 w-6 shrink-0 border-2 bg-transparent" style={{ borderColor: "#c0c0c0" }} />,
     label: "Limite Commune",
     color: "#c0c0c0",
   },
@@ -174,7 +175,7 @@ const collegeLegendItems: LegendItem[] = [
 const lyceeLegendItems: LegendItem[] = [
   {
     icon: (
-      <i className="fas fa-school w-5 text-center" style={{ color: NIVEAU_MAIN_COLOR.lycee }} />
+      <SchoolLevelIcon level="lycee" className="h-5 w-5" style={{ color: NIVEAU_MAIN_COLOR.lycee }} />
     ),
     label: "Lycée public",
     color: NIVEAU_MAIN_COLOR.lycee,
@@ -182,28 +183,28 @@ const lyceeLegendItems: LegendItem[] = [
   },
 
   {
-    icon: <i className="fas fa-school w-4 text-center" style={{ color: ORS_COLORS.default }} />,
+    icon: <SchoolLevelIcon level="college" className="h-4 w-4" style={{ color: ORS_COLORS.default }} />,
     label: "Collège existant",
     color: ORS_COLORS.default,
     description: "CEG potentiel pour extension",
   },
 
   {
-    icon: <i className="fas fa-school w-4 text-center" style={{ color: ORS_COLORS.nonEligible }} />,
+    icon: <SchoolLevelIcon level="college" className="h-4 w-4" style={{ color: ORS_COLORS.nonEligible }} />,
     label: "Collège HORS zone",
     color: ORS_COLORS.nonEligible,
     description: "Cerclé rouge → éligible nouveau lycée",
   },
 
   {
-    icon: <i className="fas fa-school w-4 text-center" style={{ color: ORS_COLORS.prive }} />,
+    icon: <SchoolLevelIcon level="lycee" className="h-4 w-4" style={{ color: ORS_COLORS.prive }} />,
     label: "Établissement privé",
     color: ORS_COLORS.prive,
   },
 
   {
     icon: (
-      <i className="fas fa-circle w-4 text-center" style={{ color: ORS_COLORS.villageHorsZone }} />
+      <EtablissementIcon type="village" className="h-4 w-4 shrink-0" style={{ color: ORS_COLORS.villageHorsZone }} />
     ),
     label: "Village hors zone",
     color: ORS_COLORS.villageHorsZone,
@@ -211,7 +212,7 @@ const lyceeLegendItems: LegendItem[] = [
 
   {
     icon: (
-      <i className="fas fa-circle w-4 text-center" style={{ color: ORS_COLORS.villageCouvert }} />
+      <EtablissementIcon type="village" className="h-4 w-4 shrink-0" style={{ color: ORS_COLORS.villageCouvert }} />
     ),
     label: "Village couvert",
     color: ORS_COLORS.villageCouvert,
@@ -219,19 +220,19 @@ const lyceeLegendItems: LegendItem[] = [
 
   // Limites : fa fa-square uniquement
   {
-    icon: <i className="w-6 h-1 fa fa-square" style={{ color: ORS_COLORS.limiteDren }} />,
+    icon: <span className="inline-block h-3 w-6 shrink-0 border-2 bg-transparent" style={{ borderColor: ORS_COLORS.limiteDren }} />,
     label: "Limite DREN",
     color: ORS_COLORS.limiteDren,
   },
 
   {
-    icon: <i className="w-6 h-1 fa fa-square" style={{ color: ORS_COLORS.limiteCisco }} />,
+    icon: <span className="inline-block h-3 w-6 shrink-0 border-2 bg-transparent" style={{ borderColor: ORS_COLORS.limiteCisco }} />,
     label: "Limite CISCO",
     color: ORS_COLORS.limiteCisco,
   },
 
   {
-    icon: <i className="w-6 h-1 fa fa-square" style={{ color: "#c0c0c0" }} />,
+    icon: <span className="inline-block h-3 w-6 shrink-0 border-2 bg-transparent" style={{ borderColor: "#c0c0c0" }} />,
     label: "Limite Commune",
     color: "#c0c0c0",
   },
@@ -243,31 +244,31 @@ const lyceeLegendItems: LegendItem[] = [
 
 const sigLegendItems: LegendItem[] = [
   {
-    icon: <i className="fas fa-school w-4 text-center" style={{ color: "#8b5cf6" }} />,
+    icon: <SchoolLevelIcon level="prescolaire" className="h-4 w-4" style={{ color: "#8b5cf6" }} />,
     label: "Préscolaire Public",
     color: "#8b5cf6",
   },
 
   {
-    icon: <i className="fas fa-school w-4 text-center" style={{ color: "#36b9cc" }} />,
+    icon: <SchoolLevelIcon level="primaire" className="h-4 w-4" style={{ color: "#36b9cc" }} />,
     label: "Primaire Public",
     color: "#36b9cc",
   },
 
   {
-    icon: <i className="fas fa-school w-4 text-center" style={{ color: "#22c55e" }} />,
+    icon: <SchoolLevelIcon level="college" className="h-4 w-4" style={{ color: "#22c55e" }} />,
     label: "Collège Public",
     color: "#22c55e",
   },
 
   {
-    icon: <i className="fas fa-school w-4 text-center" style={{ color: "#f59e0b" }} />,
+    icon: <SchoolLevelIcon level="lycee" className="h-4 w-4" style={{ color: "#f59e0b" }} />,
     label: "Lycée Public",
     color: "#f59e0b",
   },
 
   {
-    icon: <i className="fas fa-circle w-4 text-center" style={{ color: "#f6c23e" }} />,
+    icon: <EtablissementIcon type="village" className="h-4 w-4 shrink-0" style={{ color: "#f6c23e" }} />,
     label: "Village",
     color: "#f6c23e",
   },
@@ -279,19 +280,19 @@ const sigLegendItems: LegendItem[] = [
 
 const datavizLegendItems: LegendItem[] = [
   {
-    icon: <i className="fas fa-school w-4 text-center" style={{ color: "#36b9cc" }} />,
+    icon: <SchoolLevelIcon level="primaire" className="h-4 w-4" style={{ color: "#36b9cc" }} />,
     label: "École Publique",
     color: "#36b9cc",
   },
 
   {
-    icon: <i className="fas fa-school w-4 text-center" style={{ color: "#f6c23e" }} />,
+    icon: <SchoolLevelIcon level="primaire" className="h-4 w-4" style={{ color: "#f6c23e" }} />,
     label: "École Privée",
     color: "#f6c23e",
   },
 
   {
-    icon: <i className="fas fa-circle w-4 text-center" style={{ color: "#e74a3b" }} />,
+    icon: <EtablissementIcon type="village" className="h-4 w-4 shrink-0" style={{ color: "#e74a3b" }} />,
     label: "Village",
     color: "#e74a3b",
   },
@@ -362,15 +363,6 @@ export const MapLegend = ({ type, categoryFilter }: MapLegendProps) => {
         case "rehabilitation":
           return (
             label.includes("réhabilitation") ||
-            label.includes("école") ||
-            label.includes("collège") ||
-            label.includes("lycée") ||
-            label.includes("limite")
-          );
-
-        case "tablebanc":
-          return (
-            label.includes("table") ||
             label.includes("école") ||
             label.includes("collège") ||
             label.includes("lycée") ||

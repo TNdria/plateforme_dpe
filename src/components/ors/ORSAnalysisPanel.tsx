@@ -4,7 +4,6 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import {
   AlertTriangle,
-  CheckCircle2,
   Building2,
   MapPin,
   Hammer,
@@ -12,111 +11,87 @@ import {
   PackagePlus,
   Sparkles,
 } from "lucide-react";
-import { Etablissement, Village } from "@/hooks/useMapData";
-import { SpatialGrid } from "@/lib/spatialGrid";
-import { isPublicSecteur } from "./orsColors";
+import { Etablissement } from "@/hooks/useMapData";
+import type { VillageEligibleNouvelleCreationFeatureCollection } from "@/services/api";
+import type { NcAnalysis } from "./nouvelleCreation";
 
 interface ORSAnalysisPanelProps {
   type: "primaire" | "college" | "lycee";
   primaires: Etablissement[];
   colleges: Etablissement[];
   lycees: Etablissement[];
-  villages: Village[];
-  radius: number;
+  /** Résultat Nouvelle Création : null pour Collège et Lycée. */
+  nc: NcAnalysis | null;
+  villagesEligiblesNouvelleCreation: VillageEligibleNouvelleCreationFeatureCollection;
 }
 
-/**
- * Synthèse d'éligibilité ORS : combien d'établissements à reconstruire / réhabiliter / étendre,
- * villages hors zone, etc. Inspiré des panneaux d'analyse Django (orsprimaire.js / orscollege.js / orslycee.js).
- */
+const isEligibilityFlagEnabled = (value: unknown): boolean =>
+  value === true || value === 1 || value === "1" || value === "true";
+
 export const ORSAnalysisPanel = ({
   type,
   primaires,
   colleges,
   lycees,
-  villages,
-  radius,
+  nc,
+  villagesEligiblesNouvelleCreation,
 }: ORSAnalysisPanelProps) => {
   const analysis = useMemo(() => {
-    // Sélectionne la liste cible selon le type
-    const targets = type === "primaire" ? primaires : type === "college" ? colleges : lycees;
-
-    const refs = type === "primaire" ? [] : type === "college" ? primaires : colleges;
-
+    const targets =
+      type === "primaire" ? primaires : type === "college" ? colleges : lycees;
     const total = targets.length;
-    const reconstructions = targets.filter((e) => e.eligible_reconstruction).length;
-    const rehabilitations = targets.filter((e) => e.eligible_rehabilitation).length;
-    const extensions = targets.filter((e) => {
-      const sdc_requis = e.sdc_requis || 0;
-      const sdc_be = e.sdc_be || 0;
-      const sdc_me = e.sdc_me || 0;
-      return Math.max(sdc_requis - (sdc_be + sdc_me), 0) > 0;
-    }).length;
-    const tableBancs = targets.reduce((acc, e) => {
-      const eff = e.effectifs || 0;
-      const places = e.places || 0;
-      return acc + Math.ceil(Math.max(eff - places, 0) / 2);
-    }, 0);
 
-    // Pour primaire : villages hors rayon (grille spatiale: O(N) au lieu de O(N×M))
-    let villagesHorsZone = 0;
-    let villagesTotal = 0;
-    let villagesNouvelleCreation = 0;
-    if (type === "primaire" && villages.length > 0) {
-      const ecolesPub = primaires.filter(
-        (p) => isPublicSecteur(p) && p.latitude && p.longitude,
-      ) as Array<{ latitude: number; longitude: number }>;
-      const grid = new SpatialGrid(ecolesPub, radius);
-      for (const v of villages) {
-        if (v.latitude == null || v.longitude == null) continue;
-        villagesTotal++;
-        const horsZone = !grid.hasNeighborWithin(v.latitude, v.longitude, radius);
-        if (horsZone) {
-          villagesHorsZone++;
-          if ((v.population || 0) >= 300) villagesNouvelleCreation++;
-        }
-      }
-    }
+    const reconstruction = targets.filter((etab) =>
+      isEligibilityFlagEnabled(etab.eligible_reconstruction),
+    ).length;
 
-    // Pour collège/lycée : refs (EPP/CEG) hors zone des cibles
-    let refsHorsZone = 0;
-    let refsTotal = 0;
-    if (type !== "primaire" && refs.length > 0) {
-      const targetsCoords = targets.filter((t) => t.latitude && t.longitude) as Array<{
-        latitude: number;
-        longitude: number;
-      }>;
-      const grid = new SpatialGrid(targetsCoords, radius);
-      for (const r of refs) {
-        if (!isPublicSecteur(r) || r.latitude == null || r.longitude == null) continue;
-        refsTotal++;
-        if (!grid.hasNeighborWithin(r.latitude, r.longitude, radius)) refsHorsZone++;
-      }
-    }
+    const rehabilitation = targets.filter((etab) =>
+      isEligibilityFlagEnabled(etab.eligible_rehabilitation),
+    ).length;
+
+    const extension = targets.filter((etab) =>
+      isEligibilityFlagEnabled(etab.eligible_extension),
+    ).length;
 
     return {
       total,
-      reconstructions,
-      rehabilitations,
-      extensions,
-      tableBancs,
-      villagesHorsZone,
-      villagesTotal,
-      villagesNouvelleCreation,
-      refsHorsZone,
-      refsTotal,
+      criteria: [
+        { key: "reconstruction", label: "Reconstruction", eligible: reconstruction },
+        { key: "rehabilitation", label: "Réhabilitation", eligible: rehabilitation },
+        { key: "extension", label: "Extension", eligible: extension },
+      ],
     };
-  }, [type, primaires, colleges, lycees, villages, radius]);
+  }, [type, primaires, colleges, lycees]);
 
   const labels = {
-    primaire: { unit: "EPP", refUnit: "Village" },
-    college: { unit: "CEG", refUnit: "EPP" },
-    lycee: { unit: "Lycée", refUnit: "CEG" },
+    primaire: { unit: "EPP" },
+    college: { unit: "CEG" },
+    lycee: { unit: "Lycée" },
   }[type];
 
-  if (analysis.total === 0) return null;
+  const ncStats = type === "primaire" ? nc?.stats : undefined;
+  const ncConfig = type === "primaire" ? nc?.config : undefined;
 
-  const pct = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 100) : 0);
+  const ncCandidates =
+    type === "primaire"
+      ? villagesEligiblesNouvelleCreation.features
+      : [];
+
+  const ncCorrespondances = ncCandidates.filter(
+    (feature) => feature.properties?.correspondance_village === true,
+  ).length;
+
+  const ncPointsProposes = ncCandidates.filter(
+    (feature) => feature.properties?.correspondance_village === false,
+  ).length;
+
+  const hasCandidates = ncCandidates.length > 0;
+  const hasVillageAnalysis = !!ncStats && ncStats.villagesTotal > 0;
+
+  if (analysis.total === 0 && !hasVillageAnalysis && !hasCandidates) return null;
+
+  const pct = (value: number, total: number) =>
+    total > 0 ? Math.round((value / total) * 100) : 0;
 
   return (
     <Card className="shadow-sm">
@@ -126,122 +101,144 @@ export const ORSAnalysisPanel = ({
           Analyse d'éligibilité
         </CardTitle>
       </CardHeader>
-      <CardContent className="px-4 pb-4 pt-0 space-y-3">
-        {/* Total */}
-        <div className="flex items-center justify-between text-xs">
-          <span className="flex items-center gap-1.5 text-muted-foreground">
-            <Building2 className="w-3.5 h-3.5" /> {labels.unit} total
-          </span>
-          <Badge variant="secondary">{analysis.total}</Badge>
-        </div>
 
-        {/* Reconstruction */}
-        <div className="space-y-1">
-          <div className="flex items-center justify-between text-xs">
-            <span className="flex items-center gap-1.5 text-foreground">
-              <Hammer className="w-3.5 h-3.5 text-destructive" /> Reconstruction
-            </span>
-            <span className="font-semibold tabular-nums">
-              {analysis.reconstructions}/{analysis.total}
-            </span>
-          </div>
-          <Progress value={pct(analysis.reconstructions, analysis.total)} className="h-1.5" />
-        </div>
+      <CardContent className="px-4 pb-4 pt-0 space-y-4">
+        {analysis.total > 0 && (
+          <section className="space-y-3">
+            <div className="flex items-center justify-between text-xs">
+              <span className="flex items-center gap-1.5 text-muted-foreground font-medium">
+                <Building2 className="w-3.5 h-3.5" />
+                Établissements — {labels.unit}
+              </span>
+              <Badge variant="secondary">
+                {analysis.total.toLocaleString("fr-FR")}
+              </Badge>
+            </div>
 
-        {/* Réhabilitation */}
-        <div className="space-y-1">
-          <div className="flex items-center justify-between text-xs">
-            <span className="flex items-center gap-1.5 text-foreground">
-              <Wrench className="w-3.5 h-3.5 text-amber-600" /> Réhabilitation
-            </span>
-            <span className="font-semibold tabular-nums">
-              {analysis.rehabilitations}/{analysis.total}
-            </span>
-          </div>
-          <Progress value={pct(analysis.rehabilitations, analysis.total)} className="h-1.5" />
-        </div>
-
-        {/* Extension */}
-        <div className="space-y-1">
-          <div className="flex items-center justify-between text-xs">
-            <span className="flex items-center gap-1.5 text-foreground">
-              <PackagePlus className="w-3.5 h-3.5 text-blue-600" /> Extension
-            </span>
-            <span className="font-semibold tabular-nums">
-              {analysis.extensions}/{analysis.total}
-            </span>
-          </div>
-          <Progress value={pct(analysis.extensions, analysis.total)} className="h-1.5" />
-        </div>
-
-        {/* Table-bancs */}
-        {analysis.tableBancs > 0 && (
-          <div className="flex items-center justify-between text-xs pt-1 border-t border-border">
-            <span className="text-muted-foreground">Table-bancs (2 places) requis</span>
-            <Badge variant="outline" className="bg-blue-500/10 text-blue-700">
-              {analysis.tableBancs.toLocaleString("fr-FR")}
-            </Badge>
-          </div>
+            {analysis.criteria.map((criterion) => {
+              const nonEligible = analysis.total - criterion.eligible;
+              return (
+                <div key={criterion.key} className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium text-foreground">
+                      {criterion.label}
+                    </span>
+                    <span className="font-semibold tabular-nums">
+                      {criterion.eligible.toLocaleString("fr-FR")} éligibles
+                    </span>
+                  </div>
+                  <Progress
+                    value={pct(criterion.eligible, analysis.total)}
+                    className="h-1.5"
+                  />
+                  <div className="flex flex-wrap justify-between gap-x-3 text-[10px] text-muted-foreground">
+                    <span>
+                      Non éligibles : {nonEligible.toLocaleString("fr-FR")}
+                    </span>
+                    <span>
+                      Total : {analysis.total.toLocaleString("fr-FR")}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </section>
         )}
 
-        {/* Villages hors zone (primaire) */}
-        {type === "primaire" && analysis.villagesTotal > 0 && (
-          <div className="pt-2 border-t border-border space-y-1">
+        {hasCandidates && (
+          <section className="pt-3 border-t border-border space-y-3">
             <div className="flex items-center justify-between text-xs">
-              <span className="flex items-center gap-1.5 text-foreground">
-                <MapPin className="w-3.5 h-3.5 text-destructive" /> Villages hors zone
+              <span className="flex items-center gap-1.5 text-foreground font-medium">
+                <MapPin className="w-3.5 h-3.5" />
+                Nouvelle Création (villages/points)
               </span>
-              <span className="font-semibold tabular-nums">
-                {analysis.villagesHorsZone}/{analysis.villagesTotal}
+              <Badge variant="secondary">
+                {ncCandidates.length.toLocaleString("fr-FR")}
+              </Badge>
+            </div>
+
+            <div className="flex flex-wrap justify-between gap-x-3 text-xs">
+              <span className="text-emerald-600">
+                Correspondances SIG : {ncCorrespondances.toLocaleString("fr-FR")}
+              </span>
+              <span className="text-muted-foreground">
+                Points éligibles proposés : {ncPointsProposes.toLocaleString("fr-FR")}
               </span>
             </div>
-            <Progress
-              value={pct(analysis.villagesHorsZone, analysis.villagesTotal)}
-              className="h-1.5"
-            />
-            <p className="text-[10px] text-muted-foreground">
-              Rayon de couverture : {(radius / 1000).toFixed(1)} km
-            </p>
-            {analysis.villagesHorsZone > 0 && (
-              <div className="flex items-center justify-between text-xs pt-1">
+          </section>
+        )}
+
+        {hasVillageAnalysis && ncStats && (
+          <section className="pt-3 border-t border-border space-y-3">
+            <div className="flex items-center justify-between text-xs">
+              <span className="flex items-center gap-1.5 text-foreground font-medium">
+                <MapPin className="w-3.5 h-3.5" />
+                Analyse historique des villages
+              </span>
+              <Badge variant="secondary">
+                {ncStats.villagesTotal.toLocaleString("fr-FR")}
+              </Badge>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
                 <span className="flex items-center gap-1.5 text-foreground">
-                  <Sparkles className="w-3.5 h-3.5 text-emerald-600" /> Éligibles Nouvelle Création
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                  Retenus par l’analyse historique
                 </span>
-                <Badge variant="outline" className="bg-emerald-500/10 text-emerald-700">
-                  {analysis.villagesNouvelleCreation}/{analysis.villagesHorsZone}
-                </Badge>
+                <span className="font-semibold tabular-nums">
+                  {ncStats.eligibles.toLocaleString("fr-FR")}
+                </span>
               </div>
-            )}
-          </div>
-        )}
-
-        {/* Refs hors zone (college/lycée) */}
-        {type !== "primaire" && analysis.refsTotal > 0 && (
-          <div className="pt-2 border-t border-border space-y-1">
-            <div className="flex items-center justify-between text-xs">
-              <span className="flex items-center gap-1.5 text-foreground">
-                <MapPin className="w-3.5 h-3.5 text-destructive" />
-                {labels.refUnit} hors zone
-              </span>
-              <span className="font-semibold tabular-nums">
-                {analysis.refsHorsZone}/{analysis.refsTotal}
-              </span>
+              <Progress
+                value={pct(ncStats.eligibles, ncStats.villagesTotal)}
+                className="h-1.5"
+              />
+              <div className="flex flex-wrap justify-between gap-x-3 text-[10px] text-muted-foreground">
+                <span>
+                  Non retenus : {ncStats.nonEligibles.toLocaleString("fr-FR")}
+                </span>
+                <span>
+                  Total : {ncStats.villagesTotal.toLocaleString("fr-FR")}
+                </span>
+              </div>
             </div>
-            <Progress value={pct(analysis.refsHorsZone, analysis.refsTotal)} className="h-1.5" />
-            <p className="text-[10px] text-muted-foreground flex items-center gap-1">
-              {analysis.refsHorsZone > 0 ? (
-                <>
-                  <AlertTriangle className="w-3 h-3 text-destructive" />
-                  Éligibles à un nouveau {labels.unit}
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="w-3 h-3 text-green-600" />
-                  Couverture complète dans le rayon
-                </>
-              )}
-            </p>
-          </div>
+
+            <div className="pt-2 border-t border-dashed border-border space-y-1">
+              <div className="flex items-center justify-between text-xs">
+                <span className="flex items-center gap-1.5 text-muted-foreground">
+                  <MapPin className="w-3.5 h-3.5" />
+                  Villages hors zone (indicateur géographique)
+                </span>
+                <span className="font-semibold tabular-nums">
+                  {ncStats.horsZone.toLocaleString("fr-FR")} /{" "}
+                  {ncStats.villagesTotal.toLocaleString("fr-FR")}
+                </span>
+              </div>
+              <Progress
+                value={pct(ncStats.horsZone, ncStats.villagesTotal)}
+                className="h-1.5"
+              />
+            </div>
+
+            {ncConfig && (
+              <p className="text-[10px] text-muted-foreground">
+                Aire de recrutement fixe : {ncConfig.aireMeters / 1000} km
+                {" · "}
+                {ncConfig.critereLabel} &gt;{" "}
+                {ncConfig.seuil.toLocaleString("fr-FR")}
+              </p>
+            )}
+
+            {nc?.refsSansDonnee !== undefined && nc.refsSansDonnee > 0 && (
+              <p className="text-[10px] text-amber-600 flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" />
+                {nc.refsSansDonnee.toLocaleString("fr-FR")}/
+                {nc.refsTotal.toLocaleString("fr-FR")} établissement(s) de
+                référence sans effectif renseigné (comptés 0)
+              </p>
+            )}
+          </section>
         )}
       </CardContent>
     </Card>

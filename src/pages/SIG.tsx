@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import logoMen from "@/assets/logoMen.jpg";
+import logoDpe from "@/assets/logoDpe.jpg";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import * as turf from "@turf/turf";
@@ -40,6 +42,11 @@ import {
   Archive,
   ChevronLeft,
   ChevronRight,
+  Layers,
+  RefreshCw,
+  AlertTriangle,
+  ShieldCheck,
+  Move,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
@@ -54,49 +61,113 @@ import {
 } from "recharts";
 import DataActionsBar from "@/components/admin/DataActionsBar";
 import { sumFields, BE_FIELDS, ME_FIELDS, NIVEAU_LABEL } from "../utils/sig";
+import {
+  SECTOR_COLORS,
+  getEtablissementIconHtml,
+  getSchoolLevelIconHtml,
+} from "@/lib/etablissementIcons";
+import { captureMapPng } from "@/utils/captureMapPng";
+import { buildSigUniqueEstablishmentStats, countUniqueEstablishments } from "@/utils/sigUniqueCounts";
 
 // ====================== CONFIG ======================
-const DJANGO_BASE_URL = "https://dpe-men.mg";
+const DJANGO_BASE_URL = import.meta.env.VITE_API_URL || "https://dpe-men.mg";
+
+class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+// Extrait le message d'erreur renvoyé par Django ({error} ou {message}) pour
+// l'afficher tel quel (403 « Action non autorisée », 409 « déjà géolocalisé »,
+// etc.) au lieu d'un message générique.
+async function extractApiError(res: Response, fallback: string): Promise<ApiError> {
+  let detail = fallback;
+  try {
+    const body = await res.json();
+    if (body?.error) detail = String(body.error);
+    else if (body?.message) detail = String(body.message);
+  } catch {
+    /* ignore */
+  }
+  return new ApiError(detail, res.status);
+}
 
 async function djangoGet<T = any>(path: string): Promise<T> {
   const url = `${DJANGO_BASE_URL}${path.startsWith("/") ? path : "/" + path}`;
   const res = await fetch(url, { credentials: "include" });
-  if (!res.ok) throw new Error(`Django GET ${path} → ${res.status}`);
+  if (!res.ok) throw await extractApiError(res, `Django GET ${path} → ${res.status}`);
   return res.json();
 }
 
-async function djangoPost<T = any>(path: string, data: Record<string, any>): Promise<T> {
+// Récupère un jeton CSRF frais auprès de Django avant chaque mutation.
+async function getCsrfToken(): Promise<string> {
+  const url = `${DJANGO_BASE_URL}/sig/csrf/`;
+
+  const res = await fetch(url, {
+    method: "GET",
+    credentials: "include",
+  });
+
+  if (!res.ok) {
+    throw await extractApiError(res, `Récupération du jeton CSRF → ${res.status}`);
+  }
+
+  const data = await res.json();
+
+  if (!data?.csrfToken || typeof data.csrfToken !== "string") {
+    throw new Error("Django n'a pas retourné de jeton CSRF valide.");
+  }
+
+  return data.csrfToken;
+}
+
+async function djangoPost<T = any>(
+  path: string,
+  data: Record<string, any>
+): Promise<T> {
   const url = `${DJANGO_BASE_URL}${path.startsWith("/") ? path : "/" + path}`;
+
+  const csrfToken = await getCsrfToken();
+
   const formData = new FormData();
   Object.entries(data).forEach(([k, v]) => formData.append(k, String(v)));
+
   const res = await fetch(url, {
     method: "POST",
     credentials: "include",
+    headers: {
+      "X-CSRFToken": csrfToken,
+    },
     body: formData,
   });
-  if (!res.ok) throw new Error(`Django POST ${path} → ${res.status}`);
+
+  if (!res.ok) throw await extractApiError(res, `Django POST ${path} → ${res.status}`);
   return res.json();
 }
 
-async function djangoPostJSON<T = any>(path: string, data: Record<string, any>): Promise<T> {
+async function djangoPostJSON<T = any>(
+  path: string,
+  data: Record<string, any>
+): Promise<T> {
   const url = `${DJANGO_BASE_URL}${path.startsWith("/") ? path : "/" + path}`;
+
+  const csrfToken = await getCsrfToken();
+
   const res = await fetch(url, {
     method: "POST",
     credentials: "include",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRFToken": csrfToken,
+    },
     body: JSON.stringify(data),
   });
-  if (!res.ok) {
-    let detail = `Django POST JSON ${path} → ${res.status}`;
-    try {
-      const body = await res.json();
-      if (body?.error) detail = String(body.error);
-      else if (body?.message) detail = String(body.message);
-    } catch {
-      /* ignore */
-    }
-    throw new Error(detail);
-  }
+
+  if (!res.ok) throw await extractApiError(res, `Django POST JSON ${path} → ${res.status}`);
   return res.json();
 }
 
@@ -115,19 +186,139 @@ interface SearchItem {
   name: string;
 }
 
-type SigConfig = {
+type GeoVerificationEndpoint = "establishments" | "villages";
+type GeoVerificationStage = "pending" | "running" | "done" | "error";
+type GeoVerificationRow = {
+  id: number | string;
+  code?: string | number | null;
+  nom_etab?: string | null;
+  name?: string | null;
+  code_dren: number | string;
+  code_cisco: number | string;
+  latitude: number | string | null;
+  longitude: number | string | null;
+  is_valid?: number | null;
+  population?: number | null;
+  type_anomalie: string;
+  nb_doublons: number | null;
+};
+type GeoVerificationEntry = {
+  dren: number;
+  cisco: number;
+  initialization: GeoVerificationStage;
+  establishments: { status: GeoVerificationStage; loading: boolean; hasData: boolean; data: GeoVerificationRow[]; error: string | null };
+  villages: { status: GeoVerificationStage; loading: boolean; hasData: boolean; data: GeoVerificationRow[]; error: string | null };
+  consolidation: GeoVerificationStage;
+};
+
+const emptyGeoVerificationEntry = (dren: number, cisco: number): GeoVerificationEntry => ({
+  dren,
+  cisco,
+  initialization: "pending",
+  establishments: { status: "pending", loading: false, hasData: false, data: [], error: null },
+  villages: { status: "pending", loading: false, hasData: false, data: [], error: null },
+  consolidation: "pending",
+});
+
+const geoAnomalyCategory = (value: unknown): string => {
+  const type = String(value ?? "").trim().toUpperCase();
+  if (type === "NON_GEOLOCALISE") return "NON_GEOLOCALISE";
+  if (type === "HORS_ZONE") return "HORS_ZONE";
+  if (type === "ZONE_NON_DEFINIE") return "ZONE_NON_DEFINIE";
+  if (type.includes("DOUBLON")) return "DOUBLON";
+  return "AUTRE";
+};
+
+const geoRowIsDuplicate = (row: GeoVerificationRow): boolean =>
+  Number(row.nb_doublons) > 1 || geoAnomalyCategory(row.type_anomalie) === "DOUBLON";
+
+const geoRowHasValidCoordinates = (row: GeoVerificationRow): boolean => {
+  if (row.latitude === null || row.latitude === undefined || row.longitude === null || row.longitude === undefined) {
+    return false;
+  }
+  if (String(row.latitude).trim() === "" || String(row.longitude).trim() === "") return false;
+  const latitude = Number(row.latitude);
+  const longitude = Number(row.longitude);
+  return Number.isFinite(latitude) && Number.isFinite(longitude) &&
+    latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180 &&
+    !(latitude === 0 && longitude === 0);
+};
+
+// ====================== RÔLES & PERMISSIONS SIG ======================
+// Règles métier (identiques à views.py) :
+//   ADMIN : is_superuser uniquement (is_staff seul ≠ ADMIN) — accès national
+//   CISCO : cisco > 0 — limité à sa CISCO
+//   DREN  : dren > 0  — consultation limitée à sa DREN
+//   STAFF : is_staff sans DREN/CISCO — lecture nationale SEULEMENT
+//   USER  : compte actif sans rattachement — consultation nationale seulement
+//   Autre : aucun droit SIG
+// Écriture (pointage, déplacement, validation/rejet, suppression) :
+//   ADMIN et CISCO uniquement ; le CISCO est limité à sa DREN et sa CISCO.
+// Le serveur reste l'unique autorité : ce code ne fait que masquer/désactiver
+// l'interface ; /sig/config/ renvoie le rôle réel et Django re-contrôle tout.
+type SigRole = "ADMIN" | "DREN" | "CISCO" | "STAFF" | "USER" | "UNKNOWN";
+type SigHeaderAction = "POINTAGE" | "DEPLACEMENT" | "VALIDATION";
+
+const emptySigConfig = (): SigConfig => ({
+  role: "UNKNOWN",
   modules: {
-    pointage: boolean;
-    deplacement: boolean;
-    validationDeplacement: boolean;
-  };
+    pointage: false,
+    deplacement: false,
+    validationDeplacement: false,
+  },
   permissions: {
-    valider: boolean;
-    rejeter: boolean;
-    supprimer: boolean;
-    verifier: boolean;
+    valider: false,
+    rejeter: false,
+    supprimer: false,
+    verifier: false,
+  },
+});
+
+const parseSigConfig = (res: any): SigConfig => {
+  const validRoles: SigRole[] = ["ADMIN", "DREN", "CISCO", "STAFF", "USER"];
+
+  if (
+    !res ||
+    !validRoles.includes(res.role) ||
+    !res.modules ||
+    !res.permissions
+  ) {
+    throw new Error("Réponse /sig/config/ incomplète ou invalide");
+  }
+
+  const moduleKeys = ["pointage", "deplacement", "validationDeplacement"];
+  const permissionKeys = ["valider", "rejeter", "supprimer", "verifier"];
+
+  for (const key of moduleKeys) {
+    if (typeof res.modules[key] !== "boolean") {
+      throw new Error(`Module SIG invalide ou absent : ${key}`);
+    }
+  }
+
+  for (const key of permissionKeys) {
+    if (typeof res.permissions[key] !== "boolean") {
+      throw new Error(`Permission SIG invalide ou absente : ${key}`);
+    }
+  }
+
+  return {
+    role: res.role,
+    modules: {
+      pointage: res.modules.pointage,
+      deplacement: res.modules.deplacement,
+      validationDeplacement: res.modules.validationDeplacement,
+    },
+    permissions: {
+      valider: res.permissions.valider,
+      rejeter: res.permissions.rejeter,
+      supprimer: res.permissions.supprimer,
+      verifier: res.permissions.verifier,
+    },
   };
 };
+
+// Secteur : 0 = Public, toute autre valeur = Privé (même règle partout).
+const secteurLabel = (secteur: unknown): string => (Number(secteur) === 0 ? "Public" : "Privé");
 
 // ====================== FIX DEFAULT MARKERS ======================
 delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
@@ -173,21 +364,19 @@ const BING_KEY = "AuhiCJHlGzhg93IqUH_oCpl_-ZUrIE6SPftlyGYUvr9Amx5nzA-WqGcPquyFZl
 
 const NIVEAU_CONFIG: Record<
   string,
-  { fa: string; label: string; aireColor: string; rayon: number }
+  { label: string; aireColor: string; rayon: number }
 > = {
-  n0: { fa: "fas fa-school", label: "PRESCO", aireColor: "green", rayon: 2 },
+  n0: { label: "PRESCO", aireColor: "green", rayon: 2 },
   n1: {
-    fa: "fas fa-school",
     label: "PRIMAIRE",
     aireColor: "green",
     rayon: 2,
   },
-  n2: { fa: "fas fa-school", label: "COLLEGE", aireColor: "blue", rayon: 5 },
-  n3: { fa: "fas fa-school", label: "LYCEE", aireColor: "yellow", rayon: 20 },
+  n2: { label: "COLLEGE", aireColor: "blue", rayon: 5 },
+  n3: { label: "LYCEE", aireColor: "yellow", rayon: 20 },
 };
 
 const VILLAGE_CONFIG = {
-  fa: "fas fa-circle",
   label: "Village",
   aireColor: "#a35b08",
   rayon: 5,
@@ -201,10 +390,16 @@ const MOVE_MIN_ZOOM = 16;
 
 // ====================== COMPOSANT PRINCIPAL ======================
 const SIG = () => {
-  const { user } = useAuth();
+  const { user, isAuthenticated, isLoading } = useAuth();
+  const [capturingMap, setCapturingMap] = useState(false);
   const mapRef = useRef<L.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const layerControlRef = useRef<L.Control.Layers | null>(null);
+  const legendControlRef = useRef<L.Control | null>(null);
+  const layerPanelHostRef = useRef<HTMLDivElement>(null);
+  const toolsPanelHostRef = useRef<HTMLDivElement>(null);
+  const legendPanelHostRef = useRef<HTMLDivElement>(null);
+  const renderLegendRef = useRef<() => void>(() => {});
 
   const etabLayersRef = useRef<Record<string, L.LayerGroup>>({});
   const aireLayersRef = useRef<Record<string, L.LayerGroup>>({});
@@ -215,11 +410,17 @@ const SIG = () => {
     fokontany: null,
   });
   const villageLayerRef = useRef<L.LayerGroup>(new L.LayerGroup());
+  const verificationLayerVisibilityRef = useRef<Record<string, boolean> | null>(null);
   const ctrlAireRef = useRef<L.Control | null>(null);
   const moveCtrlRef = useRef<L.Control | null>(null);
   const searchMarkerRef = useRef<L.Circle | null>(null);
   const positionAvantDeplacementRef = useRef<L.LatLng | null>(null);
   const verificationMarkersRef = useRef<L.LayerGroup>(new L.LayerGroup());
+  const distanceLayerRef = useRef<L.LayerGroup>(new L.LayerGroup());
+  const distanceFirstMarkerRef = useRef<{ latLng: L.LatLng; name: string } | null>(null);
+  const showMarkerNamesRef = useRef(false);
+  const measureDistanceEnabledRef = useRef(false);
+  const measureMarkerClickRef = useRef<(point: { latLng: L.LatLng; name: string }) => void>(() => {});
   const [showRecap, setShowRecap] = useState(true);
   const markersRef = useRef<any[]>([]);
   const tempMarkersRef = useRef<any[]>([]);
@@ -233,8 +434,40 @@ const SIG = () => {
   // défaut sur desktop, replié par défaut sur mobile pour laisser la place à
   // la carte.
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(() =>
-    typeof window !== "undefined" ? window.innerWidth >= 768 : true,
+    typeof window !== "undefined" ? window.innerWidth >= 1024 : true,
   );
+  const [rightSidebarOpen, setRightSidebarOpen] = useState<boolean>(() =>
+    typeof window !== "undefined" ? window.innerWidth >= 1024 : true,
+  );
+  useEffect(() => {
+    const enforceNarrowLayout = () => {
+      if (window.matchMedia("(max-width: 767px)").matches && sidebarOpen && rightSidebarOpen) {
+        setRightSidebarOpen(false);
+      }
+    };
+    window.addEventListener("resize", enforceNarrowLayout);
+    return () => window.removeEventListener("resize", enforceNarrowLayout);
+  }, [sidebarOpen, rightSidebarOpen]);
+
+  // Afficher une aire uniquement si la case du niveau est cochée et si un
+  // groupe d'établissements public ou privé de ce niveau est visible.
+  const syncAireLayerVisibility = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    for (const niveau of [1, 2, 3]) {
+      const checkbox = document.getElementById(`aireN${niveau}`) as HTMLInputElement | null;
+      for (const secteur of [0, 1]) {
+        const etabLayer = etabLayersRef.current[`layer_etabN${niveau}S${secteur}`];
+        const aireLayer = aireLayersRef.current[`aire_etabN${niveau}S${secteur}`];
+        if (!aireLayer) continue;
+        if (checkbox?.checked && etabLayer && map.hasLayer(etabLayer)) {
+          aireLayer.addTo(map);
+        } else if (map.hasLayer(aireLayer)) {
+          map.removeLayer(aireLayer);
+        }
+      }
+    }
+  }, []);
 
   // ====================== STATE ======================
   const [drens, setDrens] = useState<Dren[]>([]);
@@ -245,27 +478,43 @@ const SIG = () => {
   const [showFilters, setShowFilters] = useState(true);
   const [zoomLevel, setZoomLevel] = useState(6);
   const [sigMoveEnabled, setSigMoveEnabled] = useState(false);
+  const [showMarkerNames, setShowMarkerNames] = useState(false);
+  const [measureDistanceEnabled, setMeasureDistanceEnabled] = useState(false);
   const [searchItems, setSearchItems] = useState<SearchItem[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState<SearchItem[]>([]);
-  const [sigConfig, setSigConfig] = useState<SigConfig>({
-    modules: {
-      pointage: true,
-      deplacement: false,
-      validationDeplacement: false,
-    },
-    permissions: {
-      valider: false,
-      rejeter: false,
-      supprimer: false,
-      verifier: true,
-    },
-  });
+  const [sigConfig, setSigConfig] = useState<SigConfig>(emptySigConfig);
+  // true si le serveur répond que le compte n'a aucun profil SIG.
+  const [accessDenied, setAccessDenied] = useState(false);
+  const sigRole = sigConfig.role;
+  const [activeHeaderAction, setActiveHeaderAction] = useState<SigHeaderAction | null>(null);
+  const sigActionLocked = activeHeaderAction !== null;
+  const [actionStartedAt, setActionStartedAt] = useState<number | null>(null);
+  const [actionElapsedSeconds, setActionElapsedSeconds] = useState(0);
+  const [actionRecap, setActionRecap] = useState<{
+    action: SigHeaderAction;
+    username: string;
+    startedAt: number;
+    durationSeconds: number;
+  } | null>(null);
+  const actionRecapTimerRef = useRef<number | null>(null);
+
+  // Ref lue par les handlers Leaflet (attachés une seule fois aux marqueurs) :
+  // évite une closure obsolète sur les droits de l'utilisateur.
+  const permsRef = useRef({ canMove: false });
+  permsRef.current.canMove =
+    sigConfig.modules.deplacement && activeHeaderAction === "DEPLACEMENT";
   const [showDeplacementsModal, setShowDeplacementsModal] = useState(false);
   const [verifyMode, setVerifyMode] = useState(false);
   const [verifyItem, setVerifyItem] = useState<any>(null);
   const [deplacements, setDeplacements] = useState<any[]>([]);
   const [selectedSchool, setSelectedSchool] = useState<any | null>(null);
+  const [photoError, setPhotoError] = useState(false);
+
+  useEffect(() => {
+    setPhotoError(false);
+  }, [selectedSchool?.CODE_ETAB, selectedSchool?.PHOTO_URL]);
+
   const [niveau, setNiveau] = useState<number>(0);
   const [tablesBancs, setTablesBancs] = useState<any[]>([]);
   const [hoveredEtab, setHoveredEtab] = useState<any>(null);
@@ -277,11 +526,21 @@ const SIG = () => {
   } | null>(null);
   const [showGeoEtab, setShowGeoEtab] = useState(false);
   const [showGeoVillage, setShowGeoVillage] = useState(false);
+  const [pointageType, setPointageType] = useState<"ETABLISSEMENT" | "VILLAGE" | null>(null);
+  const [showPointageTypeDialog, setShowPointageTypeDialog] = useState(false);
   const [geoCoords, setGeoCoords] = useState<{ lat: number; lng: number }>({
     lat: 0,
     lng: 0,
   });
   const [etabNonPointe, setEtabNonPointe] = useState<any[]>([]);
+  const [geoVerificationOpen, setGeoVerificationOpen] = useState(false);
+  const [geoVerificationCache, setGeoVerificationCache] = useState<Record<string, GeoVerificationEntry>>({});
+  const geoVerificationCacheRef = useRef<Record<string, GeoVerificationEntry>>({});
+  const [geoVerificationContext, setGeoVerificationContext] = useState<{
+    key: string;
+    dren: number;
+    cisco: number;
+  } | null>(null);
   const [selectedEtabGeo, setSelectedEtabGeo] = useState<any | null>(null);
   const [showEtabNonPointeModal, setShowEtabNonPointeModal] = useState(false);
   const [etabNonPointeSearch, setEtabNonPointeSearch] = useState("");
@@ -292,7 +551,6 @@ const SIG = () => {
   const [filterEtabName, setFilterEtabName] = useState("");
   const [villageForm, setVillageForm] = useState({
     name: "",
-    population: "",
     airtel: false,
     orange: false,
     telma: false,
@@ -300,6 +558,7 @@ const SIG = () => {
     eau: false,
   });
   const [stats, setStats] = useState({
+    etablissements: 0,
     total: 0,
     public: {
       total: 0,
@@ -317,6 +576,9 @@ const SIG = () => {
     },
     villages: 0,
   });
+  const geoVerificationEntry = geoVerificationContext
+    ? geoVerificationCache[geoVerificationContext.key]
+    : undefined;
 
   // Garde la ref `sigMoveEnabledRef` synchronisée avec l'état React à chaque
   // changement, pour que les handlers `dragend` (attachés une seule fois par
@@ -325,17 +587,262 @@ const SIG = () => {
     sigMoveEnabledRef.current = sigMoveEnabled;
   }, [sigMoveEnabled]);
 
-  // Le panneau latéral change la largeur disponible pour la carte Leaflet.
-  // Sans `invalidateSize()`, la carte garde ses anciennes dimensions internes
-  // le temps d'une interaction manuelle (pan/zoom), ce qui laisse des zones
-  // grises après un repli/déploiement du panneau. On attend la fin de la
-  // transition CSS (300ms) avant de recalculer.
   useEffect(() => {
-    const t = setTimeout(() => {
-      mapRef.current?.invalidateSize();
-    }, 320);
-    return () => clearTimeout(t);
-  }, [sidebarOpen]);
+    showMarkerNamesRef.current = showMarkerNames;
+    const fontSize = showMarkerNames ? "11px" : "0px";
+    mapRef.current?.getContainer().querySelectorAll<HTMLElement>(".label-etab, .label-village")
+      .forEach((label) => { label.style.fontSize = fontSize; });
+  }, [showMarkerNames]);
+
+  useEffect(() => {
+    measureDistanceEnabledRef.current = measureDistanceEnabled;
+    distanceFirstMarkerRef.current = null;
+    if (!measureDistanceEnabled) distanceLayerRef.current.clearLayers();
+  }, [measureDistanceEnabled]);
+
+  measureMarkerClickRef.current = ({ latLng, name }) => {
+    if (!measureDistanceEnabledRef.current) return;
+    const first = distanceFirstMarkerRef.current;
+    if (!first) {
+      distanceFirstMarkerRef.current = { latLng, name };
+      toast.info(`Point de départ : ${name}. Cliquez sur le deuxième marqueur.`);
+      return;
+    }
+
+    const end = { latLng, name };
+    const distanceKm = turf.distance(
+      turf.point([first.latLng.lng, first.latLng.lat]),
+      turf.point([end.latLng.lng, end.latLng.lat]),
+      { units: "kilometers" },
+    );
+    const distanceText = distanceKm < 1
+      ? `${Math.round(distanceKm * 1000)} m`
+      : `${distanceKm.toFixed(2)} km`;
+    const line = L.polyline([first.latLng, end.latLng], {
+      color: "#e11d48", weight: 3, dashArray: "7 6",
+    });
+    distanceLayerRef.current.addLayer(line);
+    const label = document.createElement("div");
+    label.textContent = `${first.name} ↔ ${end.name} : ${distanceText}`;
+    distanceLayerRef.current.addLayer(
+      L.tooltip({ permanent: true, direction: "top", className: "sig-distance-label" })
+        .setLatLng(line.getCenter())
+        .setContent(label),
+    );
+    distanceFirstMarkerRef.current = null;
+    toast.success(`Distance : ${distanceText}`);
+  };
+
+  // ====================== ACTIONS D'EN-TÊTE SIG ======================
+
+  const canStartPointage = Boolean(
+    user &&
+    (sigRole === "ADMIN" || sigRole === "CISCO") &&
+    sigConfig.modules.pointage
+  );
+
+  const canStartDeplacement = Boolean(
+    user &&
+    (sigRole === "ADMIN" || sigRole === "CISCO") &&
+    sigConfig.modules.deplacement
+  );
+
+  const canStartValidation = Boolean(
+    user && sigConfig.permissions.verifier
+  );
+
+  const formatActionDuration = (totalSeconds: number) => {
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    return [hours, minutes, seconds]
+      .map((value) => String(value).padStart(2, "0"))
+      .join(":");
+  };
+
+  const getHeaderActionLabel = (action: SigHeaderAction) => {
+    if (action === "POINTAGE") return "Pointage";
+    if (action === "DEPLACEMENT") return "Déplacement";
+    return "Validation";
+  };
+
+  const startHeaderAction = (action: SigHeaderAction): boolean => {
+    if (activeHeaderAction !== null) {
+      toast.warning("Terminez d'abord l'action actuellement en cours.");
+      return false;
+    }
+
+    const allowed =
+      action === "POINTAGE"
+        ? canStartPointage
+        : action === "DEPLACEMENT"
+          ? canStartDeplacement
+          : canStartValidation;
+
+    if (!allowed) {
+      toast.error("Cette action n'est pas autorisée pour votre profil ou son module est désactivé.");
+      return false;
+    }
+
+    if (actionRecapTimerRef.current !== null) {
+      window.clearTimeout(actionRecapTimerRef.current);
+      actionRecapTimerRef.current = null;
+    }
+
+    setActionRecap(null);
+    setActiveHeaderAction(action);
+    setActionStartedAt(Date.now());
+    setActionElapsedSeconds(0);
+
+    if (action === "POINTAGE") {
+      setPointageType(null);
+      setShowPointageTypeDialog(true);
+    }
+
+    if (action === "DEPLACEMENT") {
+      // Le déplacement effectif reste soumis au contrôle de zoom
+      // et à la commande existante sigMoveEnabled.
+      setSigMoveEnabled(false);
+    }
+
+    return true;
+  };
+
+  const cancelHeaderAction = () => {
+    setActiveHeaderAction(null);
+    setActionStartedAt(null);
+    setActionElapsedSeconds(0);
+    setSigMoveEnabled(false);
+  };
+
+  const finishHeaderAction = () => {
+    if (activeHeaderAction === null || actionStartedAt === null) return;
+
+    const durationSeconds = Math.max(
+      0,
+      Math.floor((Date.now() - actionStartedAt) / 1000)
+    );
+
+    const username =
+      [user?.first_name, user?.last_name].filter(Boolean).join(" ") ||
+      user?.username ||
+      "Utilisateur";
+
+    const recap = {
+      action: activeHeaderAction,
+      username,
+      startedAt: actionStartedAt,
+      durationSeconds,
+    };
+
+    if (actionRecapTimerRef.current !== null) {
+      window.clearTimeout(actionRecapTimerRef.current);
+    }
+
+    setActionRecap(recap);
+    actionRecapTimerRef.current = window.setTimeout(() => {
+      setActionRecap(null);
+      actionRecapTimerRef.current = null;
+    }, 15000);
+
+    // Fermeture propre des interfaces associées à l'action.
+    setShowPointageTypeDialog(false);
+    setPointageType(null);
+    setShowGeoEtab(false);
+    setShowGeoVillage(false);
+    setContextMenu(null);
+    setShowDeplacementsModal(false);
+    setSigMoveEnabled(false);
+
+    if (verifyMode) {
+      stopVerification();
+    }
+
+    setActiveHeaderAction(null);
+    setActionStartedAt(null);
+    setActionElapsedSeconds(0);
+  };
+
+  useEffect(() => {
+    if (activeHeaderAction === null || actionStartedAt === null) return;
+
+    const updateElapsed = () => {
+      setActionElapsedSeconds(
+        Math.max(0, Math.floor((Date.now() - actionStartedAt) / 1000))
+      );
+    };
+
+    updateElapsed();
+    const interval = window.setInterval(updateElapsed, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [activeHeaderAction, actionStartedAt]);
+
+  useEffect(() => {
+    return () => {
+      if (actionRecapTimerRef.current !== null) {
+        window.clearTimeout(actionRecapTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Un marqueur n'est déplaçable que si le profil a le droit « déplacement »
+  // ET que le mode « Déplacer » est actif (plus de drag suivi d'un snap-back).
+  const applyDraggableState = useCallback(() => {
+    const enabled =
+      permsRef.current.canMove &&
+      activeHeaderAction === "DEPLACEMENT" &&
+      sigMoveEnabledRef.current;
+    const apply = (layer: any) => {
+      if (!layer?.options || typeof layer.getLatLng !== "function") return;
+      layer.options.draggable = enabled;
+      if (layer.dragging) {
+        if (enabled) layer.dragging.enable();
+        else layer.dragging.disable();
+      }
+    };
+    Object.values(etabLayersRef.current).forEach((group) => group.eachLayer(apply));
+    villageLayerRef.current.eachLayer(apply);
+  }, []);
+
+  useEffect(() => {
+    applyDraggableState();
+  }, [sigMoveEnabled, sigConfig.modules.deplacement, activeHeaderAction, applyDraggableState]);
+
+  // Si le droit de déplacement disparaît, le mode « Déplacer » est coupé.
+  useEffect(() => {
+    if (
+      (!sigConfig.modules.deplacement || activeHeaderAction !== "DEPLACEMENT") &&
+      sigMoveEnabled
+    ) {
+      setSigMoveEnabled(false);
+    }
+  }, [sigConfig.modules.deplacement, activeHeaderAction, sigMoveEnabled]);
+
+  // Suit la taille réelle du conteneur pendant les transitions des panneaux.
+  // ResizeObserver ne notifie qu'en cas de changement de dimensions ; un seul
+  // requestAnimationFrame regroupe les notifications d'une même frame.
+  useEffect(() => {
+    const container = mapContainerRef.current;
+    if (!container || typeof ResizeObserver === "undefined") return;
+
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      if (frame) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        mapRef.current?.invalidateSize({ animate: false, pan: false });
+      });
+    });
+    observer.observe(container);
+    mapRef.current?.invalidateSize({ animate: false, pan: false });
+
+    return () => {
+      observer.disconnect();
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, []);
 
   // ====================== INIT MAP ======================
   useEffect(() => {
@@ -443,6 +950,9 @@ const SIG = () => {
     );
     layerControl.addTo(map);
     layerControlRef.current = layerControl;
+    if (layerControl.getContainer() && layerPanelHostRef.current) {
+      layerPanelHostRef.current.appendChild(layerControl.getContainer()!);
+    }
 
     const ResetControl = L.Control.extend({
       options: { position: "topleft" as L.ControlPosition },
@@ -513,24 +1023,54 @@ const SIG = () => {
       const div = L.DomUtil.create("div", "legend");
       div.style.cssText =
         "background:rgba(255,255,255,0.92);padding:10px 14px;border-radius:8px;font-size:12px;line-height:1.8;box-shadow:0 2px 12px rgba(0,0,0,0.15);";
-      div.innerHTML = `
-        <p style="font-size:14px;margin:0 0 4px"><strong><u>Légende</u></strong></p>
-        <i class="fa fa-square text-primary"></i>&nbsp;Secteur Public<br/>
-        <i class="fa fa-square text-warning"></i>&nbsp;Secteur Privé<br/>
-        <i class="${NIVEAU_CONFIG.n1.fa}"></i>&nbsp;Présco et Primaire<br/>
-        <i class="${NIVEAU_CONFIG.n2.fa}"></i>&nbsp;Collège<br/>
-        <i class="${NIVEAU_CONFIG.n3.fa}"></i>&nbsp;Lycée<br/>
-        <i class="${VILLAGE_CONFIG.fa}"></i>&nbsp;Villages<br/>
-        <hr style="margin:4px 0"/>
-        <i class="fa fa-square" style="color:#4e73df"></i>&nbsp;Limite DREN<br/>
-        <i class="fa fa-square" style="color:#22afbe"></i>&nbsp;Limite CISCO<br/>
-        <i class="fa fa-square" style="color:#c0c0c0"></i>&nbsp;Limite Commune<br/>
-        <i class="fa fa-square" style="color:#55ff00"></i>&nbsp;Limite Fokontany
-      `;
+      div.innerHTML = `<p style="font-size:14px;margin:0 0 4px"><strong><u>Légende</u></strong></p><div class="sig-legend-items">Activez une couche pour afficher sa légende.</div>`;
       L.DomEvent.disableClickPropagation(div);
       return div;
     };
     legend.addTo(map);
+    legendControlRef.current = legend;
+    if (legend.getContainer() && legendPanelHostRef.current) {
+      legendPanelHostRef.current.appendChild(legend.getContainer()!);
+    }
+    const renderVisibleLegend = () => {
+      const items: string[] = [];
+      const add = (label: string, color: string, icon = "fa fa-square") => {
+        items.push(`<div><i class="${icon}" style="color:${color};width:18px"></i> ${label}</div>`);
+      };
+      const addBoundary = (label: string, color: string) => {
+        items.push(`<div><span class="inline-block h-3 w-6 shrink-0 border-2 bg-transparent" style="display:inline-block;width:24px;height:12px;box-sizing:border-box;border:2px solid ${color};background:transparent;vertical-align:middle"></span> ${label}</div>`);
+      };
+      for (let n = 0; n <= 3; n++) {
+        const levelName = n === 0 ? "Préscolaire" : n === 1 ? "Primaire" : n === 2 ? "Collège" : "Lycée";
+        for (const sector of [0, 1]) {
+          if (map.hasLayer(etabLayersRef.current[`layer_etabN${n}S${sector}`])) {
+            const color = sector === 0 ? SECTOR_COLORS.public : SECTOR_COLORS.private;
+            const privateOutline = sector === 1 ? "stroke:#fff;stroke-width:.75;paint-order:stroke fill;" : "";
+            const iconHtml = getSchoolLevelIconHtml(`n${n}`, `color:${color};width:18px;${privateOutline}`);
+            if (iconHtml) items.push(`<div>${iconHtml} ${levelName} ${sector === 0 ? "public" : "privé"}</div>`);
+          }
+        }
+      }
+      if (map.hasLayer(villageLayerRef.current)) {
+        items.push(`<div>${getEtablissementIconHtml("village", VILLAGE_CONFIG.aireColor, 18)} Villages</div>`);
+      }
+      for (const niveau of [1, 2, 3]) {
+        for (const secteur of [0, 1]) {
+          if (map.hasLayer(aireLayersRef.current[`aire_etabN${niveau}S${secteur}`])) {
+            const title = niveau === 1 ? "Aire primaire" : niveau === 2 ? "Aire collège" : "Aire lycée";
+            add(`${title} ${secteur === 0 ? "public" : "privé"}`, NIVEAU_CONFIG[`n${niveau}`].aireColor);
+          }
+        }
+      }
+      if (shpRef.current.dren && map.hasLayer(shpRef.current.dren)) addBoundary("Limite DREN", "#4e73df");
+      if (shpRef.current.cisco && map.hasLayer(shpRef.current.cisco)) addBoundary("Limite CISCO", "#22afbe");
+      if (shpRef.current.commune && map.hasLayer(shpRef.current.commune)) addBoundary("Limite Commune", "#c0c0c0");
+      if (shpRef.current.fokontany && map.hasLayer(shpRef.current.fokontany)) addBoundary("Limite Fokontany", "#55ff00");
+      const host = legend.getContainer()?.querySelector(".sig-legend-items");
+      if (host) host.innerHTML = items.length ? items.join("") : "Aucune couche SIG active.";
+    };
+    renderLegendRef.current = renderVisibleLegend;
+    map.on("overlayadd overlayremove", renderVisibleLegend);
 
     setTimeout(() => {
       const scale = document.querySelector(".leaflet-control-scale") as HTMLElement;
@@ -559,9 +1099,11 @@ const SIG = () => {
       const el = document.getElementById("zoom-indicator");
       if (el) el.innerHTML = `Niveau de Zoom: ${z}`;
       let fontSize = "0px";
-      if (z > 16) fontSize = "13px";
-      else if (z > 14) fontSize = "10px";
-      else if (z > 12) fontSize = "8px";
+      if (showMarkerNamesRef.current) {
+        if (z > 16) fontSize = "13px";
+        else if (z > 14) fontSize = "10px";
+        else fontSize = "8px";
+      }
       document
         .querySelectorAll<HTMLElement>(".label-etab")
         .forEach((el) => (el.style.fontSize = fontSize));
@@ -604,6 +1146,9 @@ const SIG = () => {
     }
 
     mapRef.current = map;
+    distanceLayerRef.current.addTo(map);
+    map.on("overlayadd", syncAireLayerVisibility);
+    map.on("overlayremove", syncAireLayerVisibility);
 
     djangoGet<Dren[]>("/sig/dren/").then(setDrens).catch(console.error);
 
@@ -611,7 +1156,7 @@ const SIG = () => {
       map.remove();
       mapRef.current = null;
     };
-  }, []);
+  }, [syncAireLayerVisibility]);
 
   // ====================== CHARGER TABLES BANCS ======================
   useEffect(() => {
@@ -637,155 +1182,107 @@ const SIG = () => {
     };
   }, [selectedSchool, niveau]);
 
-  // ====================== FONCTIONS UTILITAIRES ======================
-  const isSuperUser = (user: any): boolean => {
-    return user?.is_superuser === true;
-  };
-
-  const getUserDrenCode = (user: any): number | null => {
-    if (!user) return null;
-    if (isSuperUser(user)) return null;
-    return user?.dren_code || null;
-  };
-
-  const getUserCiscoCode = (user: any): number | null => {
-    if (!user) return null;
-    if (isSuperUser(user)) return null;
-    return user?.cisco_code || null;
-  };
-
-  const isUserAuthorizedForDren = (user: any, drenCode: number): boolean => {
-    if (isSuperUser(user)) return true;
-    const userDren = getUserDrenCode(user);
-    return userDren === drenCode;
-  };
   // ====================== CHARGER CONFIG SIG ======================
+  // Le backend est l'unique source de vérité des rôles, modules et permissions.
+  // Toute réponse invalide ou erreur entraîne une désactivation complète.
   useEffect(() => {
+    let cancelled = false;
+
     const loadConfig = async () => {
+      setSigConfig(emptySigConfig());
+      setAccessDenied(false);
+
       try {
         const res = await djangoGet("/sig/config/");
-        const modules = res?.modules || {};
-        const permissions = res?.permissions || {};
+        if (cancelled) return;
 
-        const getModule = (key: string): boolean => {
-          return Boolean(
-            modules[key] ??
-            modules[key.replace(/([A-Z])/g, "_$1").toLowerCase()] ??
-            modules[key.toLowerCase()] ??
-            false,
-          );
-        };
-
-        const isAdmin = isSuperUser(user);
-
-        setSigConfig({
-          modules: {
-            pointage: getModule("pointage"),
-            deplacement: getModule("deplacement"),
-            validationDeplacement:
-              getModule("validationDeplacement") || getModule("validation_deplacement"),
-          },
-          permissions: {
-            // Seul un SuperUser peut valider/rejeter
-            valider: isAdmin && getModule("validationDeplacement"),
-            rejeter: isAdmin && getModule("validationDeplacement"),
-            // Supprimer est autorisé pour tout le monde (user et admin)
-            supprimer: getModule("validationDeplacement"),
-            // Vérifier est autorisé pour tout le monde
-            verifier: getModule("validationDeplacement") || getModule("pointage"),
-          },
-        });
+        const config = parseSigConfig(res);
+        setSigConfig(config);
+        setAccessDenied(config.role === "UNKNOWN");
       } catch (err) {
-        // Repli fail-safe : en cas d'échec de /sig/config/, on ne connaît pas
-        // la configuration voulue côté back-office, donc les modules
-        // sensibles (déplacement / validation) restent désactivés par
-        // défaut plutôt que d'être ouverts à tout le monde. Seul le
-        // pointage, sans impact sur les déplacements, reste actif.
-        setSigConfig({
-          modules: {
-            pointage: true,
-            deplacement: false,
-            validationDeplacement: false,
-          },
-          permissions: {
-            valider: false,
-            rejeter: false,
-            supprimer: false,
-            verifier: true,
-          },
-        });
+        if (cancelled) return;
+        console.error("Erreur /sig/config/:", err);
+        setSigConfig(emptySigConfig());
+        setAccessDenied(true);
+        toast.error("Configuration SIG indisponible : tous les droits sont désactivés");
       }
     };
 
     loadConfig();
+    return () => {
+      cancelled = true;
+    };
   }, [user]);
 
   // ====================== DÉPLACEMENTS ======================
-  const loadDeplacements = async () => {
+  const loadDeplacements = async (): Promise<boolean> => {
     try {
-      if (!selectedDren) {
-        toast.error("DREN obligatoire");
-        return;
+      if (!sigConfig.permissions.verifier) {
+        toast.error("Action non autorisée pour votre profil");
+        return false;
       }
 
-      const isAdmin = isSuperUser(user);
-      const userDrenCode = getUserDrenCode(user);
-      const userCiscoCode = getUserCiscoCode(user);
+      let dren = selectedDren;
+      let cisco = selectedCisco;
 
-      // Vérifier si l'utilisateur a accès à cette DREN
-      if (!isAdmin) {
-        // Si l'utilisateur a une DREN et que la DREN sélectionnée n'est pas la sienne
-        if (userDrenCode && userDrenCode !== selectedDren) {
-          const drenName =
-            drens.find((d) => d.CODE_DREN === userDrenCode)?.DREN || `DREN ${userDrenCode}`;
-          toast.error(
-            `❌ Vous n'avez pas accès aux déplacements de cette DREN. Accès limité à : ${drenName}`,
-          );
-          setDeplacements([]);
-          return;
+      if (sigRole === "CISCO") {
+        dren = Number(user?.dren_code ?? user?.dren ?? 0) || 0;
+        cisco = Number(user?.cisco_code ?? user?.cisco ?? 0) || 0;
+        if (dren <= 0 || cisco <= 0) {
+          toast.error("Périmètre CISCO du compte introuvable");
+          return false;
         }
-
-        // Si l'utilisateur est un CISCO, vérifier que la CISCO sélectionnée est la sienne
-        if (userCiscoCode && selectedCisco > 0 && selectedCisco !== userCiscoCode) {
-          toast.error(
-            `❌ Vous n'avez pas accès aux déplacements de cette CISCO. Accès limité à votre CISCO ${userCiscoCode}`,
-          );
-          setDeplacements([]);
-          return;
-        }
+      } else if (dren <= 0) {
+        toast.error("Sélectionnez une DREN pour consulter les déplacements");
+        return false;
       }
 
-      // Construire l'URL
-      let url = `/sig/deplacements/non-valides/?dren=${selectedDren}`;
-
-      // Pour les utilisateurs non-admin, filtrer par leur CISCO si définie
-      if (!isAdmin && userCiscoCode) {
-        url += `&cisco=${userCiscoCode}`;
-        toast.info(`🔍 Affichage des déplacements de votre CISCO ${userCiscoCode}`, {
-          duration: 3000,
-        });
-      } else if (selectedCisco > 0) {
-        url += `&cisco=${selectedCisco}`;
-      }
+      const url =
+        `/sig/deplacements/non-valides/?dren=${dren}` +
+        (cisco > 0 ? `&cisco=${cisco}` : "");
 
       const response = await djangoGet(url);
-
       const data = Array.isArray(response?.data) ? response.data : [];
       setDeplacements(data);
 
       if (data.length > 0) {
         toast.success(`📋 ${data.length} déplacement${data.length > 1 ? "s" : ""} en attente`);
       } else {
-        toast.info("✅ Aucun déplacement en attente pour votre zone", {
+        toast.info("Aucun déplacement en attente pour ce périmètre", {
           duration: 3000,
         });
       }
-    } catch (e) {
+      return true;
+    } catch (e: any) {
       console.error(e);
-      toast.error("Impossible de charger les déplacements");
+      toast.error(
+        e?.status === 403
+          ? "Vous n'avez pas accès aux déplacements de cette zone"
+          : "Impossible de charger les déplacements",
+      );
       setDeplacements([]);
+      return false;
     }
   };
+
+  const openValidationAction = async () => {
+    if (!canStartValidation) {
+      toast.error("Consultation des déplacements non autorisée.");
+      return;
+    }
+
+    if (!startHeaderAction("VALIDATION")) return;
+
+    const loaded = await loadDeplacements();
+
+    if (!loaded) {
+      cancelHeaderAction();
+      return;
+    }
+
+    setShowDeplacementsModal(true);
+  };
+
   // ====================== GESTION CISCO =======================
   useEffect(() => {
     const load = async () => {
@@ -797,9 +1294,9 @@ const SIG = () => {
 
       try {
         const data = await djangoGet<Cisco[]>(`/sig/liste-cisco/${selectedDren}/`);
+        const list = Array.isArray(data) ? data : [];
 
-        setCiscos(Array.isArray(data) ? data : []);
-        setSelectedCisco(0);
+        setCiscos(list);
       } catch {
         setCiscos([]);
         setSelectedCisco(0);
@@ -810,12 +1307,140 @@ const SIG = () => {
     load();
   }, [selectedDren]);
 
+  const updateGeoVerificationEntry = useCallback((
+    key: string,
+    update: (entry: GeoVerificationEntry | undefined) => GeoVerificationEntry,
+  ) => {
+    const entry = update(geoVerificationCacheRef.current[key]);
+    const next = { ...geoVerificationCacheRef.current, [key]: entry };
+    geoVerificationCacheRef.current = next;
+    setGeoVerificationCache(next);
+  }, []);
+
+  const runGeoVerification = useCallback((
+    dren: number,
+    cisco: number,
+    force = false,
+    onlyEndpoint?: GeoVerificationEndpoint,
+  ) => {
+    const key = `${dren}::${cisco}`;
+    const current = geoVerificationCacheRef.current[key];
+    if (current && !force && !onlyEndpoint) return;
+
+    const base = current ?? emptyGeoVerificationEntry(dren, cisco);
+    const requested: GeoVerificationEndpoint[] = onlyEndpoint
+      ? [onlyEndpoint]
+      : ["establishments", "villages"];
+    const endpoints = requested.filter((endpoint) => !base[endpoint].loading);
+    if (endpoints.length === 0) return;
+
+    updateGeoVerificationEntry(key, (entry) => {
+      const next = entry ?? emptyGeoVerificationEntry(dren, cisco);
+      return {
+        ...next,
+        initialization: "done",
+        consolidation: "running",
+        ...Object.fromEntries(endpoints.map((endpoint) => [endpoint, {
+          ...next[endpoint],
+          status: "running",
+          loading: true,
+          error: null,
+        }])),
+      } as GeoVerificationEntry;
+    });
+
+    endpoints.forEach((endpoint) => {
+      const url = endpoint === "establishments"
+        ? `/sig/verification-geographique/etablissements/${dren}/${cisco}/`
+        : `/sig/verification-geographique/villages/${dren}/${cisco}/`;
+
+      void (async () => {
+        try {
+          const data = await djangoGet<GeoVerificationRow[]>(url);
+          if (!Array.isArray(data)) throw new Error("Le backend n'a pas renvoyé un tableau de résultats.");
+          updateGeoVerificationEntry(key, (entry) => {
+            const next = entry ?? emptyGeoVerificationEntry(dren, cisco);
+            const otherEndpoint: GeoVerificationEndpoint = endpoint === "establishments" ? "villages" : "establishments";
+            return {
+              ...next,
+              [endpoint]: { status: "done", loading: false, hasData: true, data, error: null },
+              consolidation: next[otherEndpoint].loading ? "running" : "done",
+            };
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Erreur inconnue pendant la vérification.";
+          updateGeoVerificationEntry(key, (entry) => {
+            const next = entry ?? emptyGeoVerificationEntry(dren, cisco);
+            const otherEndpoint: GeoVerificationEndpoint = endpoint === "establishments" ? "villages" : "establishments";
+            return {
+              ...next,
+              [endpoint]: { ...next[endpoint], status: "error", loading: false, error: message },
+              consolidation: next[otherEndpoint].loading ? "running" : "done",
+            };
+          });
+        }
+      })();
+    });
+  }, [updateGeoVerificationEntry]);
+
+  const openGeoVerification = () => {
+    if (!isAuthenticated || isLoading) {
+      toast.error("Vous devez être connecté pour effectuer cette vérification.");
+      return;
+    }
+    if (selectedDren <= 0) {
+      toast.error("Veuillez sélectionner une DREN avant la vérification.");
+      return;
+    }
+    if (sigRole === "CISCO" && (
+      selectedCisco <= 0 || !ciscos.some((cisco) => cisco.CODE_CISCO === selectedCisco)
+    )) {
+      toast.error("La CISCO autorisée n'est pas encore disponible pour cette DREN.");
+      return;
+    }
+
+    const key = `${selectedDren}::${selectedCisco}`;
+    setGeoVerificationContext({ key, dren: selectedDren, cisco: selectedCisco });
+    setGeoVerificationOpen(true);
+    if (!geoVerificationCacheRef.current[key]) {
+      runGeoVerification(selectedDren, selectedCisco);
+    }
+  };
+
+  const retryGeoVerification = (endpoint?: GeoVerificationEndpoint) => {
+    if (!geoVerificationContext) return;
+    runGeoVerification(
+      geoVerificationContext.dren,
+      geoVerificationContext.cisco,
+      true,
+      endpoint,
+    );
+  };
+
+  const locateGeoAnomaly = (row: GeoVerificationRow) => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (!geoRowHasValidCoordinates(row)) {
+      toast.info("La position de cette anomalie est indisponible.");
+      return;
+    }
+
+    map.flyTo([Number(row.latitude), Number(row.longitude)], 16);
+  };
+
   // ====================== GESTION DES LAYERS ======================
   const clearEtabLayers = () => {
+    const map = mapRef.current;
     for (let n = 0; n < 4; n++) {
       for (let s = 0; s < 2; s++) {
-        etabLayersRef.current[`layer_etabN${n}S${s}`]?.clearLayers();
-        aireLayersRef.current[`aire_etabN${n}S${s}`]?.clearLayers();
+        const etabLayer = etabLayersRef.current[`layer_etabN${n}S${s}`];
+        if (map && etabLayer && map.hasLayer(etabLayer)) map.removeLayer(etabLayer);
+        etabLayer?.clearLayers();
+
+        const aireLayer = aireLayersRef.current[`aire_etabN${n}S${s}`];
+        if (map && aireLayer && map.hasLayer(aireLayer)) map.removeLayer(aireLayer);
+        aireLayer?.clearLayers();
       }
     }
   };
@@ -845,6 +1470,18 @@ const SIG = () => {
   const hideAllSigLayers = () => {
     const map = mapRef.current;
     if (!map) return;
+    if (verificationLayerVisibilityRef.current === null) {
+      const visibility: Record<string, boolean> = {};
+      for (let n = 0; n < 4; n++) {
+        for (let s = 0; s < 2; s++) {
+          const key = `layer_etabN${n}S${s}`;
+          const layer = etabLayersRef.current[key];
+          visibility[key] = Boolean(layer && map.hasLayer(layer));
+        }
+      }
+      visibility.villages = map.hasLayer(villageLayerRef.current);
+      verificationLayerVisibilityRef.current = visibility;
+    }
     for (let n = 0; n < 4; n++) {
       for (let s = 0; s < 2; s++) {
         const layer = etabLayersRef.current[`layer_etabN${n}S${s}`];
@@ -852,18 +1489,27 @@ const SIG = () => {
       }
     }
     if (map.hasLayer(villageLayerRef.current)) map.removeLayer(villageLayerRef.current);
+    syncAireLayerVisibility();
   };
 
   const showAllSigLayers = () => {
     const map = mapRef.current;
     if (!map) return;
+    const visibility = verificationLayerVisibilityRef.current;
+    if (!visibility) return;
     for (let n = 0; n < 4; n++) {
       for (let s = 0; s < 2; s++) {
-        const layer = etabLayersRef.current[`layer_etabN${n}S${s}`];
-        if (layer) layer.addTo(map);
+        const key = `layer_etabN${n}S${s}`;
+        const layer = etabLayersRef.current[key];
+        if (visibility[key] && layer && !map.hasLayer(layer)) layer.addTo(map);
       }
     }
-    villageLayerRef.current.addTo(map);
+    if (visibility.villages && !map.hasLayer(villageLayerRef.current)) {
+      villageLayerRef.current.addTo(map);
+    }
+    verificationLayerVisibilityRef.current = null;
+    syncAireLayerVisibility();
+    renderLegendRef.current();
   };
 
   const clearVerificationMarkers = () => {
@@ -892,6 +1538,12 @@ const SIG = () => {
   // du DOM ou de l'état React (susceptible d'être obsolète dans la closure
   // du handler `dragend`, attaché une seule fois à la création du marqueur).
   const isMoveAuthorized = (): { ok: boolean; reason?: string } => {
+    if (!permsRef.current.canMove || activeHeaderAction !== "DEPLACEMENT") {
+      return {
+        ok: false,
+        reason: "Aucune action Déplacement n'est active pour votre compte",
+      };
+    }
     if (!sigMoveEnabledRef.current) {
       return {
         ok: false,
@@ -932,7 +1584,7 @@ const SIG = () => {
         nouveau_lng: lng,
         // demande_par géré côté serveur (request.user.id = bigint)
       });
-      toast.success("Position de l'établissement mise à jour");
+      toast.success("Demande de déplacement enregistrée — en attente de validation");
     } catch (err: any) {
       toast.error(err?.message || "Erreur lors de la mise à jour");
       if (positionAvantDeplacementRef.current) {
@@ -971,7 +1623,7 @@ const SIG = () => {
         nouveau_lng: lng,
         // demande_par géré côté serveur (request.user.id = bigint)
       });
-      toast.success("Position du village mise à jour");
+      toast.success("Demande de déplacement enregistrée — en attente de validation");
     } catch (err: any) {
       toast.error(err?.message || "Erreur lors de la mise à jour");
       if (positionAvantDeplacementRef.current) {
@@ -1002,21 +1654,71 @@ const SIG = () => {
     const config = NIVEAU_CONFIG[niveauKey];
     const nIdx = niveauKey.replace("n", "");
     const items: SearchItem[] = [];
-    // Le marqueur n'est réellement déplaçable que si le module "déplacement"
-    // est activé pour l'utilisateur — évite un drag visuel suivi d'un
-    // snap-back systématique quand la fonctionnalité est désactivée.
-    const canDrag = Boolean(user) && sigConfig.modules.deplacement;
+    // Voronoï construit sur tous les établissements de ce niveau (publics
+    // et privés) pour que leurs zones de recrutement se partagent l'espace.
+    const validEtabs = data.flatMap((etab) => {
+      const lat = parseFloat(etab.latitude);
+      const lng = parseFloat(etab.longitude);
+      return Number.isFinite(lat) && Number.isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180
+        ? [{ etab, lat, lng }]
+        : [];
+    });
+    const uniqueSites = new Map<string, [number, number]>();
+    validEtabs.forEach(({ lat, lng }) => {
+      const key = `${lng.toFixed(7)},${lat.toFixed(7)}`;
+      if (!uniqueSites.has(key)) {
+        uniqueSites.set(key, [lng, lat]);
+      }
+    });
+    const siteKeys = [...uniqueSites.keys()];
+    const sites = [...uniqueSites.values()];
+    const siteKeyByIndex = new Map(siteKeys.map((key, index) => [index, key]));
+    const siteByKey = new Map<string, any>();
+    let voronoiCells: ReturnType<typeof turf.voronoi> | null = null;
+    if (sites.length >= 2) {
+      const radiusKm = config.rayon;
+      const maxLat = Math.max(...sites.map(([, lat]) => Math.abs(lat)));
+      const latPad = radiusKm / 110.574;
+      const lngPad = radiusKm / Math.max(1, 111.32 * Math.cos((maxLat * Math.PI) / 180));
+      const bbox: [number, number, number, number] = [
+        Math.min(...sites.map(([lng]) => lng)) - lngPad,
+        Math.min(...sites.map(([, lat]) => lat)) - latPad,
+        Math.max(...sites.map(([lng]) => lng)) + lngPad,
+        Math.max(...sites.map(([, lat]) => lat)) + latPad,
+      ];
+      try {
+        // Garder une clé sur chaque point permet d'associer explicitement la
+        // cellule au site, même si l'algorithme renvoie des cellules nulles.
+        voronoiCells = turf.voronoi(
+          turf.featureCollection(sites.map((coordinates, index) =>
+            turf.point(coordinates, { siteKey: siteKeyByIndex.get(index) }),
+          )),
+          { bbox },
+        );
+        voronoiCells.features.forEach((cell: any) => {
+          const key = cell?.properties?.siteKey;
+          if (key && cell.geometry?.type === "Polygon") siteByKey.set(key, cell);
+        });
+      } catch (err) {
+        console.warn(`Voronoï failed for ${niveauKey}`, err);
+      }
+    }
+    // Le caractère déplaçable est piloté par applyDraggableState() (droit + mode « Déplacer »).
 
     data.forEach((dataEtab) => {
       const lat = parseFloat(dataEtab.latitude);
       const lng = parseFloat(dataEtab.longitude);
       if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) return;
 
-      const cls = dataEtab.SECTEUR === 0 ? "text-primary" : "text-warning";
+      const secteur = Number(dataEtab.SECTEUR) === 0 ? 0 : 1;
+      const sectorColor = secteur === 0 ? SECTOR_COLORS.public : SECTOR_COLORS.private;
+      const sectorOutline = secteur === 1 ? "stroke:#fff;stroke-width:.75;paint-order:stroke fill;" : "";
+      const schoolIconHtml = getSchoolLevelIconHtml(niveauKey, `color:${sectorColor};${sectorOutline}`);
+      const iconHtml = schoolIconHtml || `<i class="fas fa-map-marker-alt" aria-hidden="true"></i>`;
       const icon = L.divIcon({
         className: "custom-icon",
         iconSize: [20, 20],
-        html: `<i class="${config.fa} ${cls}"></i><span class="label-etab" style="font-size:0px;position:absolute;top:10px;white-space:nowrap;">${dataEtab.NOM_ETAB}</span>`,
+        html: `${iconHtml}<span class="label-etab" style="font-size:${showMarkerNamesRef.current ? "11px" : "0px"};position:absolute;top:10px;left:18px;white-space:nowrap;background:rgba(255,255,255,.88);padding:1px 4px;border-radius:3px;color:#111;">${dataEtab.NOM_ETAB}</span>`,
       });
 
       const latLng: [number, number] = [lat, lng];
@@ -1028,7 +1730,7 @@ const SIG = () => {
 
       const marker = L.marker(latLng, {
         icon,
-        draggable: canDrag,
+        draggable: false,
         properties: dataEtab,
       } as any);
 
@@ -1041,6 +1743,10 @@ const SIG = () => {
       marker.on("mouseover", () => setHoveredEtab(dataEtab));
       marker.on("mouseout", () => setHoveredEtab(null));
       marker.on("click", () => {
+        if (measureDistanceEnabledRef.current) {
+          measureMarkerClickRef.current({ latLng: marker.getLatLng(), name: String(dataEtab.NOM_ETAB || "Établissement") });
+          return;
+        }
         setNiveau(Number(niveauKey.replace("n", "")));
         setSelectedSchool(dataEtab);
       });
@@ -1049,11 +1755,17 @@ const SIG = () => {
       marker.on("dragend", onDragEtabEnd);
 
       try {
-        const buffer = turf.buffer(turf.point([lng, lat]), config.rayon, {
-          units: "kilometers",
-        });
-        if (buffer) {
-          const bufferPolygon = L.geoJSON(buffer as any, {
+        const center = turf.point([lng, lat]);
+        const siteKey = `${lng.toFixed(7)},${lat.toFixed(7)}`;
+        const cell = siteByKey.get(siteKey);
+        const disk = turf.circle(center, config.rayon, { steps: 48, units: "kilometers" });
+        const area = cell
+          ? turf.intersect(turf.featureCollection([disk, cell] as any))
+          : sites.length === 1
+            ? disk
+            : null;
+        if (area) {
+          const bufferPolygon = L.geoJSON(area as any, {
             style: {
               color: config.aireColor,
               fillColor: config.aireColor,
@@ -1078,25 +1790,43 @@ const SIG = () => {
               }),
             );
           });
-          aireLayersRef.current[`aire_etabN${nIdx}S${dataEtab.SECTEUR}`]?.addLayer(bufferPolygon);
+          aireLayersRef.current[`aire_etabN${nIdx}S${secteur}`]?.addLayer(bufferPolygon);
+        } else if (sites.length > 1) {
+          // Une cellule manquante signifie que le site n'a pas pu être
+          // récupéré dans le Voronoï; on le signale pour identifier les
+          // données géographiques concernées sans dessiner une aire erronée.
+          console.warn(`Aire ${niveauKey} sans cellule Voronoï`, {
+            code: dataEtab.CODE_ETAB,
+            latitude: lat,
+            longitude: lng,
+          });
         }
       } catch (err) {
         console.warn(`Buffer failed for etab ${dataEtab.CODE_ETAB}`, err);
       }
 
-      etabLayersRef.current[`layer_etabN${nIdx}S${dataEtab.SECTEUR}`]?.addLayer(marker);
+      etabLayersRef.current[`layer_etabN${nIdx}S${secteur}`]?.addLayer(marker);
     });
 
     return items;
   };
 
   // ====================== APPLIQUER LES FILTRES ======================
-  const handleApplyFilters = useCallback(async () => {
+  const handleApplyFilters = useCallback(async (
+    scope?: { dren: number; cisco: number },
+  ) => {
+    if (activeHeaderAction !== null) {
+      toast.warning("Terminez ou annulez l’action SIG en cours avant de modifier les filtres.");
+      return;
+    }
     const map = mapRef.current;
     const lc = layerControlRef.current;
     if (!map || !lc) return;
 
-    if (selectedDren === 0) {
+    const codeDren = scope?.dren ?? selectedDren;
+    const codeCisco = scope?.cisco ?? selectedCisco;
+
+    if (codeDren === 0) {
       toast.error("Veuillez sélectionner une DREN");
       return;
     }
@@ -1106,8 +1836,24 @@ const SIG = () => {
     setContextMenu(null);
 
     try {
+      const previousLayerVisibility: Record<string, boolean> = {};
+      for (let n = 0; n < 4; n++) {
+        for (let s = 0; s < 2; s++) {
+          const key = `layer_etabN${n}S${s}`;
+          const layer = etabLayersRef.current[key];
+          previousLayerVisibility[key] = Boolean(layer && map.hasLayer(layer));
+        }
+      }
+      previousLayerVisibility.villages = map.hasLayer(villageLayerRef.current);
+      const previousAireVisibility: Record<string, boolean> = {};
+      for (const niveau of [1, 2, 3]) {
+        const checkbox = document.getElementById(`aireN${niveau}`) as HTMLInputElement | null;
+        previousAireVisibility[`aireN${niveau}`] = Boolean(checkbox?.checked);
+      }
+
       clearBaseShapes();
       clearEtabLayers();
+      distanceLayerRef.current.clearLayers();
       removeOverLayers();
       villageLayerRef.current.clearLayers();
 
@@ -1119,9 +1865,6 @@ const SIG = () => {
         map.removeControl(moveCtrlRef.current);
         moveCtrlRef.current = null;
       }
-
-      const codeDren = selectedDren;
-      const codeCisco = selectedCisco;
 
       const [
         drenRes,
@@ -1197,10 +1940,16 @@ const SIG = () => {
       if (shpRef.current.commune) shpRef.current.commune.addTo(map);
       if (shpRef.current.fokontany) shpRef.current.fokontany.addTo(map);
 
-      if (codeCisco > 0 && shpRef.current.cisco) {
-        map.fitBounds(shpRef.current.cisco.getBounds());
-      } else if (shpRef.current.dren) {
-        map.fitBounds(shpRef.current.dren.getBounds());
+      // Le cadrage sera animé après le chargement des marqueurs, pour pouvoir
+      // utiliser les limites de la CISCO/DREN demandée ou, à défaut, celles
+      // des points réellement retournés par le filtre.
+      let filteredZoneBounds: L.LatLngBounds | null = null;
+      const targetShape = codeCisco > 0 ? shpRef.current.cisco : shpRef.current.dren;
+      try {
+        const bounds = targetShape?.getBounds();
+        if (bounds?.isValid()) filteredZoneBounds = bounds;
+      } catch {
+        filteredZoneBounds = null;
       }
 
       const allSearchItems: SearchItem[] = [];
@@ -1211,7 +1960,7 @@ const SIG = () => {
 
       villageLayerRef.current.clearLayers();
       const villageItems: SearchItem[] = [];
-      const canDragVillage = Boolean(user) && sigConfig.modules.deplacement;
+
 
       (villagesData as any[]).forEach((v: any) => {
         const lat = parseFloat(v.latitude);
@@ -1221,7 +1970,7 @@ const SIG = () => {
         const icon = L.divIcon({
           className: "custom-icon",
           iconSize: [18, 18],
-          html: `<i class="${VILLAGE_CONFIG.fa}" style="color:${VILLAGE_CONFIG.aireColor}; font-size:18px;"></i>`,
+          html: `${getEtablissementIconHtml("village", VILLAGE_CONFIG.aireColor, 18)}<span class="label-village" style="font-size:${showMarkerNamesRef.current ? "11px" : "0px"};position:absolute;top:10px;left:18px;white-space:nowrap;background:rgba(255,255,255,.88);padding:1px 4px;border-radius:3px;color:#111;">${v.name || "Village"}</span>`,
         });
 
         // ⚠️ Correctif : les propriétés du village doivent être posées dans
@@ -1232,7 +1981,7 @@ const SIG = () => {
         // l'enregistrement de la nouvelle position.
         const marker = L.marker([lat, lng], {
           icon,
-          draggable: canDragVillage,
+          draggable: false,
           properties: v,
         } as any);
 
@@ -1242,6 +1991,9 @@ const SIG = () => {
         });
         marker.on("mouseover", () => setHoveredEtab(v));
         marker.on("mouseout", () => setHoveredEtab(null));
+        marker.on("click", () => {
+          measureMarkerClickRef.current({ latLng: marker.getLatLng(), name: String(v.name || "Village") });
+        });
         marker.on("dragstart", onDragMarkerStart);
         marker.on("dragend", onDragVillageEnd);
 
@@ -1251,30 +2003,35 @@ const SIG = () => {
 
       allSearchItems.push(...villageItems);
       setSearchItems(allSearchItems);
+      applyDraggableState();
 
-      const allEtabs = [...n0Data, ...n1Data, ...n2Data, ...n3Data];
+      if (!filteredZoneBounds && allSearchItems.length) {
+        const bounds = L.latLngBounds(allSearchItems.map((item) => item.latLng));
+        if (bounds.isValid()) filteredZoneBounds = bounds;
+      }
+      if (!filteredZoneBounds && codeCisco > 0) {
+        const drenBounds = shpRef.current.dren?.getBounds();
+        if (drenBounds?.isValid()) filteredZoneBounds = drenBounds;
+      }
+      if (filteredZoneBounds?.isValid()) {
+        const bounds = filteredZoneBounds;
+        window.setTimeout(() => {
+          if (mapRef.current !== map) return;
+          map.invalidateSize({ animate: false });
+          if (bounds.getSouthWest().equals(bounds.getNorthEast())) {
+            map.flyTo(bounds.getCenter(), 15, { duration: 1 });
+          } else {
+            map.flyToBounds(bounds, { padding: [36, 36], maxZoom: 13, duration: 1 });
+          }
+        }, 320);
+      }
 
-      const publicEtabs = allEtabs.filter((e: any) => e.SECTEUR === 0);
-      const privateEtabs = allEtabs.filter((e: any) => e.SECTEUR !== 0);
-
-      setStats({
-        total: allEtabs.length + villageItems.length,
-        public: {
-          total: publicEtabs.length,
-          prescolaire: n0Data.filter((e: any) => e.SECTEUR === 0).length,
-          primaire: n1Data.filter((e: any) => e.SECTEUR === 0).length,
-          college: n2Data.filter((e: any) => e.SECTEUR === 0).length,
-          lycee: n3Data.filter((e: any) => e.SECTEUR === 0).length,
-        },
-        private: {
-          total: privateEtabs.length,
-          prescolaire: n0Data.filter((e: any) => e.SECTEUR !== 0).length,
-          primaire: n1Data.filter((e: any) => e.SECTEUR !== 0).length,
-          college: n2Data.filter((e: any) => e.SECTEUR !== 0).length,
-          lycee: n3Data.filter((e: any) => e.SECTEUR !== 0).length,
-        },
-        villages: villageItems.length,
-      });
+      setStats(
+        buildSigUniqueEstablishmentStats(
+          { n0: n0Data, n1: n1Data, n2: n2Data, n3: n3Data },
+          villageItems.length,
+        ),
+      );
 
       lc.addOverlay(etabLayersRef.current["layer_etabN0S0"], "PRESCO PUBLIC");
       lc.addOverlay(etabLayersRef.current["layer_etabN0S1"], "PRESCO PRIVÉ");
@@ -1286,6 +2043,17 @@ const SIG = () => {
       lc.addOverlay(etabLayersRef.current["layer_etabN3S1"], "LYCEE PRIVÉ");
       lc.addOverlay(villageLayerRef.current, "VILLAGES");
 
+      for (let n = 0; n < 4; n++) {
+        for (let s = 0; s < 2; s++) {
+          const key = `layer_etabN${n}S${s}`;
+          const layer = etabLayersRef.current[key];
+          if (previousLayerVisibility[key] && layer && !map.hasLayer(layer)) layer.addTo(map);
+        }
+      }
+      if (previousLayerVisibility.villages && !map.hasLayer(villageLayerRef.current)) {
+        villageLayerRef.current.addTo(map);
+      }
+
       const aireCtrl = new (L.Control.extend({
         options: { position: "topright" },
       }))();
@@ -1294,33 +2062,63 @@ const SIG = () => {
         const div = L.DomUtil.create("div", "control-aire");
         div.innerHTML = `
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin:4px 0;">
-            <input id="aireN1S0" type="checkbox" style="width:16px;height:16px;" />
-            <span>Aire EPP (Primaire)</span>
+            <input id="sig-show-marker-names" type="checkbox" style="width:16px;height:16px;" ${showMarkerNamesRef.current ? "checked" : ""} />
+            <span>Afficher les noms sur la carte</span>
           </label>
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin:4px 0;">
-            <input id="aireN2S0" type="checkbox" style="width:16px;height:16px;" />
-            <span>Aire CEG (Collège)</span>
+            <input id="sig-measure-distance" type="checkbox" style="width:16px;height:16px;" ${measureDistanceEnabledRef.current ? "checked" : ""} />
+            <span>Mesurer entre deux marqueurs</span>
+          </label>
+          <hr style="margin:5px 0;border-color:#ccc;" />
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin:4px 0;">
+            <input id="aireN1" type="checkbox" style="width:16px;height:16px;" />
+            <span>Aire primaire (public/privé)</span>
           </label>
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin:4px 0;">
-            <input id="aireN3S0" type="checkbox" style="width:16px;height:16px;" />
-            <span>Aire LYCEE</span>
+            <input id="aireN2" type="checkbox" style="width:16px;height:16px;" />
+            <span>Aire collège (public/privé)</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin:4px 0;">
+            <input id="aireN3" type="checkbox" style="width:16px;height:16px;" />
+            <span>Aire lycée (public/privé)</span>
           </label>
         `;
 
         L.DomEvent.disableClickPropagation(div);
 
         setTimeout(() => {
-          ["N1S0", "N2S0", "N3S0"].forEach((niveau) => {
-            const cb = document.getElementById(`aire${niveau}`) as HTMLInputElement;
+          const namesCheckbox = document.getElementById("sig-show-marker-names") as HTMLInputElement | null;
+          namesCheckbox?.addEventListener("change", () => {
+            showMarkerNamesRef.current = namesCheckbox.checked;
+            setShowMarkerNames(namesCheckbox.checked);
+          });
+
+          const distanceCheckbox = document.getElementById("sig-measure-distance") as HTMLInputElement | null;
+          distanceCheckbox?.addEventListener("change", () => {
+            measureDistanceEnabledRef.current = distanceCheckbox.checked;
+            distanceFirstMarkerRef.current = null;
+            if (!distanceCheckbox.checked) distanceLayerRef.current.clearLayers();
+            setMeasureDistanceEnabled(distanceCheckbox.checked);
+            toast.info(distanceCheckbox.checked
+              ? "Cliquez sur deux marqueurs pour mesurer la distance."
+              : "Mesure désactivée.");
+          });
+
+          [1, 2, 3].forEach((niveau) => {
+            const cb = document.getElementById(`aireN${niveau}`) as HTMLInputElement | null;
             if (!cb) return;
 
             cb.addEventListener("change", () => {
-              const aireLayer = aireLayersRef.current[`aire_etab${niveau}`];
-              if (cb.checked) {
-                aireLayer?.addTo(map);
-              } else {
-                aireLayer?.remove();
+              const hasVisibleEstablishments = [0, 1].some((secteur) => {
+                const etabLayer = etabLayersRef.current[`layer_etabN${niveau}S${secteur}`];
+                return Boolean(etabLayer && map.hasLayer(etabLayer));
+              });
+              if (cb.checked && !hasVisibleEstablishments) {
+                cb.checked = false;
+                toast.info("Affichez d'abord les établissements de ce niveau.");
+                return;
               }
+              syncAireLayerVisibility();
             });
           });
         }, 100);
@@ -1330,17 +2128,26 @@ const SIG = () => {
 
       aireCtrl.addTo(map);
       ctrlAireRef.current = aireCtrl;
+      if (aireCtrl.getContainer() && toolsPanelHostRef.current) {
+        toolsPanelHostRef.current.appendChild(aireCtrl.getContainer()!);
+      }
+      for (const niveau of [1, 2, 3]) {
+        const checkbox = document.getElementById(`aireN${niveau}`) as HTMLInputElement | null;
+        if (checkbox) checkbox.checked = previousAireVisibility[`aireN${niveau}`];
+      }
+      syncAireLayerVisibility();
 
       toast.success(
         `Chargement terminé : ${n0Data.length + n1Data.length + n2Data.length + n3Data.length} établissements`,
       );
+      renderLegendRef.current();
     } catch (err: any) {
       console.error("Erreur handleApplyFilters:", err);
       toast.error("Erreur lors du chargement des données SIG");
     } finally {
       setLoading(false);
     }
-  }, [selectedDren, selectedCisco]);
+  }, [selectedDren, selectedCisco, activeHeaderAction]);
 
   // ====================== RECHERCHE ======================
   useEffect(() => {
@@ -1378,7 +2185,15 @@ const SIG = () => {
 
   // ====================== GÉOLOCALISER ======================
   const handleSaveGeoEtab = async () => {
-    if (!selectedEtabGeo) {
+    if (
+      !sigConfig.modules.pointage ||
+      activeHeaderAction !== "POINTAGE"
+    ) {
+      toast.error("❌ Le pointage n'est pas autorisé pour votre profil");
+      return;
+    }
+    const etab = selectedEtabGeo;
+    if (!etab) {
       toast.warning("Sélectionnez un établissement");
       return;
     }
@@ -1388,43 +2203,57 @@ const SIG = () => {
     }
     try {
       await djangoPost("/sig/geolocaliser-etablissement/", {
-        code_etab: selectedEtabGeo.CODE_ETAB,
+        code_etab: etab.CODE_ETAB,
         longitude: geoCoords.lng,
         latitude: geoCoords.lat,
       });
       toast.success("Établissement géolocalisé avec succès");
+      // L'établissement n'est plus « non pointé » : on le retire de la liste
+      // (compteur, modale, sélection) pour éviter un second envoi.
+      setEtabNonPointe((prev) => prev.filter((e) => e.CODE_ETAB !== etab.CODE_ETAB));
+      setSelectedEtabGeo(null);
+      setFilterEtabName("");
       setShowGeoEtab(false);
       const map = mapRef.current;
-      if (map)
-        L.marker([geoCoords.lat, geoCoords.lng])
-          .addTo(map)
-          .bindPopup(selectedEtabGeo.NOM_ETAB)
-          .openPopup();
-    } catch {
-      toast.error("Erreur lors de la géolocalisation");
+      if (map) L.marker([geoCoords.lat, geoCoords.lng]).addTo(map).bindPopup(etab.NOM_ETAB).openPopup();
+    } catch (err: any) {
+      toast.error(err?.message || "Erreur lors de la géolocalisation");
     }
   };
 
   const handleSaveGeoVillage = async () => {
-    if (villageForm.name.length < 4) {
-      toast.warning("Nom du village invalide (min 4 caractères)");
+    if (
+      !sigConfig.modules.pointage ||
+      activeHeaderAction !== "POINTAGE"
+    ) {
+      toast.error("❌ Le pointage n'est pas autorisé pour votre profil");
       return;
     }
-    const pop = parseInt(villageForm.population);
-    if (isNaN(pop) || pop < 10) {
-      toast.warning("Population invalide (min 10)");
+    if (!selectedDren || !selectedCisco) {
+      toast.warning("Sélectionnez une DREN et une CISCO avant de géolocaliser un village");
       return;
     }
-    if (geoCoords.lat === 0 && geoCoords.lng === 0) {
-      toast.error("Erreur de coordonnées.");
+    const normalizedVillageName = villageForm.name.trim().toUpperCase();
+    if (normalizedVillageName.length < 4 || normalizedVillageName.length > 200) {
+      toast.warning("Nom du village invalide (4 à 200 caractères après nettoyage)");
+      return;
+    }
+    if (
+      !Number.isFinite(geoCoords.lat) ||
+      !Number.isFinite(geoCoords.lng) ||
+      geoCoords.lat < -90 ||
+      geoCoords.lat > 90 ||
+      geoCoords.lng < -180 ||
+      geoCoords.lng > 180
+    ) {
+      toast.error("Coordonnées invalides.");
       return;
     }
     try {
       await djangoPost("/sig/geolocaliser-village/", {
-        name: villageForm.name,
+        name: normalizedVillageName,
         dren: selectedDren,
         cisco: selectedCisco,
-        population: pop,
         airtel: villageForm.airtel ? 1 : 0,
         orange: villageForm.orange ? 1 : 0,
         telma: villageForm.telma ? 1 : 0,
@@ -1433,11 +2262,10 @@ const SIG = () => {
         latitude: geoCoords.lat,
         longitude: geoCoords.lng,
       });
-      toast.success(`Village ${villageForm.name} géolocalisé avec succès`);
+      toast.success(`Village ${normalizedVillageName} géolocalisé avec succès`);
       setShowGeoVillage(false);
       setVillageForm({
         name: "",
-        population: "",
         airtel: false,
         orange: false,
         telma: false,
@@ -1446,21 +2274,17 @@ const SIG = () => {
       });
       const map = mapRef.current;
       if (map)
-        L.marker([geoCoords.lat, geoCoords.lng]).addTo(map).bindPopup(villageForm.name).openPopup();
-    } catch {
-      toast.error("Erreur lors de la géolocalisation");
+        L.marker([geoCoords.lat, geoCoords.lng]).addTo(map).bindPopup(normalizedVillageName).openPopup();
+    } catch (err: any) {
+      toast.error(err?.message || "Erreur lors de la géolocalisation");
     }
   };
 
   const handleValider = async (item: any) => {
-    // SEUL SuperUser peut valider
-    if (!isSuperUser(user)) {
-      toast.error("❌ Seul un administrateur peut valider des déplacements");
-      return;
-    }
-
+    // ADMIN / CISCO (dans leur périmètre) uniquement. Le serveur re-contrôle
+    // le rôle, le module « validation_deplacement » et le périmètre de la cible.
     if (!sigConfig.permissions.valider) {
-      toast.error("❌ Le module de validation n'est pas activé");
+      toast.error("❌ Validation non autorisée pour votre profil (ou module désactivé)");
       return;
     }
 
@@ -1488,14 +2312,8 @@ const SIG = () => {
   };
 
   const handleRejeter = async (item: any) => {
-    // SEUL SuperUser peut rejeter
-    if (!isSuperUser(user)) {
-      toast.error("❌ Seul un administrateur peut rejeter des déplacements");
-      return;
-    }
-
     if (!sigConfig.permissions.rejeter) {
-      toast.error("❌ Le module de validation n'est pas activé");
+      toast.error("❌ Rejet non autorisé pour votre profil (ou module désactivé)");
       return;
     }
 
@@ -1523,9 +2341,9 @@ const SIG = () => {
   };
 
   const handleSupprimer = async (item: any) => {
-    // Supprimer est disponible pour tout le monde (user et admin)
+    // ADMIN / CISCO uniquement.
     if (!sigConfig.permissions.supprimer) {
-      toast.error("❌ Le module de suppression n'est pas activé");
+      toast.error("❌ Suppression non autorisée pour votre profil");
       return;
     }
 
@@ -1553,6 +2371,11 @@ const SIG = () => {
   };
 
   const handleVerifier = (item: any) => {
+    if (!sigConfig.permissions.verifier) {
+      toast.error("Vérification non autorisée pour votre profil");
+      return;
+    }
+
     const map = mapRef.current;
     if (!map) return;
 
@@ -1694,11 +2517,16 @@ const SIG = () => {
     modalZapFilter,
   ]);
 
+  const etabNonPointeUniqueCount = useMemo(
+    () => countUniqueEstablishments(etabNonPointe),
+    [etabNonPointe],
+  );
+
   const exportEtabNonPointeCSV = () => {
     if (reportEtabNonPointe.length === 0) return;
     const headers = ["CODE_ETAB", "NOM_ETAB", "SECTEUR", "ZAP"];
     const rows = reportEtabNonPointe.map((e) =>
-      [e.CODE_ETAB ?? "", e.NOM_ETAB ?? "", e.SECTEUR === 1 ? "PRIVE" : "PUBLIC", e.ZAP ?? ""]
+      [e.CODE_ETAB ?? "", e.NOM_ETAB ?? "", secteurLabel(e.SECTEUR).toUpperCase(), e.ZAP ?? ""]
         .map((v) => `"${String(v).replace(/"/g, '""')}"`)
         .join(";"),
     );
@@ -1755,10 +2583,90 @@ const SIG = () => {
   const latrineF = isPositive(selectedSchool?.latrine_f || selectedSchool?.latrince_f);
   const latrineC = isPositive(selectedSchool?.latrine);
 
+  const geoVerificationRows = [
+    ...(geoVerificationEntry?.establishments.hasData ? geoVerificationEntry.establishments.data : []),
+    ...(geoVerificationEntry?.villages.hasData ? geoVerificationEntry.villages.data : []),
+  ];
+  const geoVerificationCounts = {
+    nonGeolocalises: geoVerificationRows.filter((row) => geoAnomalyCategory(row.type_anomalie) === "NON_GEOLOCALISE").length,
+    horsZone: geoVerificationRows.filter((row) => geoAnomalyCategory(row.type_anomalie) === "HORS_ZONE").length,
+    zoneNonDefinie: geoVerificationRows.filter((row) => geoAnomalyCategory(row.type_anomalie) === "ZONE_NON_DEFINIE").length,
+    doublons: geoVerificationRows.filter(geoRowIsDuplicate).length,
+  };
+  const selectedScopeGeoEntry = selectedDren > 0
+    ? geoVerificationCache[`${selectedDren}::${selectedCisco}`]
+    : undefined;
+  const selectedScopeGeoCount = selectedScopeGeoEntry
+    ? [
+        ...(selectedScopeGeoEntry.establishments.hasData ? selectedScopeGeoEntry.establishments.data : []),
+        ...(selectedScopeGeoEntry.villages.hasData ? selectedScopeGeoEntry.villages.data : []),
+      ].length
+    : 0;
+  const hasGeoVerificationResults = Boolean(
+    geoVerificationEntry?.establishments.hasData || geoVerificationEntry?.villages.hasData,
+  );
+
+  const geoVerificationStatus = (status: GeoVerificationStage) => {
+    if (status === "running") return <Loader2 className="h-4 w-4 animate-spin text-primary" />;
+    if (status === "done") return <Check className="h-4 w-4 text-emerald-600" />;
+    if (status === "error") return <AlertTriangle className="h-4 w-4 text-destructive" />;
+    return <span className="h-4 w-4 rounded-full border border-muted-foreground/40" />;
+  };
+
+  const renderGeoVerificationRows = (
+    title: string,
+    endpoint: GeoVerificationEndpoint,
+    rows: GeoVerificationRow[],
+  ) => {
+    const endpointState = geoVerificationEntry?.[endpoint];
+    return (
+      <section key={`${endpoint}-${title}`} className="rounded-lg border bg-background">
+        <div className="flex items-center justify-between gap-3 border-b px-3 py-2">
+          <h3 className="text-sm font-semibold">{title}</h3>
+          <Badge variant="secondary">{rows.length}</Badge>
+        </div>
+        {rows.length > 0 ? (
+          <div className="max-h-56 overflow-auto divide-y">
+            {rows.map((row) => {
+              const label = row.nom_etab || row.name || (row.code !== null && row.code !== undefined ? String(row.code) : `Entité ${row.id}`);
+              return (
+                <button
+                  key={`${endpoint}-${row.id}`}
+                  type="button"
+                  onClick={() => locateGeoAnomaly(row)}
+                  className="flex w-full items-start justify-between gap-3 px-3 py-2 text-left hover:bg-muted/60"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium">{label}</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      DREN {row.code_dren} · CISCO {row.code_cisco} · {row.type_anomalie || "Anomalie non précisée"}
+                    </span>
+                    {geoRowIsDuplicate(row) && (
+                      <span className="mt-0.5 block text-xs text-amber-700">Doublons signalés : {row.nb_doublons ?? row.type_anomalie}</span>
+                    )}
+                  </span>
+                  <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                </button>
+              );
+            })}
+          </div>
+        ) : endpointState?.hasData ? (
+          <p className="px-3 py-4 text-sm text-muted-foreground">Aucune anomalie dans cette catégorie.</p>
+        ) : endpointState?.error ? (
+          <p className="px-3 py-4 text-sm text-muted-foreground">Aucun résultat disponible pour cette catégorie.</p>
+        ) : endpointState?.loading ? (
+          <p className="flex items-center gap-2 px-3 py-4 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Vérification en cours…</p>
+        ) : (
+          <p className="px-3 py-4 text-sm text-muted-foreground">Aucun résultat disponible.</p>
+        )}
+      </section>
+    );
+  };
+
   // ====================== DOWNLOAD HELPERS ======================
   const collectActiveMarkers = useCallback(() => {
     const map = mapRef.current;
-    if (!map) return { etabs: [], villages: [], total: 0 };
+    if (!map) return { etabs: [], villages: [], total: 0, uniqueEtabCount: 0 };
 
     const etabs: any[] = [];
     const villages: any[] = [];
@@ -1788,6 +2696,7 @@ const SIG = () => {
       etabs,
       villages,
       total: etabs.length + villages.length,
+      uniqueEtabCount: countUniqueEstablishments(etabs),
     };
   }, []);
 
@@ -1994,81 +2903,227 @@ const SIG = () => {
     }
   };
 
-  const captureMapAsPNG = () => {
+  const captureMapAsPNG = async () => {
     const map = mapRef.current;
     if (!map) return;
-
-    import("html2canvas").then(({ default: html2canvas }) => {
-      html2canvas(map.getContainer(), {
-        useCORS: true,
-        scale: 2,
-      }).then((canvas) => {
-        const link = document.createElement("a");
-        link.download = `SIG_Carte_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.png`;
-        link.href = canvas.toDataURL("image/png");
-        link.click();
-        toast.success("Capture de la carte enregistrée");
-      });
-    });
+    setCapturingMap(true);
+    try {
+      const date = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+      await captureMapPng(map.getContainer(), `SIG_Carte_${date}.png`);
+      toast.success("Capture de la carte enregistrée");
+    } catch (error) {
+      console.error("SIG map capture error:", error);
+      toast.error("Impossible de capturer la carte. Vérifiez que les tuiles sont chargées, puis réessayez.");
+    } finally {
+      setCapturingMap(false);
+    }
   };
 
   // ====================== RENDU ======================
   return (
-    <div className="h-[calc(100vh-4rem)] relative flex w-full overflow-hidden bg-muted/20">
-      {/* Panneau latéral repliable */}
+    <div className="h-[calc(100vh-4rem)] w-full flex flex-col overflow-hidden bg-muted/20">
+      {/* En-tête SIG — indépendant du conteneur Leaflet */}
+
+<header className="z-30 shrink-0 border-b bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 shadow-sm">
+  <div className="mx-auto max-w-none px-4 py-3">
+    {/* Première ligne : identité du module */}
+    <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 shrink-0">
+        <img
+          src={logoMen}
+          alt="MEN"
+          className="h-10 w-10 rounded-md object-contain ring-1 ring-border bg-white p-0.5"
+        />
+        <img
+          src={logoDpe}
+          alt="DPE"
+          className="h-10 w-10 rounded-md object-contain ring-1 ring-border bg-white p-0.5"
+        />
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <h1 className="text-base sm:text-lg font-bold leading-tight text-foreground">
+          Système d'information géographique — SIG
+        </h1>
+        <p className="text-xs text-muted-foreground">
+          Ministère de l'Éducation Nationale · Gestion et consultation des données géographiques
+        </p>
+      </div>
+    </div>
+
+    {/* Deuxième ligne : section et actions */}
+    <div className="mt-2 flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t pt-2">
+      <div className="text-xs text-foreground">
+        Mode : <strong>Consultation générale</strong>
+      </div>
+
+      <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[420px]">
+        <div className="grid grid-cols-3 gap-2">
+          {/* Pointage */}
+          <button
+            type="button"
+            aria-label={`Pointage : ${canStartPointage ? "disponible" : "indisponible"}`}
+            aria-pressed={activeHeaderAction === "POINTAGE"}
+            disabled={
+              !canStartPointage ||
+              (activeHeaderAction !== null && activeHeaderAction !== "POINTAGE")
+            }
+            onClick={() => startHeaderAction("POINTAGE")}
+            className={`flex min-w-0 items-center justify-center gap-1.5 rounded-md border px-2 py-2 text-xs font-semibold transition-colors ${
+              activeHeaderAction === "POINTAGE"
+                ? "border-primary bg-primary text-primary-foreground"
+                : canStartPointage
+                  ? "border-primary/40 bg-primary/5 text-foreground hover:bg-primary/10"
+                  : "border-border bg-muted/40 text-muted-foreground opacity-50 cursor-not-allowed"
+            }`}
+          >
+            <MapPin className="h-4 w-4 shrink-0" />
+            <span className="truncate">Pointage</span>
+            <Badge
+              variant={activeHeaderAction === "POINTAGE" ? "secondary" : canStartPointage ? "default" : "secondary"}
+              className="px-1.5 py-0 text-[10px]"
+            >
+              {activeHeaderAction === "POINTAGE" ? "En cours" : canStartPointage ? "Actif" : "Inactif"}
+            </Badge>
+          </button>
+
+          {/* Déplacement */}
+          <button
+            type="button"
+            aria-label={`Déplacement : ${canStartDeplacement ? "disponible" : "indisponible"}`}
+            aria-pressed={activeHeaderAction === "DEPLACEMENT"}
+            disabled={
+              !canStartDeplacement ||
+              (activeHeaderAction !== null && activeHeaderAction !== "DEPLACEMENT")
+            }
+            onClick={() => startHeaderAction("DEPLACEMENT")}
+            className={`flex min-w-0 items-center justify-center gap-1.5 rounded-md border px-2 py-2 text-xs font-semibold transition-colors ${
+              activeHeaderAction === "DEPLACEMENT"
+                ? "border-primary bg-primary text-primary-foreground"
+                : canStartDeplacement
+                  ? "border-primary/40 bg-primary/5 text-foreground hover:bg-primary/10"
+                  : "border-border bg-muted/40 text-muted-foreground opacity-50 cursor-not-allowed"
+            }`}
+          >
+            <Move className="h-4 w-4 shrink-0" />
+            <span className="truncate">Déplacement</span>
+            <Badge
+              variant={activeHeaderAction === "DEPLACEMENT" ? "secondary" : canStartDeplacement ? "default" : "secondary"}
+              className="px-1.5 py-0 text-[10px]"
+            >
+              {activeHeaderAction === "DEPLACEMENT" ? "En cours" : canStartDeplacement ? "Actif" : "Inactif"}
+            </Badge>
+          </button>
+
+          {/* Validation */}
+          <button
+            type="button"
+            aria-label={`Validation : ${canStartValidation ? "disponible" : "indisponible"}`}
+            aria-pressed={activeHeaderAction === "VALIDATION"}
+            disabled={
+              !canStartValidation ||
+              (activeHeaderAction !== null && activeHeaderAction !== "VALIDATION")
+            }
+            onClick={openValidationAction}
+            className={`flex min-w-0 items-center justify-center gap-1.5 rounded-md border px-2 py-2 text-xs font-semibold transition-colors ${
+              activeHeaderAction === "VALIDATION"
+                ? "border-primary bg-primary text-primary-foreground"
+                : canStartValidation
+                  ? "border-primary/40 bg-primary/5 text-foreground hover:bg-primary/10"
+                  : "border-border bg-muted/40 text-muted-foreground opacity-50 cursor-not-allowed"
+            }`}
+          >
+            <ShieldCheck className="h-4 w-4 shrink-0" />
+            <span className="truncate">Validation</span>
+            <Badge
+              variant={activeHeaderAction === "VALIDATION" ? "secondary" : canStartValidation ? "default" : "secondary"}
+              className="px-1.5 py-0 text-[10px]"
+            >
+              {activeHeaderAction === "VALIDATION" ? "En cours" : canStartValidation ? "Actif" : "Inactif"}
+            </Badge>
+          </button>
+        </div>
+
+        {/* Chronomètre et bouton de fin */}
+        {activeHeaderAction !== null && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2">
+            <div className="min-w-0 text-xs">
+              <span className="font-semibold">
+                {getHeaderActionLabel(activeHeaderAction)} en cours
+              </span>
+              <span className="ml-2 font-mono tabular-nums">
+                {formatActionDuration(actionElapsedSeconds)}
+              </span>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="destructive"
+              onClick={finishHeaderAction}
+            >
+              Terminer
+            </Button>
+          </div>
+        )}
+
+        {/* Récapitulatif temporaire après Terminer */}
+        {actionRecap !== null && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="rounded-md border bg-muted/40 px-3 py-2 text-xs"
+          >
+            <p className="font-semibold">
+              Action terminée : {getHeaderActionLabel(actionRecap.action)}
+            </p>
+            <p>Utilisateur : {actionRecap.username}</p>
+            <p>Démarrage : {new Date(actionRecap.startedAt).toLocaleString("fr-FR")}</p>
+            <p>Durée : {formatActionDuration(actionRecap.durationSeconds)}</p>
+          </div>
+        )}
+      </div>
+    </div>
+  </div>
+</header>
+
+
+      {/* Espace de travail : panneaux et carte restent hors de l'en-tête */}
+      <div className="relative flex min-h-0 w-full flex-1 overflow-hidden bg-muted/20">
+      {accessDenied && (
+        <div className="absolute inset-0 z-[5000] bg-background/95 flex items-center justify-center">
+          <div className="text-center max-w-md p-6">
+            <Lock className="h-10 w-10 mx-auto mb-3 text-muted-foreground" />
+            <p className="font-semibold">Accès SIG refusé</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Votre compte n'est rattaché à aucun profil SIG valide. Contactez un administrateur.
+              Contactez un administrateur.
+            </p>
+          </div>
+        </div>
+      )}
+      {/* Panneau gauche — filtres, recherche et récapitulatif */}
       <div
-        className={` ${sidebarOpen ? "w-[88vw] sm:w-[320px]" : "w-0"} shrink-0 h-full bg-background/80 backdrop-blur-xl border-r shadow-xl flex flex-col overflow-y-auto
-    overflow-x-hidden ransition-all duration-300 ease-in-out`}
+        className={`sig-side-panel sig-side-panel-left shrink-0 h-full bg-background/80 backdrop-blur-xl border-r shadow-xl flex flex-col overflow-hidden transition-[width,flex-basis] duration-300 ease-in-out motion-reduce:transition-none ${sidebarOpen ? "sig-side-panel-open" : "sig-side-panel-closed"}`}
       >
-        <div className="w-[85vw] max-w-[300px] h-full flex flex-col">
+        <div className={`sig-side-panel-content sig-side-panel-content-left h-full flex flex-col overflow-y-auto overflow-x-hidden overscroll-contain transition-transform duration-300 ease-in-out motion-reduce:transition-none ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
           {/* Bouton Filtres */}
           <div className="px-4 py-3 border-b bg-background/60 backdrop-blur-md flex flex-col gap-3">
             <Button
               onClick={() => setShowFilters(true)}
+              disabled={sigActionLocked}
               className="w-full h-10 justify-center shadow-md bg-primary"
             >
               <Filter className="h-4 w-4 mr-2" />
               Filtres Zone Géographique
             </Button>
 
-            {/* Bouton Liste des déplacements */}
-            {user && sigConfig.modules.validationDeplacement && (
+            {/* Consultation des déplacements en attente pour tous les profils autorisés */}
+            {user && sigConfig.permissions.verifier && (
               <Button
                 size="sm"
                 variant="outline"
-                onClick={async () => {
-                  if (!selectedDren) {
-                    toast.error("Veuillez sélectionner une DREN");
-                    return;
-                  }
-
-                  const isAdmin = isSuperUser(user);
-                  const userDrenCode = getUserDrenCode(user);
-                  const userCiscoCode = getUserCiscoCode(user);
-
-                  // Vérifier l'accès à la DREN sélectionnée
-                  if (!isAdmin && userDrenCode && userDrenCode !== selectedDren) {
-                    const drenName =
-                      drens.find((d) => d.CODE_DREN === userDrenCode)?.DREN ||
-                      `DREN ${userDrenCode}`;
-                    toast.error(`❌ Accès limité à votre DREN : ${drenName}`);
-                    return;
-                  }
-
-                  // Vérifier l'accès à la CISCO sélectionnée
-                  if (
-                    !isAdmin &&
-                    userCiscoCode &&
-                    selectedCisco > 0 &&
-                    selectedCisco !== userCiscoCode
-                  ) {
-                    toast.error(`❌ Accès limité à votre CISCO : ${userCiscoCode}`);
-                    return;
-                  }
-
-                  await loadDeplacements();
-                  setShowDeplacementsModal(true);
-                }}
+                onClick={openValidationAction}
+                disabled={sigActionLocked}
                 className="w-full h-10 shadow-md"
               >
                 <div className="flex items-center justify-between gap-2 w-full">
@@ -2076,13 +3131,13 @@ const SIG = () => {
                     <Table className="h-4 w-4 flex-shrink-0" />
                     <span>Liste des déplacements</span>
                   </div>
-                  {user && !isSuperUser(user) && (
+                  {sigRole !== "ADMIN" && (
                     <Badge variant="outline" className="text-[9px] px-1.5">
-                      {getUserCiscoCode(user)
-                        ? `CISCO ${getUserCiscoCode(user)}`
-                        : getUserDrenCode(user)
-                          ? `DREN ${getUserDrenCode(user)}`
-                          : "Restreint"}
+                      {sigRole === "CISCO" && selectedCisco > 0
+                        ? `CISCO ${selectedCisco}`
+                        : sigRole === "DREN" && selectedDren > 0
+                          ? `DREN ${selectedDren}`
+                          : sigRole}
                     </Badge>
                   )}
                 </div>
@@ -2090,9 +3145,10 @@ const SIG = () => {
             )}
 
             {/* Bouton Liste Etab Non Pointé */}
-            {sigConfig.modules.pointage && (
+            {sigRole !== "UNKNOWN" && (
               <Button
                 variant="outline"
+                disabled={sigActionLocked}
                 onClick={() => {
                   if (!selectedDren) {
                     toast.error("Veuillez sélectionner un DREN");
@@ -2113,9 +3169,30 @@ const SIG = () => {
                       variant="destructive"
                       className="h-5 min-w-5 px-1.5 flex items-center justify-center text-[10px]"
                     >
-                      {etabNonPointe.length}
+                      {etabNonPointeUniqueCount}
                     </Badge>
                   </div>
+                </div>
+              </Button>
+            )}
+
+            {isAuthenticated && !isLoading && sigRole !== "UNKNOWN" && (
+              <Button
+                variant="outline"
+                onClick={openGeoVerification}
+                disabled={sigActionLocked || selectedDren <= 0 || (sigRole === "CISCO" && selectedCisco <= 0)}
+                className="w-full h-10 shadow-md"
+              >
+                <div className="flex w-full items-center justify-between gap-2">
+                  <span className="flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 flex-shrink-0 text-primary" />
+                    <span>Vérification géographique</span>
+                  </span>
+                  {selectedScopeGeoEntry && (
+                    <Badge variant={selectedScopeGeoCount > 0 ? "destructive" : "secondary"} className="min-w-5 justify-center px-1.5 text-[10px]">
+                      {selectedScopeGeoCount}
+                    </Badge>
+                  )}
                 </div>
               </Button>
             )}
@@ -2124,14 +3201,16 @@ const SIG = () => {
             {selectedDren > 0 && stats.total > 0 && (
               <div className="bg-background/70 backdrop-blur-xl border rounded-2xl shadow-lg overflow-hidden">
                 <div
-                  className="flex items-center justify-between px-4 py-3 border-b cursor-pointer hover:bg-muted/50 transition-colors"
-                  onClick={() => setShowRecap(!showRecap)}
+                  className={`flex items-center justify-between px-4 py-3 border-b transition-colors ${sigActionLocked ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:bg-muted/50"}`}
+                  onClick={() => {
+                    if (!sigActionLocked) setShowRecap(!showRecap);
+                  }}
                 >
                   <div className="flex items-center gap-2">
                     <ClipboardList className="h-4 w-4 flex-shrink-0" />
                     <span className="font-semibold text-sm">Récapitulatif</span>
                   </div>
-                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0" disabled={sigActionLocked}>
                     {showRecap ? "−" : "+"}
                   </Button>
                 </div>
@@ -2161,7 +3240,7 @@ const SIG = () => {
                     <div className="flex justify-between items-center">
                       <span className="font-semibold">Établissements</span>
                       <Badge variant="secondary" className="tabular-nums">
-                        {(stats.public?.total || 0) + (stats.private?.total || 0)}
+                        {stats.etablissements}
                       </Badge>
                     </div>
                     {/* Public */}
@@ -2234,8 +3313,7 @@ const SIG = () => {
                     <div className="flex justify-between items-center pt-2 border-t">
                       <span className="font-semibold">Établissements non pointés</span>
                       <span className="tabular-nums">
-                        {etabNonPointe.length} /{" "}
-                        {(stats.public?.total || 0) + (stats.private?.total || 0)}
+                        {etabNonPointeUniqueCount} / {stats.etablissements}
                       </span>
                     </div>
                   </div>
@@ -2252,6 +3330,7 @@ const SIG = () => {
                 placeholder="écoles ou villages..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
+                disabled={sigActionLocked}
                 className="pl-10 h-11 bg-background/80 backdrop-blur border shadow-sm rounded-xl"
               />
             </div>
@@ -2262,6 +3341,7 @@ const SIG = () => {
                     key={`sr-${item.id}-${i}`}
                     className="w-full text-left px-3 py-2 text-xs hover:bg-muted/50 border-b last:border-b-0 flex items-center gap-2"
                     onClick={() => handleSearchSelect(item)}
+                    disabled={sigActionLocked}
                   >
                     <MapPin className="w-3 h-3 text-muted-foreground flex-shrink-0" />
                     <span className="truncate">{item.name}</span>
@@ -2276,22 +3356,29 @@ const SIG = () => {
       {/* Bouton pour développer / réduire le panneau latéral.*/}
       <button
         type="button"
-        onClick={() => setSidebarOpen((v) => !v)}
+        onClick={() => {
+          const narrow = window.matchMedia("(max-width: 767px)").matches;
+          if (narrow && !sidebarOpen) setRightSidebarOpen(false);
+          setSidebarOpen((v) => !v);
+        }}
         title={sidebarOpen ? "Réduire le panneau" : "Développer le panneau"}
-        className="absolute top-1/2 -translate-y-1/2 -ml-4 z-[1500] bg-background border shadow-xl rounded-full w-9 h-9 flex items-center justify-center hover:bg-muted transition-all"
-        style={{ left: sidebarOpen ? "clamp(0px, 85vw, 300px)" : "0px" }}
+        className="absolute top-1/2 -translate-y-1/2 -ml-4 z-[1500] bg-background border shadow-xl rounded-full w-9 h-9 flex items-center justify-center hover:bg-muted transition-[left] duration-300 ease-in-out motion-reduce:transition-none"
+        style={{ left: sidebarOpen ? "var(--sig-left-panel-open-width)" : "0px" }}
       >
         {sidebarOpen ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
       </button>
 
       {/* Zone MAP */}
       <div className="relative flex-1 min-w-0 overflow-hidden">
-        <div className="absolute top-3 left-3 z-[1000] bg-background/90 backdrop-blur rounded-md shadow-lg px-1.5 py-0.5">
-          <DataActionsBar table="sig_etablissement" tableLabel="SIG Établissement" compact />
-        </div>
+        {/* Outils d'administration des données : ADMIN uniquement */}
+        {sigRole === "ADMIN" && (
+          <div className="absolute top-3 left-3 z-[1000] bg-background/90 backdrop-blur rounded-md shadow-lg px-1.5 py-0.5">
+            <DataActionsBar table="sig_etablissement" tableLabel="SIG Établissement" compact />
+          </div>
+        )}
 
         {/* Bouton Déplacer - Positionné comme contrôle Leaflet */}
-        {user && sigConfig.modules.deplacement && (
+        {user && sigConfig.modules.deplacement && activeHeaderAction === "DEPLACEMENT" && (
           <div className="absolute top-[15px] left-14 z-[999]">
             <div className="leaflet-bar leaflet-control bg-background/95 backdrop-blur border border-border shadow-md rounded-md overflow-hidden">
               <label
@@ -2358,7 +3445,7 @@ const SIG = () => {
                       {selectedDren
                         ? drens.find((d) => d.CODE_DREN === selectedDren)?.DREN ||
                           `DREN ${selectedDren}`
-                        : "Toutes les DREN"}
+                        : "Aucune DREN sélectionnée"}
                       {selectedCisco > 0 && ciscos.length > 0 && (
                         <>
                           {" "}
@@ -2441,7 +3528,7 @@ const SIG = () => {
                                     )}
 
                                     {/* Valider - UNIQUEMENT pour les SuperUsers */}
-                                    {sigConfig.permissions.valider && isSuperUser(user) && (
+                                    {sigConfig.permissions.valider && (
                                       <Button
                                         size="sm"
                                         className="bg-green-600 hover:bg-green-700 text-white"
@@ -2454,7 +3541,7 @@ const SIG = () => {
                                     )}
 
                                     {/* Rejeter - UNIQUEMENT pour les SuperUsers */}
-                                    {sigConfig.permissions.rejeter && isSuperUser(user) && (
+                                    {sigConfig.permissions.rejeter && (
                                       <Button
                                         size="sm"
                                         variant="destructive"
@@ -2504,7 +3591,7 @@ const SIG = () => {
                   <MapPin className="h-5 w-5 text-destructive" />
                   Établissements non pointés
                   <Badge variant="secondary" className="ml-1">
-                    {etabNonPointe.length}
+                    {etabNonPointeUniqueCount}
                   </Badge>
                 </h2>
 
@@ -2534,7 +3621,7 @@ const SIG = () => {
                   {selectedDren
                     ? drens.find((d) => d.CODE_DREN === selectedDren)?.DREN ||
                       `DREN ${selectedDren}`
-                    : "Toutes les DREN"}
+                    : "Aucune DREN sélectionnée"}
                   {selectedCisco > 0 && ciscos.length > 0 && (
                     <>
                       {" "}
@@ -2686,11 +3773,138 @@ const SIG = () => {
               )}
 
               <p className="text-xs text-center text-muted-foreground mt-3">
-                {reportEtabNonPointe.length} affiché(s) sur {etabNonPointe.length}
+                {reportEtabNonPointe.length} ligne(s) affichée(s) sur {etabNonPointe.length}
               </p>
             </div>
           </div>
         )}
+
+        <Dialog open={geoVerificationOpen} onOpenChange={setGeoVerificationOpen}>
+          <DialogContent className="max-h-[92vh] w-[96vw] max-w-6xl overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-xl">
+                <ShieldCheck className="h-5 w-5 text-primary" />
+                Vérification géographique
+              </DialogTitle>
+              <DialogDescription>
+                {geoVerificationContext ? (
+                  <>
+                    Périmètre : <strong>{drens.find((dren) => dren.CODE_DREN === geoVerificationContext.dren)?.DREN || `DREN ${geoVerificationContext.dren}`}</strong>
+                    {" · "}
+                    <strong>{geoVerificationContext.cisco > 0
+                      ? ciscos.find((cisco) => cisco.CODE_CISCO === geoVerificationContext.cisco)?.CISCO || `CISCO ${geoVerificationContext.cisco}`
+                      : "Toutes les CISCO de la DREN"}</strong>
+                  </>
+                ) : "Sélectionnez une DREN pour lancer la vérification."}
+              </DialogDescription>
+            </DialogHeader>
+
+            {geoVerificationEntry && (
+              <div className="space-y-5 py-2">
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/30 p-4">
+                  <div className="space-y-2">
+                    {([
+                      ["Initialisation", geoVerificationEntry.initialization],
+                      ["Vérification des établissements", geoVerificationEntry.establishments.status],
+                      ["Vérification des villages", geoVerificationEntry.villages.status],
+                      ["Consolidation des résultats", geoVerificationEntry.consolidation],
+                    ] as [string, GeoVerificationStage][]).map(([label, status], index) => (
+                      <div key={label} className="flex items-center gap-2 text-sm">
+                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-background text-[10px] text-muted-foreground">{index + 1}</span>
+                        {geoVerificationStatus(status)}
+                        <span className={status === "running" ? "font-medium text-foreground" : "text-muted-foreground"}>{label}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {status === "pending" ? "En attente" : status === "running" ? "En cours" : status === "done" ? "Terminée" : "En erreur"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={() => retryGeoVerification()}
+                    disabled={geoVerificationEntry.establishments.loading || geoVerificationEntry.villages.loading}
+                  >
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Relancer la vérification
+                  </Button>
+                </div>
+
+                {(geoVerificationEntry.establishments.error || geoVerificationEntry.villages.error) && (
+                  <div className="grid gap-2 md:grid-cols-2">
+                    {geoVerificationEntry.establishments.error && (
+                      <div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">
+                        <span><strong>Établissements :</strong> {geoVerificationEntry.establishments.error}</span>
+                        <Button size="sm" variant="outline" onClick={() => retryGeoVerification("establishments")} disabled={geoVerificationEntry.establishments.loading}>
+                          <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Réessayer
+                        </Button>
+                      </div>
+                    )}
+                    {geoVerificationEntry.villages.error && (
+                      <div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">
+                        <span><strong>Villages :</strong> {geoVerificationEntry.villages.error}</span>
+                        <Button size="sm" variant="outline" onClick={() => retryGeoVerification("villages")} disabled={geoVerificationEntry.villages.loading}>
+                          <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Réessayer
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {hasGeoVerificationResults && (
+                  <>
+                    {(geoVerificationEntry.establishments.loading || geoVerificationEntry.villages.loading) && (
+                      <p className="text-xs text-muted-foreground">
+                        Actualisation en cours; les résultats précédemment reçus restent affichés.
+                      </p>
+                    )}
+                    {(geoVerificationEntry.establishments.error || geoVerificationEntry.villages.error) && (
+                      <p className="text-xs text-amber-700">
+                        Résultats partiels : les compteurs incluent les endpoints ayant fourni des données.
+                      </p>
+                    )}
+                    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                      {([
+                        ["Non géolocalisés", geoVerificationCounts.nonGeolocalises],
+                        ["Hors zone", geoVerificationCounts.horsZone],
+                        ["Zone non définie", geoVerificationCounts.zoneNonDefinie],
+                        ["Doublons signalés", geoVerificationCounts.doublons],
+                      ] as [string, number][]).map(([label, count]) => (
+                        <Card key={label} className="shadow-sm">
+                          <CardContent className="p-4">
+                            <p className="text-xs text-muted-foreground">{label}</p>
+                            <p className="mt-1 text-2xl font-semibold tabular-nums">{count}</p>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+
+                    <div className="grid gap-4 xl:grid-cols-2">
+                      {(["establishments", "villages"] as GeoVerificationEndpoint[]).map((endpoint) => {
+                        const rows = geoVerificationEntry[endpoint].data;
+                        const categorized = (category: string) => rows.filter((row) => geoAnomalyCategory(row.type_anomalie) === category);
+                        const noun = endpoint === "establishments" ? "Établissements" : "Villages";
+                        return (
+                          <div key={endpoint} className="space-y-3">
+                            <h2 className="text-base font-semibold">{noun}</h2>
+                            {renderGeoVerificationRows(`${noun} non géolocalisés`, endpoint, categorized("NON_GEOLOCALISE"))}
+                            {renderGeoVerificationRows(`${noun} hors zone`, endpoint, categorized("HORS_ZONE"))}
+                            {renderGeoVerificationRows(`${noun} — zone non définie`, endpoint, categorized("ZONE_NON_DEFINIE"))}
+                            {renderGeoVerificationRows(`${noun} — doublons signalés`, endpoint, rows.filter(geoRowIsDuplicate))}
+                            {renderGeoVerificationRows(`${noun} — autres anomalies retournées`, endpoint, categorized("AUTRE"))}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setGeoVerificationOpen(false)}>Fermer</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <Dialog open={showDownloadModal} onOpenChange={setShowDownloadModal}>
           <DialogContent className="sm:max-w-xl z-[10000]">
@@ -2706,12 +3920,18 @@ const SIG = () => {
 
             <div className="py-6 space-y-6">
               <div className="bg-muted/50 rounded-xl p-5 text-sm">
-                <div className="grid grid-cols-3 gap-4 text-center">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+                  <div>
+                    <div className="text-2xl font-semibold text-primary">
+                      {collectActiveMarkers().uniqueEtabCount}
+                    </div>
+                    <div className="text-xs text-muted-foreground">Codes établissements uniques</div>
+                  </div>
                   <div>
                     <div className="text-2xl font-semibold text-primary">
                       {collectActiveMarkers().etabs.length}
                     </div>
-                    <div className="text-xs text-muted-foreground">Établissements</div>
+                    <div className="text-xs text-muted-foreground">Lignes établissement</div>
                   </div>
                   <div>
                     <div className="text-2xl font-semibold text-primary">
@@ -2795,9 +4015,10 @@ const SIG = () => {
                     onClick={captureMapAsPNG}
                     variant="default"
                     className="h-20 flex-col gap-1"
+                    disabled={capturingMap}
                   >
-                    <FileImage className="h-6 w-6" />
-                    Capturer la carte (PNG)
+                    <FileImage className={`h-6 w-6 ${capturingMap ? "animate-pulse" : ""}`} />
+                    {capturingMap ? "Préparation de l’image…" : "Capturer la carte (PNG)"}
                   </Button>
                 </div>
               </div>
@@ -2825,42 +4046,40 @@ const SIG = () => {
             className="absolute z-[2000] bg-white rounded-lg shadow-xl border py-1 min-w-[220px]"
             style={{ left: contextMenu.x, top: contextMenu.y }}
           >
-            <button
-              className="w-full text-left px-4 py-2 text-sm hover:bg-blue-50 flex items-center gap-2"
-              onClick={() => {
-                if (zoomLevel < MOVE_MIN_ZOOM) {
-                  toast.warning(
-                    `Le niveau de zoom est trop bas. Le zoom minimum autorisé est de ${MOVE_MIN_ZOOM}.`,
-                  );
-                  setContextMenu(null);
-                  return;
-                }
-                setShowGeoEtab(true);
-                setContextMenu(null);
-                djangoGet(`/sig/etablissements-non-geolocalises/${selectedDren}/${selectedCisco}/`)
-                  .then((data) => setEtabNonPointe(Array.isArray(data) ? data : []))
-                  .catch(() => {});
-              }}
-            >
-              <MapPin className="w-4 h-4" /> Géolocaliser Établissement
-            </button>
-            <button
-              className="w-full text-left px-4 py-2 text-sm hover:bg-blue-50 flex items-center gap-2"
-              onClick={() => {
-                if (zoomLevel < MOVE_MIN_ZOOM) {
-                  toast.warning(
-                    `Le niveau de zoom est trop bas. Le zoom minimum autorisé est de ${MOVE_MIN_ZOOM}.`,
-                  );
-                  setContextMenu(null);
-                  return;
-                }
-                setShowGeoVillage(true);
-                setContextMenu(null);
-              }}
-            >
-              <MapPin className="w-4 h-4" /> Géolocaliser Village
-            </button>
-            <hr className="my-1" />
+            {sigConfig.modules.pointage &&
+              activeHeaderAction === "POINTAGE" &&
+              pointageType !== null && (
+                <>
+                  <button
+                    className="w-full text-left px-4 py-2 text-sm hover:bg-blue-50 flex items-center gap-2"
+                    onClick={() => {
+                      if (zoomLevel < MOVE_MIN_ZOOM) {
+                        toast.warning(
+                          `Le niveau de zoom est trop bas. Le zoom minimum autorisé est de ${MOVE_MIN_ZOOM}.`,
+                        );
+                        setContextMenu(null);
+                        return;
+                      }
+
+                      setContextMenu(null);
+                      if (pointageType === "ETABLISSEMENT") {
+                        setShowGeoEtab(true);
+                        djangoGet(`/sig/etablissements-non-geolocalises/${selectedDren}/${selectedCisco}/`)
+                          .then((data) => setEtabNonPointe(Array.isArray(data) ? data : []))
+                          .catch(() => toast.error("Impossible de charger les établissements non géolocalisés"));
+                      } else {
+                        setShowGeoVillage(true);
+                      }
+                    }}
+                  >
+                    <MapPin className="w-4 h-4" />
+                    {pointageType === "ETABLISSEMENT"
+                      ? "Géolocaliser un établissement"
+                      : "Géolocaliser un village"}
+                  </button>
+                  <hr className="my-1" />
+                </>
+              )}
             <button
               className="w-full text-left px-4 py-2 text-sm hover:bg-blue-50 flex items-center gap-2"
               onClick={() => {
@@ -2901,7 +4120,7 @@ const SIG = () => {
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label className="font-semibold">Filtres</Label>
+                <Label className="font-semibold">DREN</Label>
                 <Select
                   value={selectedDren === 0 ? "" : String(selectedDren)}
                   onValueChange={(value) => {
@@ -2909,12 +4128,12 @@ const SIG = () => {
                     setSelectedDren(dren);
                     setSelectedCisco(0);
                   }}
+                  disabled={sigActionLocked || drens.length === 0}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Toutes les DREN" />
+                    <SelectValue placeholder="Sélectionner une DREN" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="0">Toutes les DREN</SelectItem>
                     {drens.map((d) => (
                       <SelectItem key={d.CODE_DREN} value={d.CODE_DREN.toString()}>
                         {d.DREN}
@@ -2924,16 +4143,17 @@ const SIG = () => {
                 </Select>
               </div>
               <div className="space-y-2">
+                <Label className="font-semibold">CISCO</Label>
                 <Select
                   value={selectedCisco === 0 ? "" : String(selectedCisco)}
                   onValueChange={(value) => setSelectedCisco(Number(value))}
-                  disabled={selectedDren === 0}
+                  disabled={sigActionLocked || selectedDren === 0 || ciscos.length === 0}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Toutes les CISCO" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="0">Toutes les CISCO</SelectItem>
+                    {sigRole !== "CISCO" && <SelectItem value="0">Toutes les CISCO</SelectItem>}
                     {ciscos.map((c) => (
                       <SelectItem key={c.CODE_CISCO} value={c.CODE_CISCO.toString()}>
                         {c.CISCO}
@@ -2951,6 +4171,7 @@ const SIG = () => {
                       placeholder="Rechercher écoles ou villages..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
+                      disabled={sigActionLocked}
                       className="pl-10"
                     />
                   </div>
@@ -2960,6 +4181,7 @@ const SIG = () => {
                         <button
                           key={`modal-sr-${item.id}-${i}`}
                           className="w-full text-left px-3 py-2 text-xs hover:bg-muted/50 border-b"
+                          disabled={sigActionLocked}
                           onClick={() => {
                             handleSearchSelect(item);
                             setShowFilters(false);
@@ -2974,7 +4196,7 @@ const SIG = () => {
               )}
             </div>
             <DialogFooter>
-              <Button onClick={handleApplyFilters} disabled={loading}>
+              <Button onClick={handleApplyFilters} disabled={loading || sigActionLocked}>
                 {loading ? (
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 ) : (
@@ -3015,18 +4237,20 @@ const SIG = () => {
                               className="w-[200px] p-2 align-top border bg-gray-100 rounded"
                             >
                               <div className="w-full h-[150px] flex items-center justify-center bg-gray-100 rounded border border-dashed border-gray-300 overflow-hidden">
-                                <img
-                                  src="/img/etablissements/000000000.jpeg"
-                                  alt="Photo de l'établissement"
-                                  className="w-full h-full object-cover"
-                                  onError={(e) => {
-                                    const target = e.target as HTMLImageElement;
-                                    target.style.display = "none";
-                                    const parent = target.parentElement;
-                                    if (parent)
-                                      parent.innerHTML = `<div class="flex flex-col items-center justify-center h-full text-gray-400"><span class="text-5xl mb-2">📷</span><span class="text-sm font-medium">Photo indisponible</span></div>`;
-                                  }}
-                                />
+                                {selectedSchool.PHOTO_URL && !photoError ? (
+                                  <img
+                                    key={`${selectedSchool.CODE_ETAB}-${selectedSchool.PHOTO_URL}`}
+                                    src={selectedSchool.PHOTO_URL}
+                                    alt={`Photo de ${selectedSchool.NOM_ETAB || "l'établissement"}`}
+                                    className="w-full h-full object-cover"
+                                    onError={() => setPhotoError(true)}
+                                  />
+                                ) : (
+                                  <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                                    <span className="text-5xl mb-2">📷</span>
+                                    <span className="text-sm font-medium">Photo indisponible</span>
+                                  </div>
+                                )}
                               </div>
                             </td>
                             <td className="border p-2">
@@ -3036,7 +4260,7 @@ const SIG = () => {
                           <tr>
                             <td className="border p-2">
                               <strong>SECTEUR :</strong>{" "}
-                              {selectedSchool.SECTEUR === 0 ? "PUBLIQUE" : "PRIVÉE"}
+                              {secteurLabel(selectedSchool.SECTEUR).toUpperCase()}
                             </td>
                           </tr>
                           <tr>
@@ -3212,7 +4436,63 @@ const SIG = () => {
           </DialogContent>
         </Dialog>
 
-        <Dialog open={showGeoEtab} onOpenChange={setShowGeoEtab}>
+        <Dialog
+          open={showPointageTypeDialog && sigConfig.modules.pointage && activeHeaderAction === "POINTAGE"}
+          onOpenChange={(open) => {
+            setShowPointageTypeDialog(open);
+            if (!open) setPointageType(null);
+          }}
+        >
+          <DialogContent className="sm:max-w-md z-[10000]">
+            <DialogHeader>
+              <DialogTitle>Choisir le type de pointage</DialogTitle>
+              <DialogDescription>
+                Choisissez l'objet à géolocaliser. Vous pourrez ensuite faire un clic droit
+                sur la carte pour ouvrir le formulaire correspondant.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-20 flex-col gap-2"
+                onClick={() => {
+                  setPointageType("ETABLISSEMENT");
+                  setShowPointageTypeDialog(false);
+                }}
+              >
+                <MapPin className="h-5 w-5" />
+                Établissement
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-20 flex-col gap-2"
+                onClick={() => {
+                  setPointageType("VILLAGE");
+                  setShowPointageTypeDialog(false);
+                }}
+              >
+                <MapPin className="h-5 w-5" />
+                Village
+              </Button>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setShowPointageTypeDialog(false);
+                  setPointageType(null);
+                }}
+              >
+                Annuler
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={showGeoEtab && sigConfig.modules.pointage && activeHeaderAction === "POINTAGE"} onOpenChange={setShowGeoEtab}>
           <DialogContent className="sm:max-w-3xl max-h-[80vh] overflow-y-auto z-[10000]">
             <DialogHeader>
               <DialogTitle>Géolocaliser un établissement</DialogTitle>
@@ -3267,7 +4547,7 @@ const SIG = () => {
                       >
                         <td className="p-2 border-t">{etab.CODE_ETAB}</td>
                         <td className="p-2 border-t">{etab.NOM_ETAB}</td>
-                        <td className="p-2 border-t">{etab.SECTEUR === 1 ? "Privée" : "Public"}</td>
+                        <td className="p-2 border-t">{secteurLabel(etab.SECTEUR)}</td>
                         <td className="p-2 border-t">{etab.ZAP}</td>
                       </tr>
                     ))}
@@ -3281,7 +4561,7 @@ const SIG = () => {
           </DialogContent>
         </Dialog>
 
-        <Dialog open={showGeoVillage} onOpenChange={setShowGeoVillage}>
+        <Dialog open={showGeoVillage && sigConfig.modules.pointage && activeHeaderAction === "POINTAGE"} onOpenChange={setShowGeoVillage}>
           <DialogContent className="sm:max-w-md z-[10000]">
             <DialogHeader>
               <DialogTitle>Géolocaliser un village</DialogTitle>
@@ -3294,18 +4574,6 @@ const SIG = () => {
                 placeholder="Nom du village"
                 value={villageForm.name}
                 onChange={(e) => setVillageForm((prev) => ({ ...prev, name: e.target.value }))}
-              />
-              <Input
-                placeholder="Population du village"
-                type="number"
-                min="10"
-                value={villageForm.population}
-                onChange={(e) =>
-                  setVillageForm((prev) => ({
-                    ...prev,
-                    population: e.target.value,
-                  }))
-                }
               />
               <div className="grid grid-cols-3 gap-3">
                 {(["airtel", "orange", "telma"] as const).map((field) => (
@@ -3377,6 +4645,45 @@ const SIG = () => {
             )}
           </div>
         )}
+      </div>
+
+      {/* Commande du panneau droit */}
+      <button
+        type="button"
+        onClick={() => {
+          const narrow = window.matchMedia("(max-width: 767px)").matches;
+          if (narrow && !rightSidebarOpen) setSidebarOpen(false);
+          setRightSidebarOpen((open) => !open);
+        }}
+        title={rightSidebarOpen ? "Réduire le panneau d’affichage" : "Ouvrir le panneau d’affichage"}
+        aria-label={rightSidebarOpen ? "Réduire les couches et options" : "Ouvrir les couches et options"}
+        className="absolute top-1/2 -translate-y-1/2 -mr-4 z-[1500] bg-background border shadow-xl rounded-full w-9 h-9 flex items-center justify-center hover:bg-muted transition-[right] duration-300 ease-in-out motion-reduce:transition-none"
+        style={{ right: rightSidebarOpen ? "var(--sig-right-panel-open-width)" : "0px" }}
+      >
+        {rightSidebarOpen ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+      </button>
+
+      {/* Panneau droit — couches, légende et options SIG */}
+      <aside
+        aria-label="Légende et options d’affichage SIG"
+        aria-hidden={!rightSidebarOpen}
+        className={`sig-side-panel sig-side-panel-right shrink-0 h-full bg-background/95 backdrop-blur-xl border-l shadow-xl overflow-hidden transition-[width,flex-basis] duration-300 ease-in-out motion-reduce:transition-none ${rightSidebarOpen ? "sig-side-panel-open" : "sig-side-panel-closed"}`}
+      >
+        <div className={`sig-side-panel-content sig-side-panel-content-right h-full overflow-y-auto overflow-x-hidden overscroll-contain p-3 space-y-3 transition-transform duration-300 ease-in-out motion-reduce:transition-none ${rightSidebarOpen ? "translate-x-0" : "translate-x-full"}`}>
+          <section className="rounded-lg border bg-background p-3">
+            <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold"><Layers className="h-4 w-4 text-primary" /> Couches et fonds de carte</h2>
+            <div ref={layerPanelHostRef} className="sig-layer-panel-host" />
+          </section>
+          <section className="rounded-lg border bg-background p-3">
+            <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold"><MapPin className="h-4 w-4 text-primary" /> Légende</h2>
+            <div ref={legendPanelHostRef} className="sig-legend-panel-host" />
+          </section>
+          <section className="rounded-lg border bg-background p-3">
+            <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold"><Settings className="h-4 w-4 text-primary" /> Aires et outils complémentaires</h2>
+            <div ref={toolsPanelHostRef} className="sig-tools-panel-host" />
+          </section>
+        </div>
+      </aside>
       </div>
     </div>
   );

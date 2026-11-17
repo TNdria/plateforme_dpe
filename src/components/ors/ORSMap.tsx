@@ -2,22 +2,29 @@ import { useEffect, useRef, useMemo, useState, useCallback } from "react";
 import {
   MapContainer,
   TileLayer,
-  Circle,
   Marker,
   LayersControl,
   useMap,
   GeoJSON,
 } from "react-leaflet";
 import L from "leaflet";
+import * as turf from "@turf/turf";
 import "leaflet/dist/leaflet.css";
 
 import { Etablissement, Village, GeoJSONFeature } from "@/hooks/useMapData";
+import type { VillageEligibleNouvelleCreationFeatureCollection } from "@/services/api";
 import { MapLegend } from "./MapLegend";
 import { SpatialGrid } from "@/lib/spatialGrid";
 import { CanvasMarkersLayer, CanvasPoint } from "./CanvasMarkersLayer";
 import { MapInteractions, VillageAnalysisResult } from "./MapInteractions";
-import type { LayerVisibility, TableBancFilter } from "@/components/ors/MapFilters";
-import { ETABLISSEMENT_ICON_CLASSES, type EtablissementIconType } from "@/lib/etablissementIcons";
+import { getCoords, type NcAnalysis } from "./nouvelleCreation";
+import type { LayerVisibility } from "@/components/ors/MapFilters";
+import {
+  ETABLISSEMENT_ICON_COLORS,
+  getEtablissementIconHtml,
+  getSchoolLevelIconHtml,
+  type EtablissementIconType,
+} from "@/lib/etablissementIcons";
 
 // Fix for default markers
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -75,15 +82,22 @@ interface ORSMapProps {
     fokontany?: GeoJSONFeature;
   };
   villages?: Village[];
+  /** Candidats Nouvelle Création fournis exclusivement par Django. */
+  villagesEligiblesNouvelleCreation?: VillageEligibleNouvelleCreationFeatureCollection;
   /** Callback quand l'utilisateur lance une analyse village via le clic droit */
   onVillageAnalysis?: (r: VillageAnalysisResult) => void;
   showLegend?: boolean;
   /** Visibilité des couches (déjà pré-filtrée côté ORS, utile pour cohérence / overlays). */
   layerVisibility?: LayerVisibility;
-  /** Filtre table-bancs : tous | suffisant | insuffisant (college / lycée). */
-  tableBancFilter?: TableBancFilter;
   /** Active les infos établissement sur la carte. */
   etabInfoVisible?: boolean;
+  /** Résultat unique du calcul Nouvelle Création (villages hors zone / éligibles). */
+  ncAnalysis?: NcAnalysis | null;
+  /** Incrémenté à chaque (ré)application du filtre : déclenche le zoom intelligent. */
+  fitSignal?: number;
+  /** Zone à cadrer : "cisco" (DREN+CISCO), "dren", ou null (vue Madagascar). */
+  zoneLevel?: "cisco" | "dren" | null;
+  layerControlHostRef?: { current: HTMLDivElement | null };
 }
 
 const MapCenterUpdater = ({ center, zoom }: { center: [number, number]; zoom: number }) => {
@@ -93,6 +107,101 @@ const MapCenterUpdater = ({ center, zoom }: { center: [number, number]; zoom: nu
       map.flyTo(center, zoom, { duration: 0.5 });
     }
   }, [center, zoom, map]);
+  return null;
+};
+
+const LayersControlPanelPortal = ({
+  hostRef,
+}: {
+  hostRef?: { current: HTMLDivElement | null };
+}) => {
+  const map = useMap();
+
+  useEffect(() => {
+    const mapContainer = map.getContainer();
+
+    const moveControl = () => {
+      const control = mapContainer.querySelector<HTMLElement>(
+        ".leaflet-control-layers",
+      );
+
+      if (
+        control &&
+        hostRef?.current &&
+        control.parentElement !== hostRef.current
+      ) {
+        hostRef.current.appendChild(control);
+      }
+    };
+
+    moveControl();
+
+    const observer = new MutationObserver(moveControl);
+    observer.observe(mapContainer, { childList: true, subtree: true });
+
+    return () => observer.disconnect();
+  }, [map, hostRef]);
+
+  return null;
+};
+
+/**
+ * Zoom intelligent : à chaque (ré)application du filtre (manuelle ou automatique
+ * via le scope utilisateur), cadre la zone correspondante.
+ *  - CISCO sélectionnée → limite CISCO (repli : limite DREN)
+ *  - DREN seule        → limite DREN
+ *  - repli si pas de GeoJSON : emprise des établissements/villages chargés
+ *  - aucune zone (filtre réinitialisé) → vue Madagascar
+ * Un court délai laisse arriver les couches GeoJSON chargées en parallèle des
+ * données ; seule la dernière demande est exécutée.
+ */
+const MADAGASCAR_VIEW: [number, number] = [-18.9189596, 47.5135653];
+
+const ZoneFitter = ({
+  signal,
+  zoneLevel,
+  geoLayers,
+  points,
+}: {
+  signal: number;
+  zoneLevel: "cisco" | "dren" | null;
+  geoLayers: ORSMapProps["geoLayers"];
+  points: Array<[number, number]>;
+}) => {
+  const map = useMap();
+  const latest = useRef({ zoneLevel, geoLayers, points });
+  latest.current = { zoneLevel, geoLayers, points };
+
+  useEffect(() => {
+    if (!signal) return;
+    const timer = setTimeout(() => {
+      const { zoneLevel: level, geoLayers: geo, points: pts } = latest.current;
+      if (!level) {
+        map.flyTo(MADAGASCAR_VIEW, 6, { duration: 0.8 });
+        return;
+      }
+      let bounds: L.LatLngBounds | null = null;
+      const layer = level === "cisco" ? (geo?.cisco ?? geo?.dren) : geo?.dren;
+      try {
+        if (layer) {
+          const b = L.geoJSON(layer as any).getBounds();
+          if (b.isValid()) bounds = b;
+        }
+      } catch {
+        bounds = null;
+      }
+      if (!bounds && pts.length > 0) {
+        const b = L.latLngBounds(pts);
+        if (b.isValid()) bounds = b;
+      }
+      if (bounds) {
+        map.invalidateSize({ animate: false });
+        map.flyToBounds(bounds, { padding: [30, 30], maxZoom: 13, duration: 0.9 });
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [signal, map]);
+
   return null;
 };
 
@@ -284,31 +393,21 @@ const MapScaleControl = () => {
   return null;
 };
 
-// Helper: compute extensions value
+// Normalisation des indicateurs pouvant arriver sous forme numérique ou texte.
+function isEligibilityFlagEnabled(value: unknown): boolean {
+  return value === true || value === 1 || value === "1" || value === "true";
+}
+
+// Helper: compute extensions value without string concatenation or NaN leakage.
 function getExtensions(etab: Etablissement): number {
-  const sdc_requis = etab.sdc_requis || 0;
-  const sdc_be = etab.sdc_be || 0;
-  const sdc_me = etab.sdc_me || 0;
+  const toNumber = (value: unknown) => {
+    const parsed = Number(value ?? 0);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const sdc_requis = toNumber(etab.sdc_requis);
+  const sdc_be = toNumber(etab.sdc_be);
+  const sdc_me = toNumber(etab.sdc_me);
   return Math.max(sdc_requis - (sdc_be + sdc_me), 0);
-}
-
-// Helper: get table-bancs need
-function getTableBancsNeed(etab: Etablissement): number {
-  const eff = etab.effectifs || 0;
-  const places = etab.places || 0;
-  return Math.ceil(Math.max(eff - places, 0) / 2);
-}
-
-/** true si places assises suffisantes pour les effectifs */
-function hasSufficientTableBancs(etab: Etablissement): boolean {
-  return (etab.places || 0) >= (etab.effectifs || 0);
-}
-
-/** Filtre table-bancs appliqué aux établissements (college / lycée). */
-function matchesTableBancFilter(etab: Etablissement, filter: TableBancFilter | undefined): boolean {
-  if (!filter || filter === "tous") return true;
-  const ok = hasSufficientTableBancs(etab);
-  return filter === "suffisant" ? ok : !ok;
 }
 
 // Couleurs : voir "./orsColors" — module neutre, sans dépendance, réexporté
@@ -332,8 +431,19 @@ import {
   secteurLabel,
 } from "./orsColors";
 
-const createEtablissementIcon = (iconType: EtablissementIconType, color: string) => {
-  const html = `<i class="${ETABLISSEMENT_ICON_CLASSES[iconType]}" style="color:${color};font-size:20px;line-height:28px;text-shadow:0 1px 2px rgba(15,23,42,.35)" aria-hidden="true"></i>`;
+const createEtablissementIcon = (
+  iconType: EtablissementIconType,
+  color: string,
+  isPrivate = false,
+) => {
+  const sectorOutline = isPrivate ? "stroke:#fff;stroke-width:.75;paint-order:stroke fill;" : "";
+  const schoolHtml = getSchoolLevelIconHtml(
+    iconType,
+    `color:${color};filter:drop-shadow(0 1px 2px rgba(15,23,42,.35));${sectorOutline}`,
+    "",
+    20,
+  );
+  const html = schoolHtml ?? getEtablissementIconHtml(iconType, color, 20);
 
   return L.divIcon({
     className: "ors-etablissement-marker",
@@ -343,14 +453,14 @@ const createEtablissementIcon = (iconType: EtablissementIconType, color: string)
   });
 };
 
-const createEtablissementIconHtml = (iconType: EtablissementIconType, color: string) =>
-  createEtablissementIcon(iconType, color).options.html as string;
+const createEtablissementIconHtml = (
+  iconType: EtablissementIconType,
+  color: string,
+  isPrivate = false,
+) => createEtablissementIcon(iconType, color, isPrivate).options.html as string;
 
-// Icône village (convention 2026) : simple point ("fas fa-circle"),
-// cohérent avec la légende. Taille réduite par rapport aux établissements
-// pour rester lisible malgré la densité potentiellement élevée de villages.
 const createVillageIconHtml = (color: string) =>
-  `<i class="fas fa-circle" style="color:${color};font-size:9px;line-height:22px;text-shadow:0 1px 2px rgba(15,23,42,.35)" aria-hidden="true"></i>`;
+  getEtablissementIconHtml("village", color, 14);
 
 // Éligibilité (booléenne) d'un établissement pour le critère actif — sert à
 // la fois à la couleur (getCategoryColor) et au nouveau filtre
@@ -360,11 +470,9 @@ function isEtabEligible(etab: Etablissement, categoryFilter: string): boolean {
     case "extension":
       return getExtensions(etab) > 0;
     case "reconstruction":
-      return !!etab.eligible_reconstruction;
+      return isEligibilityFlagEnabled(etab.eligible_reconstruction);
     case "rehabilitation":
-      return !!etab.eligible_rehabilitation;
-    case "tablebanc":
-      return !hasSufficientTableBancs(etab);
+      return isEligibilityFlagEnabled(etab.eligible_rehabilitation);
     default:
       return true;
   }
@@ -402,10 +510,9 @@ function buildOrsPopup(
   categoryFilter: string,
   type: ORSMapProps["type"],
 ): string {
-  const is_reconst = etab.eligible_reconstruction ? "OUI" : "NON";
-  const is_rehab = etab.eligible_rehabilitation ? "OUI" : "NON";
+  const is_reconst = isEligibilityFlagEnabled(etab.eligible_reconstruction) ? "OUI" : "NON";
+  const is_rehab = isEligibilityFlagEnabled(etab.eligible_rehabilitation) ? "OUI" : "NON";
   const extensions = getExtensions(etab);
-  const tableBancs = getTableBancsNeed(etab);
 
   const highlightStyle = (field: string) =>
     categoryFilter === field ? "background:#ddd;font-weight:bold" : "";
@@ -432,7 +539,6 @@ function buildOrsPopup(
         <tr><th style="padding:4px;text-align:left">SALLE REQUIS</th><td style="text-align:right;padding:4px">${etab.sdc_requis ?? "-"}</td></tr>
         <tr><th style="padding:4px;text-align:left">PLACES ASSISES</th><td style="text-align:right;padding:4px;${(etab.places || 0) === 0 ? "color:red;font-weight:bold" : ""}">${etab.places ?? "-"}</td></tr>
         <tr style="${highlightStyle("extension")}"><th style="padding:4px;text-align:left">BESOIN EXTENSIONS</th><td style="text-align:right;padding:4px">${extensions}</td></tr>
-        <tr style="${highlightStyle("tablebanc")}"><th style="padding:4px;text-align:left">TABLE-BANCS 2PL</th><td style="text-align:right;padding:4px">${tableBancs}</td></tr>
       </tbody>
     </table>
   </div>`;
@@ -450,11 +556,15 @@ export const ORSMap = ({
   eligibiliteFilter = "tous",
   geoLayers = {},
   villages = [],
+  villagesEligiblesNouvelleCreation,
   onVillageAnalysis,
   showLegend = true,
   layerVisibility,
-  tableBancFilter = "tous",
   etabInfoVisible = true,
+  ncAnalysis = null,
+  fitSignal = 0,
+  zoneLevel = null,
+  layerControlHostRef,
 }: ORSMapProps) => {
   const [leafletMap, setLeafletMap] = useState<L.Map | null>(null);
   const [hoveredEtablissement, setHoveredEtablissement] = useState<Etablissement | null>(null);
@@ -550,6 +660,20 @@ export const ORSMap = ({
     [primaires],
   );
 
+  // Emprise de repli pour le zoom intelligent (si les limites GeoJSON manquent).
+  const fitPoints = useMemo<Array<[number, number]>>(() => {
+    const pts: Array<[number, number]> = [];
+    for (const e of [...colleges, ...primaires]) {
+      const c = getCoords(e);
+      if (c) pts.push([c.lat, c.lng]);
+    }
+    for (const v of villages) {
+      const c = getCoords(v);
+      if (c) pts.push([c.lat, c.lng]);
+    }
+    return pts;
+  }, [colleges, primaires, villages]);
+
   // Calcule si un établissement "secondaire" (référence) est hors zone de son
   // "principal" — grille spatiale O(N). Généralisé pour couvrir collège ET
   // lycée (auparavant câblé en dur sur `type === "college"`, ce qui faisait
@@ -595,30 +719,8 @@ export const ORSMap = ({
   // slider (qui reste utilisé ailleurs : clic droit générique "Voir l'aire",
   // analyse détaillée d'un village).
   const aireRadius = AIRE_RECRUTEMENT_RADIUS[type];
-  // Après filtre DREN/CISCO : les villages passés ici sont déjà ceux de la
-  // zone (via useMapData). Leur affichage dépend UNIQUEMENT de
-  // layerVisibility.villages (ORS.tsx → filteredVillages). Couleurs :
-  //   - couvert   : dist ≤ aire de recrutement fixe (2/5/20 km selon niveau)
-  //   - hors zone : dist > aire  → ORS_COLORS.villageHorsZone
-  // Si aucune école publique de référence dans la zone, tous les villages
-  // sont traités hors zone (distance = Infinity), pas masqués.
-  const villagesWithDistance = useMemo(() => {
-    if (villages.length === 0) return [];
-    const source = type === "college" ? collegesWithCoords : primairesWithCoords;
-    const ecolesPub = source.filter((e) => isPublicSecteur(e)) as Array<{
-      latitude: number;
-      longitude: number;
-    }>;
-    const withCoords = villages.filter((v) => v.latitude && v.longitude);
-    if (ecolesPub.length === 0) {
-      return withCoords.map((v) => ({ ...v, distToNearestSchool: Number.POSITIVE_INFINITY }));
-    }
-    const grid = new SpatialGrid(ecolesPub, aireRadius * 2);
-    return withCoords.map((v) => ({
-      ...v,
-      distToNearestSchool: grid.nearestDistance(v.latitude, v.longitude, aireRadius * 4),
-    }));
-  }, [type, villages, primairesWithCoords, collegesWithCoords, aireRadius]);
+  // Couverture / hors zone / éligibilité des villages : calculées une seule fois
+  // (nouvelleCreation.ts) à partir des établissements NON filtrés par l'affichage.
 
   const getMainColor = () => {
     switch (type) {
@@ -672,19 +774,16 @@ export const ORSMap = ({
     if (type === "college") list = collegesWithCoords;
     else if (type === "lycee") list = primairesWithCoords;
     list = list.filter((e) => isPublicSecteur(e) && (layerVisibility?.publiques ?? true));
-    // Filtre table-bancs sur les établissements principaux (college / lycée)
-    if (type !== "primaire") {
-      list = list.filter((e) => matchesTableBancFilter(e, tableBancFilter));
-    }
     return list;
-  }, [type, collegesWithCoords, primairesWithCoords, tableBancFilter, layerVisibility]);
+  }, [type, collegesWithCoords, primairesWithCoords, layerVisibility]);
 
   // Secondary establishments
   const secondaryEstablishments = useMemo(() => {
     let list: Etablissement[] = [];
     if (type === "college") list = primairesWithCoords;
     else if (type === "lycee") list = collegesWithCoords;
-    else if (type === "primaire") list = primairesWithCoords;
+    // Primaire : établissements PUBLICS uniquement. Collège / lycée : public + privé.
+    else if (type === "primaire") list = primairesWithCoords.filter((e) => isPublicSecteur(e));
     return list.filter((etab) => matchesLayerVisibility(etab));
   }, [type, collegesWithCoords, primairesWithCoords, matchesLayerVisibility]);
 
@@ -706,22 +805,22 @@ export const ORSMap = ({
       : source;
 
     return filteredSource.map((etab) => {
-      const isPublic = isPublicSecteur(etab);
       const isExcluded =
         type !== "primaire" && !isEtabCriterion
           ? getSecondaryExcluded.get(etab.CODE_ETAB) || false
           : false;
+      // Le slot secondaire contient des EPP en vue collège et des CEG en vue lycée.
+      const iconType: EtablissementIconType = type === "lycee" ? "college" : "primaire";
       let fillColor: string;
       if (isEtabCriterion) {
-        // Extension / Reconstruction / Réhabilitation / Table-bancs :
+        // Extension / Reconstruction / Réhabilitation :
         // couleur uniquement par éligibilité, public et privé confondus.
         fillColor = getCategoryColor(etab, categoryFilter);
       } else {
-        fillColor = isPublic ? ORS_COLORS.default : ORS_COLORS.prive;
+        fillColor = ETABLISSEMENT_ICON_COLORS[iconType];
       }
       const pixelRadius = type === "lycee" ? 7 : 5;
       const useCustomPopup = categoryFilter !== "aucune";
-      const iconType: EtablissementIconType = type === "lycee" ? "college" : "primaire";
       return {
         id: etab.CODE_ETAB,
         lat: etab.latitude!,
@@ -794,7 +893,7 @@ export const ORSMap = ({
     return withIconType.map(({ etab, iconType }) => {
       const color = isEtabCriterionActive(categoryFilter)
         ? getCategoryColor(etab, categoryFilter)
-        : ORS_COLORS.prive;
+        : ETABLISSEMENT_ICON_COLORS[iconType];
       return {
         id: `priv-${etab.CODE_ETAB}`,
         lat: etab.latitude!,
@@ -804,7 +903,7 @@ export const ORSMap = ({
         fillOpacity: 0.75,
         weight: 1,
         radius: 5,
-        iconHtml: createEtablissementIconHtml(iconType, color),
+        iconHtml: createEtablissementIconHtml(iconType, color, true),
         popupHtml: () => buildOrsPopup(etab, categoryFilter, type),
         onClick: () => handleMarkerClick(etab),
         onMouseOver: () => showEtablissementInfo(etab),
@@ -833,82 +932,299 @@ export const ORSMap = ({
     return source.filter((e) => isPublicSecteur(e));
   }, [type, collegesWithCoords, primairesWithCoords]);
 
+  // Chaque aire est le disque de recrutement intersecté avec la cellule de
+  // Voronoï de l'établissement. Les cellules partitionnent l'espace selon
+  // l'établissement le plus proche : deux aires ne peuvent donc plus se
+  // chevaucher, tout en conservant le rayon réglementaire.
+  const airesVoronoi = useMemo(() => {
+    if (!aireSourceEtablissements.length) return [];
+    const radiusKm = aireRadius / 1000;
+    // Les API peuvent renvoyer les coordonnées en chaînes numériques.
+    const validEtabs = aireSourceEtablissements.filter((e) => {
+      if (e.longitude == null || e.latitude == null || e.longitude === "" || e.latitude === "") return false;
+      const lng = Number(e.longitude);
+      const lat = Number(e.latitude);
+      return Number.isFinite(lng) && Number.isFinite(lat) && lng >= -180 && lng <= 180 && lat >= -90 && lat <= 90;
+    });
+    const coords = validEtabs.map((e) => [Number(e.longitude), Number(e.latitude)] as [number, number]);
+    if (!coords.length) return [];
+    const uniqueCoords: Array<[number, number]> = [];
+    const siteKeys: string[] = [];
+    const siteKeySet = new Set<string>();
+    coords.forEach(([lng, lat]) => {
+      const key = `${lng.toFixed(7)},${lat.toFixed(7)}`;
+      if (!siteKeySet.has(key)) {
+        uniqueCoords.push([lng, lat]);
+        siteKeys.push(key);
+        siteKeySet.add(key);
+      }
+    });
+    const maxLat = Math.max(...uniqueCoords.map(([, lat]) => Math.abs(lat)));
+    const latPad = radiusKm / 110.574;
+    const lngPad = radiusKm / Math.max(1, 111.32 * Math.cos((maxLat * Math.PI) / 180));
+    const bbox: [number, number, number, number] = [
+      Math.min(...uniqueCoords.map(([lng]) => lng)) - lngPad,
+      Math.min(...uniqueCoords.map(([, lat]) => lat)) - latPad,
+      Math.max(...uniqueCoords.map(([lng]) => lng)) + lngPad,
+      Math.max(...uniqueCoords.map(([, lat]) => lat)) + latPad,
+    ];
+    try {
+      const points = turf.featureCollection(uniqueCoords.map((c, index) =>
+        turf.point(c, { siteKey: siteKeys[index] }),
+      ));
+      const cells = turf.voronoi(points, { bbox });
+      if (!cells) return [];
+      const cellBySiteKey = new Map<string, any>();
+      cells.features.forEach((cell: any) => {
+        if (cell?.properties?.siteKey && cell.geometry?.type === "Polygon") {
+          cellBySiteKey.set(cell.properties.siteKey, cell);
+        }
+      });
+      return validEtabs.flatMap((etab, index) => {
+        // Des établissements exactement au même site partagent la cellule.
+        // Cela permet aussi d'afficher l'aire d'un établissement co-localisé
+        // lorsqu'il est sélectionné individuellement.
+        const siteKey = `${coords[index][0].toFixed(7)},${coords[index][1].toFixed(7)}`;
+        const cell = cellBySiteKey.get(siteKey);
+        if (!cell) return [];
+        try {
+          const center = turf.point([Number(etab.longitude), Number(etab.latitude)]);
+          const disk = turf.circle(center, radiusKm, { steps: 48, units: "kilometers" });
+          const clipped = turf.intersect(turf.featureCollection([disk, cell] as any));
+          return clipped ? [{ id: etab.CODE_ETAB, feature: clipped }] : [];
+        } catch (error) {
+          console.warn(`Échec de l'intersection de l'aire ${String(etab.CODE_ETAB)}`, error);
+          return [];
+        }
+      });
+    } catch (error) {
+      console.error("Échec du calcul des aires de Voronoï", error);
+      return [];
+    }
+  }, [aireSourceEtablissements, aireRadius]);
+
   // NB : l'isolation (isolatedAireEtabId) n'est PAS liée au toggle général
   // layerVisibility.aires — le clic droit "Voir aire de recrutement" doit
   // fonctionner même si la couche générale est désactivée.
 
   const villagePoints = useMemo<CanvasPoint[]>(() => {
-    // Extension / Reconstruction / Réhabilitation / Table-bancs : villages
-    // masqués (règles du 03/09/2026).
+    // Extension / Reconstruction / Réhabilitation : villages masqués.
     if (isEtabCriterionActive(categoryFilter)) return [];
 
-    const isNouvelleCreation = categoryFilter === "nouvelle_creation";
+    // Nouvelle Création : les candidats proviennent exclusivement de Django.
+    // Les villages SIG absents de cette sélection restent visibles en rouge.
+    if (categoryFilter === "nouvelle_creation") {
+      if (
+        type !== "primaire" ||
+        !(layerVisibility?.villages ?? true) ||
+        villagesEligiblesNouvelleCreation?.type !== "FeatureCollection" ||
+        !Array.isArray(villagesEligiblesNouvelleCreation.features)
+      ) {
+        return [];
+      }
 
-    const withEligibility = villagesWithDistance.map((v) => {
-      const isOutsideAire = v.distToNearestSchool > aireRadius;
-      const popSuffisante = (v.population || 0) >= 300;
-      const eligible = isOutsideAire && popSuffisante;
-      return { v, isOutsideAire, eligible };
-    });
+      const escapeHtml = (value: unknown): string =>
+        String(value ?? "").replace(/[&<>"']/g, (char) => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[char] ?? char);
 
-    const filtered =
-      isNouvelleCreation && eligibiliteFilter !== "tous"
-        ? withEligibility.filter(({ eligible }) =>
-            eligibiliteFilter === "eligible" ? eligible : !eligible,
-          )
-        : withEligibility;
+      // Préparer les villages SIG habituels.
+      const villageRows = villages.flatMap((v, idx) => {
+        const coords = getCoords(v);
+        if (!coords) return [];
+        return [{ v, idx, lat: coords.lat, lng: coords.lng }];
+      });
 
-    return filtered.map(({ v, isOutsideAire, eligible }, idx) => {
-      if (isNouvelleCreation) {
-        const popSuffisante = (v.population || 0) >= 300;
-        const color = eligible ? ORS_COLORS.eligible : ORS_COLORS.nonEligible;
-        const reason = !isOutsideAire
-          ? "Une école existe déjà à proximité"
-          : !popSuffisante
-            ? `Population insuffisante (seuil 300, aire ${(aireRadius / 1000).toFixed(1)} km)`
-            : `Critères remplis (aire ${(aireRadius / 1000).toFixed(1)} km)`;
-        return {
-          id: `vlg-${idx}`,
-          lat: v.latitude,
-          lng: v.longitude,
-          color,
-          fillColor: color,
+      // Distance géographique en mètres (formule de Haversine).
+      const distanceMeters = (
+        lat1: number,
+        lng1: number,
+        lat2: number,
+        lng2: number
+      ): number => {
+        const toRad = (degrees: number) => degrees * Math.PI / 180;
+        const dLat = toRad(lat2 - lat1);
+        const dLng = toRad(lng2 - lng1);
+        const a =
+          Math.sin(dLat / 2) ** 2 +
+          Math.cos(toRad(lat1)) *
+          Math.cos(toRad(lat2)) *
+          Math.sin(dLng / 2) ** 2;
+
+        return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      };
+
+      const villagesCorrespondants = new Set<number>();
+      const candidatePoints: CanvasPoint[] = [];
+
+      villagesEligiblesNouvelleCreation.features.forEach((feature, idx) => {
+        const geometry = feature.geometry;
+
+        if (geometry?.type !== "Point" || !Array.isArray(geometry.coordinates)) {
+          return;
+        }
+
+        // GeoJSON : [longitude, latitude].
+        const lng = geometry.coordinates[0];
+        const lat = geometry.coordinates[1];
+
+        if (
+          typeof lng !== "number" ||
+          typeof lat !== "number" ||
+          !Number.isFinite(lng) ||
+          !Number.isFinite(lat) ||
+          lng < -180 || lng > 180 ||
+          lat < -90 || lat > 90
+        ) {
+          return;
+        }
+
+        const properties = feature.properties;
+        const correspondance = properties?.correspondance_village === true;
+
+        let villageSIG: typeof villageRows[number] | null = null;
+        let nearestDistance = Infinity;
+
+        // Une correspondance vraie doit retrouver un village SIG à 100 m maximum.
+        if (correspondance) {
+          for (const row of villageRows) {
+            const distance = distanceMeters(lat, lng, row.lat, row.lng);
+
+            if (distance <= 100 && distance < nearestDistance) {
+              nearestDistance = distance;
+              villageSIG = row;
+            }
+          }
+
+          if (villageSIG) {
+            villagesCorrespondants.add(villageSIG.idx);
+          }
+        }
+
+        const candidateName = escapeHtml(
+          properties?.village_nom || "Point proposé"
+        );
+
+        // Pour une correspondance vraie, village_nom est le repli fourni
+        // par Django si le village SIG n'est pas présent dans la couche chargée.
+        const displayedName = correspondance
+          ? escapeHtml(villageSIG?.v.name || properties?.village_nom || "Village SIG correspondant")
+          : candidateName;
+
+        const score = properties?.score;
+        const rang = properties?.rang_selection;
+
+        const scoreLabel =
+          score != null && Number.isFinite(Number(score))
+            ? Number(score).toLocaleString("fr-FR")
+            : "Non renseigné";
+
+        const rangLabel =
+          rang != null && Number.isFinite(Number(rang))
+            ? Number(rang).toLocaleString("fr-FR")
+            : "Non renseigné";
+
+        candidatePoints.push({
+          id: feature.id ?? `village-nc-${idx}`,
+          lat,
+          lng,
+          color: ORS_COLORS.eligible,
+          fillColor: ORS_COLORS.eligible,
           fillOpacity: 0.85,
           weight: 1,
           radius: 5,
-          iconHtml: createVillageIconHtml(color),
-          popupHtml: () => `<div style="padding:6px;min-width:170px">
-              <b style="font-size:12px">${v.name ?? ""}</b>
-              <p style="font-size:11px;margin:2px 0">Population: ${v.population || 0}</p>
-              <p style="font-size:11px;margin:2px 0">${reason}</p>
-              <div style="margin-top:4px;padding:3px;background:${eligible ? "#dcfce7" : "#fee2e2"};color:${eligible ? "#166534" : "#b91c1c"};font-weight:bold;font-size:11px;text-align:center;border-radius:4px">
-                ${eligible ? "ÉLIGIBLE — NOUVELLE CRÉATION" : "NON ÉLIGIBLE"}
-              </div>
-            </div>`,
-        };
-      }
+          popupHtml: () => correspondance
+            ? `<div style="padding:6px;min-width:150px">
+                <b style="font-size:12px">${displayedName}</b>
+                <p style="font-size:11px;margin:3px 0">Village SIG correspondant</p>
+              </div>`
+            : `<div style="padding:6px;min-width:150px">
+                <b style="font-size:12px">${displayedName}</b>
+                <p style="font-size:11px;margin:3px 0">Point proposé pour une nouvelle création</p>
+                <p style="font-size:11px;margin:2px 0">Score : ${scoreLabel}</p>
+                <p style="font-size:11px;margin:2px 0">Rang : ${rangLabel}</p>
+              </div>`,
+        });
+      });
+
+      // Les villages SIG déjà représentés par un candidat correspondant
+      // ne doivent pas produire un deuxième marqueur.
+      const unmatchedVillagePoints: CanvasPoint[] = villageRows
+        .filter(({ idx }) => !villagesCorrespondants.has(idx))
+        .map(({ v, idx, lat, lng }) => ({
+          id: `vlg-${idx}`,
+          lat,
+          lng,
+          color: ORS_COLORS.villageHorsZone,
+          fillColor: ORS_COLORS.villageHorsZone,
+          fillOpacity: 0.85,
+          weight: 1,
+          radius: 5,
+          iconHtml: createVillageIconHtml(ORS_COLORS.villageHorsZone),
+          popupHtml: () => `<div style="padding:6px;min-width:150px">
+            <b style="font-size:12px">${escapeHtml(v.name || "Village sans nom")}</b>
+          </div>`,
+        }));
+
+      return [
+        ...(eligibiliteFilter !== "non_eligible" ? candidatePoints : []),
+        ...(eligibiliteFilter !== "eligible" ? unmatchedVillagePoints : []),
+      ];
+    }
+
+    const cfg = ncAnalysis?.config;
+    const aireKm = (cfg?.aireMeters ?? aireRadius) / 1000;
+
+    const rows = villages.flatMap((v, idx) => {
+      const c = getCoords(v);
+      if (!c) return [];
+      return [{ v, idx, lat: c.lat, lng: c.lng, r: ncAnalysis?.byVillage.get(v) ?? null }];
+    });
+
+    return rows.map(({ v, idx, lat, lng, r }) => {
+      const horsZone = r?.horsZone ?? false;
 
       // État par défaut ("aucune") : couverture par aire de recrutement.
-      const defaultColor = isOutsideAire ? ORS_COLORS.villageHorsZone : ORS_COLORS.villageCouvert;
+      const defaultColor = !r
+        ? ORS_COLORS.villageCouvert
+        : horsZone
+          ? ORS_COLORS.villageHorsZone
+          : ORS_COLORS.villageCouvert;
+      const distLabel =
+        r && r.distExistantKm != null
+          ? `${r.distExistantKm.toFixed(1)} km`
+          : `aucun dans l'aire de ${aireKm} km`;
       return {
         id: `vlg-${idx}`,
-        lat: v.latitude,
-        lng: v.longitude,
+        lat,
+        lng,
         color: defaultColor,
         fillColor: defaultColor,
-        fillOpacity: isOutsideAire ? 0.85 : 0.6,
+        fillOpacity: horsZone ? 0.85 : 0.6,
         weight: 1,
-        radius: isOutsideAire ? 5 : 3,
+        radius: horsZone ? 5 : 3,
         iconHtml: createVillageIconHtml(defaultColor),
         popupHtml: () => `<div style="padding:6px;min-width:150px">
             <b style="font-size:12px">${v.name ?? ""}</b>
-            <p style="font-size:11px;margin:2px 0">Population: ${v.population || 0}</p>
-            <p style="font-size:11px;margin:2px 0">Dist. établissement le plus proche: ${(v.distToNearestSchool / 1000).toFixed(1)} km</p>
-            ${isOutsideAire ? '<div style="margin-top:4px;padding:3px;background:#fee2e2;color:#b91c1c;font-weight:bold;font-size:11px;text-align:center;border-radius:4px">HORS ZONE</div>' : ""}
+            <p style="font-size:11px;margin:2px 0">Établissement le plus proche dans l'aire: ${distLabel}</p>
+            ${horsZone ? '<div style="margin-top:4px;padding:3px;background:#fee2e2;color:#b91c1c;font-weight:bold;font-size:11px;text-align:center;border-radius:4px">HORS ZONE</div>' : ""}
           </div>`,
       };
     });
-  }, [categoryFilter, eligibiliteFilter, villagesWithDistance, aireRadius]);
+  }, [
+    categoryFilter,
+    eligibiliteFilter,
+    villages,
+    villagesEligiblesNouvelleCreation,
+    layerVisibility?.villages,
+    type,
+    ncAnalysis,
+    aireRadius,
+  ]);
 
   return (
     <div className="relative w-full h-full min-h-[600px] rounded-lg overflow-hidden border border-border">
@@ -923,6 +1239,12 @@ export const ORSMap = ({
         zoomSnap={0.5}
       >
         <MapCenterUpdater center={center} zoom={zoom} />
+        <ZoneFitter
+          signal={fitSignal}
+          zoneLevel={zoneLevel}
+          geoLayers={geoLayers}
+          points={fitPoints}
+        />
         <MapSizeUpdater />
         <MapTopLeftControls />
         <MapScaleControl />
@@ -931,7 +1253,7 @@ export const ORSMap = ({
           etablissements={[...mainEstablishments, ...secondaryEstablishments]}
           villages={villages}
           radius={radius}
-          niveau={type}
+          nc={ncAnalysis}
           onVillageAnalysis={onVillageAnalysis}
           onShowAireRecrutement={(etab) => setIsolatedAireEtabId(etab.CODE_ETAB)}
         />
@@ -947,16 +1269,10 @@ export const ORSMap = ({
             cette correction (demanderait de remonter cette couche dans
             layerVisibility). */}
 
-        <LayersControl position="topright">
-          <LayersControl.BaseLayer name="DEFAULT">
+        <LayersControlPanelPortal hostRef={layerControlHostRef} />
+        <LayersControl position="topright" collapsed={false}>
+          <LayersControl.BaseLayer checked name="DEFAULT">
             <TileLayer attribution="© MEN/DPE" url="" maxZoom={24} />
-          </LayersControl.BaseLayer>
-          <LayersControl.BaseLayer checked name="OSM">
-            <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              maxZoom={22}
-            />
           </LayersControl.BaseLayer>
           <LayersControl.BaseLayer name="IMAGERY">
             <TileLayer
@@ -1043,50 +1359,55 @@ export const ORSMap = ({
               name={type === "lycee" ? "LYCEES" : "COLLEGES EXISTANTS"}
             >
               <>
-                {mainEstablishments.map((etab) => {
-                  const color =
-                    categoryFilter !== "aucune"
+                {mainEstablishments
+                  .filter((etab) =>
+                    isEtabCriterionActive(categoryFilter)
+                      ? matchesEligibiliteFilter(
+                          etab,
+                          categoryFilter,
+                          eligibiliteFilter,
+                        )
+                      : true,
+                  )
+                  .map((etab) => {
+                    const color = isEtabCriterionActive(categoryFilter)
                       ? getCategoryColor(etab, categoryFilter)
                       : getMainColor();
-                  return (
-                    <Marker
-                      key={`main-${etab.CODE_ETAB}`}
-                      position={[etab.latitude!, etab.longitude!]}
-                      icon={createEtablissementIcon(type, color)}
-                      eventHandlers={{
-                        click: () => handleMarkerClick(etab),
-                        ...bindEtablissementHover(etab),
-                      }}
-                    />
-                  );
-                })}
+                    return (
+                      <Marker
+                        key={`main-${etab.CODE_ETAB}`}
+                        position={[etab.latitude!, etab.longitude!]}
+                        icon={createEtablissementIcon(type, color)}
+                        eventHandlers={{
+                          click: () => handleMarkerClick(etab),
+                          ...bindEtablissementHover(etab),
+                        }}
+                      />
+                    );
+                  })}
               </>
             </LayersControl.Overlay>
           )}
         </LayersControl>
 
-        {/* Aires de recrutement (règles du 03/09/2026) : cercles à rayon
-            FIXE par niveau (2/5/20 km), désactivés par défaut. Si
+        {/* Aires de recrutement (règles du 03/09/2026) : zones au rayon
+            FIXE par niveau (2/5/20 km), découpées par Voronoï et désactivées par défaut. Si
             `isolatedAireEtabId` est renseigné (clic droit → "Voir aire de
             recrutement"), seule l'aire de cet établissement est dessinée. */}
         {(layerVisibility?.aires || isolatedAireEtabId != null) && (
           <>
-            {aireSourceEtablissements
-              .filter((e) => isolatedAireEtabId == null || e.CODE_ETAB === isolatedAireEtabId)
-              .map((e) => (
-                <Circle
-                  key={`aire-${e.CODE_ETAB}`}
-                  center={[e.latitude!, e.longitude!]}
-                  radius={aireRadius}
-                  pathOptions={{
+            {airesVoronoi
+              .filter(({ id }) => isolatedAireEtabId == null || id === isolatedAireEtabId)
+              .map(({ id, feature }) => (
+                <GeoJSON
+                  key={`aire-${id}`}
+                  data={feature as any}
+                  style={{
                     color: "#6b7280",
                     fillColor: "#6b7280",
                     fillOpacity: 0.06,
                     weight: 1,
                     dashArray: "4 3",
-                    // Jamais interactif : ce cercle ne doit capter aucun
-                    // event (hover/click) qui interférerait avec les
-                    // marqueurs qu'il recouvre.
                     interactive: false,
                   }}
                 />
@@ -1100,8 +1421,8 @@ export const ORSMap = ({
         {/* Écoles privées (canvas) — college / lycée uniquement */}
         {privatePoints.length > 0 && <CanvasMarkersLayer points={privatePoints} />}
 
-        {/* Villages (canvas) — 3 niveaux, couverture par aire fixe ou
-            éligibilité Nouvelle Création selon le critère actif. */}
+        {/* Villages (canvas) — couverture par aire de recrutement.
+            En Nouvelle Création, les points attendent la source dédiée table-backed. */}
         {villagePoints.length > 0 && <CanvasMarkersLayer points={villagePoints} />}
       </MapContainer>
 

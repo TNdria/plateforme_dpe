@@ -348,8 +348,9 @@ export interface Etablissement {
   sdc_me?: number;
   sdc_requis?: number;
   places?: number;
-  eligible_reconstruction?: number;
-  eligible_rehabilitation?: number;
+  eligible_reconstruction?: boolean | number;
+  eligible_rehabilitation?: boolean | number;
+  eligible_extension?: boolean | number;
   gp_sections?: number;
   eff_t5?: number;
   eff_2024?: number;
@@ -369,6 +370,29 @@ export interface GeoJSONFeatureCollection {
       population?: number;
       latitude?: number;
       longitude?: number;
+    };
+    geometry: any;
+  }>;
+}
+
+export interface VillageEligibleNouvelleCreationFeatureCollection {
+  type: "FeatureCollection";
+  features: Array<{
+    type: "Feature";
+    id: number;
+    properties: {
+      id: number;
+      run_id: number;
+      code_dren: number;
+      code_cisco: number;
+      worldpop_id: number;
+      village_id: number | null;
+      village_nom: string | null;
+      score: number;
+      rang_selection: number;
+      distance_village_m: number | null;
+      correspondance_village: boolean;
+      calcule_le: string;
     };
     geometry: any;
   }>;
@@ -400,8 +424,39 @@ export const orsPrimaireApi = {
     fetchDB<Etablissement[]>('getLayerEtabN3', { code_dren: codeDren, code_cisco: codeCisco }),
   getLayerBesoinsN1: (codeDren: number, codeCisco: number) =>
     fetchDB<Etablissement[]>('getLayerBesoinsN1', { code_dren: codeDren, code_cisco: codeCisco }),
+  getLayerEligibleRehabilitationN1: (codeDren: number, codeCisco: number) =>
+    fetchAPI<Array<{
+      code_etab: number | string;
+      nom_etab: string;
+      longitude: number | null;
+      latitude: number | null;
+      eligible_rehabilitation: boolean;
+    }>>(`/orsprimaire/layerEligibleRehabilitationN1/${codeDren}/${codeCisco}`),
+  getLayerEligibleReconstructionN1: (codeDren: number, codeCisco: number) =>
+    fetchAPI<Array<{
+      code_etab: number | string;
+      nom_etab: string;
+      longitude: number | null;
+      latitude: number | null;
+      eligible_reconstruction: boolean;
+    }>>(`/orsprimaire/layerEligibleReconstructionN1/${codeDren}/${codeCisco}`),
+  getLayerEligibleExtensionN1: (codeDren: number, codeCisco: number) =>
+    fetchAPI<Array<{
+      code_etab: number | string;
+      nom_etab: string;
+      longitude: number | null;
+      latitude: number | null;
+      eligible_extension: boolean;
+    }>>(`/orsprimaire/layerEligibleExtensionN1/${codeDren}/${codeCisco}`),
   getVillages: (codeDren: number, codeCisco: number) =>
     fetchDB<any[]>('getVillages', { code_dren: codeDren, code_cisco: codeCisco }),
+  getVillagesEligiblesNouvelleCreation: (
+    codeDren: number,
+    codeCisco: number = 0
+  ) =>
+    fetchAPI<VillageEligibleNouvelleCreationFeatureCollection>(
+      `/orsprimaire/layerVillagesEligiblesNouvelleCreation/${codeDren}/${codeCisco}`
+    ),
   getLayerDren: (codeDren: number) =>
     fetchDB<Array<{ shape: GeoJSONFeatureCollection }>>('getLayerDren', { code_dren: codeDren }),
   getLayerCisco: (codeDren: number, codeCisco: number) =>

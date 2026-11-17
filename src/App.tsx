@@ -136,19 +136,6 @@ const App = () => (
                       </RequireAuth>
                     }
                   />
-                  {/* Anciennes URLs conservées pour ne pas casser les liens existants */}
-                  <Route
-                    path="/ors-primaire"
-                    element={<Navigate to="/ors/primaire" replace />}
-                  />
-                  <Route
-                    path="/ors-college"
-                    element={<Navigate to="/ors/college" replace />}
-                  />
-                  <Route
-                    path="/ors-lycee"
-                    element={<Navigate to="/ors/lycee" replace />}
-                  />
                   <Route path="/dataviz" element={<DataViz />} />
                   <Route
                     path="/diagnostic"

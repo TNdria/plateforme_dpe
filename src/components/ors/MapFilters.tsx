@@ -1,4 +1,3 @@
-import { useState, useMemo, useRef, useEffect } from "react";
 import {
   Select,
   SelectContent,
@@ -8,9 +7,8 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
-import { Input } from "@/components/ui/input";
-import { Filter, Download, Search, Loader2, MapPin, X, Lock } from "lucide-react";
-import { DREN, CISCO, Etablissement } from "@/hooks/useMapData";
+import { Filter, Download, Loader2, X, Lock } from "lucide-react";
+import { DREN, CISCO } from "@/hooks/useMapData";
 
 export interface LayerVisibility {
   publiques: boolean;
@@ -20,8 +18,6 @@ export interface LayerVisibility {
    * pour éviter d'encombrer la carte. */
   aires: boolean;
 }
-
-export type TableBancFilter = "tous" | "suffisant" | "insuffisant";
 
 interface MapFiltersProps {
   niveau?: string;
@@ -38,8 +34,6 @@ interface MapFiltersProps {
   onResetFilter?: () => void;
   onDownload?: () => void;
   loading?: boolean;
-  searchItems?: Etablissement[];
-  onSearchSelect?: (item: Etablissement) => void;
   isFiltered?: boolean;
   /** Verrouille le sélecteur DREN (utilisateur scope DREN) */
   drenLocked?: boolean;
@@ -60,50 +54,10 @@ export const MapFilters = ({
   onResetFilter,
   onDownload,
   loading,
-  searchItems = [],
-  onSearchSelect,
   isFiltered = false,
   drenLocked = false,
   ciscoLocked = false,
 }: MapFiltersProps) => {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const searchSectionRef = useRef<HTMLDivElement>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const prevFilteredRef = useRef(isFiltered);
-
-  // Quand le filtre vient d'être appliqué et que des résultats arrivent, scroll vers la recherche
-  useEffect(() => {
-    if (!prevFilteredRef.current && isFiltered && searchItems.length > 0) {
-      // Petit délai pour laisser le DOM se mettre à jour
-      setTimeout(() => {
-        searchSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        searchInputRef.current?.focus();
-      }, 250);
-    }
-    prevFilteredRef.current = isFiltered;
-  }, [isFiltered, searchItems.length]);
-
-  // Filtrer les résultats de recherche
-  const filteredSearchItems = useMemo(() => {
-    if (!searchQuery.trim()) return [];
-    const query = searchQuery.toLowerCase();
-    return searchItems
-      .filter(
-        (item) =>
-          item.NOM_ETAB?.toLowerCase().includes(query) ||
-          item.CODE_ETAB?.toString().includes(query),
-      )
-      .slice(0, 20); // Limiter à 20 résultats
-  }, [searchItems, searchQuery]);
-
-  const handleSearchSelect = (item: Etablissement) => {
-    if (onSearchSelect) {
-      onSearchSelect(item);
-    }
-    setSearchQuery("");
-    setIsSearchOpen(false);
-  };
 
   return (
     <div className="bg-card border border-border rounded-lg shadow-sm overflow-hidden">
@@ -248,69 +202,7 @@ export const MapFilters = ({
         </div>
       </div>
 
-      {/* Search Section */}
-      {searchItems.length > 0 && (
-        <div className="border-t border-border" ref={searchSectionRef}>
-          <div className="px-4 py-3 bg-muted/30">
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2 block">
-              Recherche rapide ({searchItems.length} établissements)
-            </label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                ref={searchInputRef}
-                type="text"
-                placeholder="Rechercher un établissement..."
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setIsSearchOpen(true);
-                }}
-                onFocus={() => setIsSearchOpen(true)}
-                className="pl-9 pr-8 h-9"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => {
-                    setSearchQuery("");
-                    setIsSearchOpen(false);
-                  }}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </div>
 
-            {/* Search Results Dropdown */}
-            {isSearchOpen && filteredSearchItems.length > 0 && (
-              <div className="mt-2 max-h-48 overflow-y-auto bg-background border border-border rounded-lg shadow-lg">
-                {filteredSearchItems.map((item) => (
-                  <button
-                    key={item.CODE_ETAB}
-                    onClick={() => handleSearchSelect(item)}
-                    className="w-full px-3 py-2 text-left hover:bg-muted/50 transition-colors flex items-center gap-2 border-b border-border last:border-0"
-                  >
-                    <MapPin className="w-3 h-3 text-primary flex-shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-medium truncate">{item.NOM_ETAB}</div>
-                      <div className="text-[10px] text-muted-foreground">
-                        Code: {item.CODE_ETAB}
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {isSearchOpen && searchQuery && filteredSearchItems.length === 0 && (
-              <div className="mt-2 px-3 py-2 text-xs text-muted-foreground bg-muted/30 rounded-lg">
-                Aucun résultat trouvé pour "{searchQuery}"
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 };

@@ -7,7 +7,8 @@ import {
   fetchDBBatch,
   Dren,
   Cisco,
-  Etablissement 
+  Etablissement,
+  VillageEligibleNouvelleCreationFeatureCollection
 } from '@/services/api';
 import { toast } from 'sonner';
 
@@ -64,6 +65,11 @@ export const useMapData = (type: OrsType = 'primaire') => {
   const [primaires, setPrimaires] = useState<Etablissement[]>([]);
   const [lycees, setLycees] = useState<Etablissement[]>([]);
   const [villages, setVillages] = useState<Village[]>([]);
+  const [villagesEligiblesNouvelleCreation, setVillagesEligiblesNouvelleCreation] =
+    useState<VillageEligibleNouvelleCreationFeatureCollection>({
+      type: 'FeatureCollection',
+      features: [],
+    });
   const [geoLayers, setGeoLayers] = useState<{
     dren?: GeoJSONFeature;
     cisco?: GeoJSONFeature;
@@ -183,14 +189,22 @@ export const useMapData = (type: OrsType = 'primaire') => {
     }
     abortControllerRef.current = new AbortController();
 
-    const cacheKey = `etab_${type}_${codeDren}_${codeCisco}`;
-    const cached = getCachedData<{ colleges: Etablissement[]; primaires: Etablissement[]; lycees: Etablissement[]; villages: Village[]; geoLayers: any }>(cacheKey);
+    const cacheKey = type === 'primaire'
+      ? `etab_${type}_v4_${codeDren}_${codeCisco}`
+      : `etab_${type}_${codeDren}_${codeCisco}`;
+    const cached = getCachedData<{ colleges: Etablissement[]; primaires: Etablissement[]; lycees: Etablissement[]; villages: Village[]; villagesEligiblesNouvelleCreation?: VillageEligibleNouvelleCreationFeatureCollection; geoLayers: any }>(cacheKey);
     
     if (cached) {
       setColleges(cached.colleges);
       setPrimaires(cached.primaires);
       setLycees(cached.lycees);
       setVillages(cached.villages || []);
+      setVillagesEligiblesNouvelleCreation(
+        cached.villagesEligiblesNouvelleCreation || {
+          type: 'FeatureCollection',
+          features: [],
+        }
+      );
       setGeoLayers(cached.geoLayers || {});
       setIsFiltered(true);
       const total = cached.colleges.length + cached.primaires.length + cached.lycees.length;
@@ -229,7 +243,31 @@ export const useMapData = (type: OrsType = 'primaire') => {
           break;
       }
 
-      const batchResult = await fetchDBBatch<Record<string, any>>(batchActions);
+      const [
+        batchResult,
+        villagesEligiblesResult,
+        rehabilitationResult,
+        reconstructionResult,
+        extensionResult,
+      ] = await Promise.all([
+        fetchDBBatch<Record<string, any>>(batchActions),
+        type === 'primaire'
+          ? orsPrimaireApi.getVillagesEligiblesNouvelleCreation(codeDren, codeCisco)
+              .catch((err) => {
+                console.error('Erreur chargement villages éligibles Nouvelle Création:', err);
+                return null;
+              })
+          : Promise.resolve(null),
+        type === 'primaire'
+          ? orsPrimaireApi.getLayerEligibleRehabilitationN1(codeDren, codeCisco)
+          : Promise.resolve([]),
+        type === 'primaire'
+          ? orsPrimaireApi.getLayerEligibleReconstructionN1(codeDren, codeCisco)
+          : Promise.resolve([]),
+        type === 'primaire'
+          ? orsPrimaireApi.getLayerEligibleExtensionN1(codeDren, codeCisco)
+          : Promise.resolve([]),
+      ]);
 
       // Parse results
       const layers: any = {};
@@ -257,16 +295,72 @@ export const useMapData = (type: OrsType = 'primaire') => {
           break;
       }
 
+      // Fusionner les résultats des trois moteurs dédiés sur CODE_ETAB.
+      // Ne pas transformer une absence de résultat en false.
+      if (type === 'primaire') {
+        const rehabilitationByCode = new Map(
+          rehabilitationResult.map((row) => [
+            String(row.code_etab).trim(),
+            row.eligible_rehabilitation,
+          ])
+        );
+        const reconstructionByCode = new Map(
+          reconstructionResult.map((row) => [
+            String(row.code_etab).trim(),
+            row.eligible_reconstruction,
+          ])
+        );
+        const extensionByCode = new Map(
+          extensionResult.map((row) => [
+            String(row.code_etab).trim(),
+            row.eligible_extension,
+          ])
+        );
+
+        newPrimaires = newPrimaires.map((etab) => {
+          const code = String(etab.CODE_ETAB).trim();
+
+          return {
+            ...etab,
+            ...(rehabilitationByCode.has(code)
+              ? { eligible_rehabilitation: rehabilitationByCode.get(code) }
+              : {}),
+            ...(reconstructionByCode.has(code)
+              ? { eligible_reconstruction: reconstructionByCode.get(code) }
+              : {}),
+            ...(extensionByCode.has(code)
+              ? { eligible_extension: extensionByCode.get(code) }
+              : {}),
+          };
+        });
+      }
+
       setColleges(newColleges);
       setPrimaires(newPrimaires);
       setLycees(newLycees);
       setVillages(villagesData);
+      setVillagesEligiblesNouvelleCreation(
+        villagesEligiblesResult || {
+          type: 'FeatureCollection',
+          features: [],
+        }
+      );
       setGeoLayers(layers);
       setIsFiltered(true);
       
       // Cache the results
-      const cacheData = { colleges: newColleges, primaires: newPrimaires, lycees: newLycees, villages: villagesData, geoLayers: layers };
-      setCachedData(cacheKey, cacheData);
+      const cacheData = {
+        colleges: newColleges,
+        primaires: newPrimaires,
+        lycees: newLycees,
+        villages: villagesData,
+        villagesEligiblesNouvelleCreation:
+          villagesEligiblesResult as VillageEligibleNouvelleCreationFeatureCollection,
+        geoLayers: layers,
+      };
+      if (type !== 'primaire' || villagesEligiblesResult !== null) {
+        setCachedData(cacheKey, cacheData);
+      }
       
       const total = newColleges.length + newPrimaires.length + newLycees.length;
       if (total > 0) {
@@ -296,6 +390,10 @@ export const useMapData = (type: OrsType = 'primaire') => {
     setPrimaires([]);
     setLycees([]);
     setVillages([]);
+    setVillagesEligiblesNouvelleCreation({
+      type: 'FeatureCollection',
+      features: [],
+    });
     setGeoLayers({});
     toast.info('Filtres réinitialisés');
   }, []);
@@ -341,6 +439,7 @@ export const useMapData = (type: OrsType = 'primaire') => {
     primaires,
     lycees,
     villages,
+    villagesEligiblesNouvelleCreation,
     geoLayers,
     loading,
     error,
