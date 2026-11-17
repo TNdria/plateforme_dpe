@@ -8,6 +8,25 @@ interface Commune {
 }
 
 /**
+ * Périmètre autorisé pour les filtres du module Données.
+ * `dren`/`cisco` sont les valeurs par défaut (celles du profil connecté),
+ * `drenLocked`/`ciscoLocked` interdisent toute sortie de ce périmètre.
+ */
+export interface DonneesFilterScope {
+  dren: string;
+  cisco: string;
+  drenLocked: boolean;
+  ciscoLocked: boolean;
+}
+
+export const NATIONAL_FILTER_SCOPE: DonneesFilterScope = {
+  dren: '0',
+  cisco: '0',
+  drenLocked: false,
+  ciscoLocked: false,
+};
+
+/**
  * Déduplique un tableau selon une clé (ex: CODE_ZAP, CODE_COMMUNE).
  * Nécessaire car les endpoints DREN/CISCO/ZAP/Commune peuvent renvoyer
  * plusieurs lignes pour un même code (jointure avec les établissements).
@@ -22,32 +41,87 @@ const dedupeByKey = <T,>(rows: T[] | null | undefined, keyFn: (row: T) => string
   return Array.from(map.values());
 };
 
-export const useDonneesFilters = () => {
+export const useDonneesFilters = (scope: DonneesFilterScope = NATIONAL_FILTER_SCOPE) => {
   const [drens, setDrens] = useState<Dren[]>([]);
   const [ciscos, setCiscos] = useState<Cisco[]>([]);
   const [zaps, setZaps] = useState<Zap[]>([]);
   const [communes, setCommunes] = useState<Commune[]>([]);
-  const [selectedDren, setSelectedDren] = useState<string>('0');
-  const [selectedCisco, setSelectedCisco] = useState<string>('0');
+  const [selectedDren, setSelectedDren] = useState<string>(scope.dren);
+  const [selectedCisco, setSelectedCisco] = useState<string>(scope.cisco);
   const [selectedZap, setSelectedZap] = useState<string>('0');
   const [selectedCommune, setSelectedCommune] = useState<string>('0');
   const [selectedSecteur, setSelectedSecteur] = useState<string>('2');
   const [loadingFilters, setLoadingFilters] = useState(false);
 
+  // Initialise (ou réinitialise après connexion / déconnexion) les listes et
+  // les sélections sur le périmètre autorisé. Les listes DREN/CISCO sont
+  // elles-mêmes restreintes au périmètre : on ne peut pas choisir une valeur
+  // hors autorisation depuis l'interface.
   useEffect(() => {
-    const fetchDrens = async () => {
+    let cancelled = false;
+
+    const loadScope = async () => {
+      setSelectedDren(scope.dren);
+      setSelectedCisco(scope.cisco);
+      setSelectedZap('0');
+      setSelectedCommune('0');
+      setCiscos([]);
+      setZaps([]);
+      setCommunes([]);
+      setLoadingFilters(true);
+
       try {
-        const data = await dashboardApi.getDrens();
-        setDrens(dedupeByKey(data, (d) => String(d.CODE_DREN)));
+        const drenRows = await dashboardApi.getDrens();
+        if (cancelled) return;
+        const allDrens = dedupeByKey(drenRows, (d) => String(d.CODE_DREN));
+        setDrens(
+          scope.drenLocked
+            ? allDrens.filter((d) => String(d.CODE_DREN) === scope.dren)
+            : allDrens,
+        );
+
+        if (scope.dren === '0') return;
+
+        const ciscoRows = await dashboardApi.getCiscos(Number(scope.dren));
+        if (cancelled) return;
+        const allCiscos = dedupeByKey(ciscoRows, (c) => String(c.CODE_CISCO));
+        setCiscos(
+          scope.ciscoLocked
+            ? allCiscos.filter((c) => String(c.CODE_CISCO) === scope.cisco)
+            : allCiscos,
+        );
+
+        // Périmètre CISCO : charge directement ZAP/communes pour permettre la
+        // descente sans sélection manuelle supplémentaire.
+        if (scope.cisco === '0') return;
+
+        const [zapRows, communeRows] = await Promise.all([
+          donneesApi.getZaps(Number(scope.dren), Number(scope.cisco), 0),
+          donneesApi.getCommunes(Number(scope.dren), Number(scope.cisco), 0),
+        ]);
+        if (cancelled) return;
+        setZaps(dedupeByKey(zapRows, (z) => String(z.CODE_ZAP)));
+        setCommunes(dedupeByKey(communeRows, (c) => String(c.CODE_COMMUNE)));
       } catch (err) {
-        console.error('Erreur:', err);
-        toast.error('Erreur lors du chargement des DRENs');
+        if (!cancelled) {
+          console.error('Erreur lors du chargement des filtres du périmètre', err);
+          toast.error('Erreur lors du chargement des filtres');
+        }
+      } finally {
+        if (!cancelled) setLoadingFilters(false);
       }
     };
-    fetchDrens();
-  }, []);
+
+    loadScope();
+    return () => {
+      cancelled = true;
+    };
+  }, [scope.dren, scope.cisco, scope.drenLocked, scope.ciscoLocked]);
 
   const handleDrenChange = async (value: string) => {
+    // Hors périmètre : la DREN d'un utilisateur rattaché n'est pas modifiable.
+    if (scope.drenLocked) return;
+
     setSelectedDren(value);
     setSelectedCisco('0');
     setSelectedZap('0');
@@ -70,6 +144,9 @@ export const useDonneesFilters = () => {
   };
 
   const handleCiscoChange = async (value: string) => {
+    // Hors périmètre : la CISCO d'un utilisateur rattaché n'est pas modifiable.
+    if (scope.ciscoLocked) return;
+
     setSelectedCisco(value);
     setSelectedZap('0');
     setSelectedCommune('0');

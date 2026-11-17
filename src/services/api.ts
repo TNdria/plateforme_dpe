@@ -12,16 +12,26 @@ const DJANGO_BACKEND_URL = normalizeDjangoBackendUrl(
   import.meta.env.VITE_API_URL || DEFAULT_DJANGO_BACKEND_URL,
 );
 
-// Construct Supabase URL from project ID to avoid stale .env issues
+// L'URL utilisée par l'authentification est la référence : si elle est
+// présente, on l'utilise aussi pour les appels `db-query`, afin d'éviter
+// qu'un `VITE_SUPABASE_PROJECT_ID` obsolète (ou absent) ne pointe vers un
+// autre projet en production. Le project ID ne sert que de repli.
 const getSupabaseUrl = () => {
+  const configuredUrl = import.meta.env.VITE_SUPABASE_URL;
+  if (configuredUrl) return configuredUrl.replace(/\/$/, "");
   const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
   if (projectId) return `https://${projectId}.supabase.co`;
-  return import.meta.env.VITE_SUPABASE_URL;
+  return undefined;
 };
 
 // Helper function for direct database API calls via edge function
 async function fetchDB<T>(action: string, params: Record<string, string | number> = {}): Promise<T> {
   const supabaseUrl = getSupabaseUrl();
+  if (!supabaseUrl) {
+    throw new Error(
+      "Configuration Supabase manquante : VITE_SUPABASE_URL (ou VITE_SUPABASE_PROJECT_ID) n'est pas défini.",
+    );
+  }
 
   // Build query string with action and params
   const queryParams = new URLSearchParams({ action });

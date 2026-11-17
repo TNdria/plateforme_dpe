@@ -45,9 +45,9 @@ import { getZoneInfo } from "@/lib/zone";
 import logoMen from "@/assets/logoMen.jpg";
 import logoDpe from "@/assets/logoDpe.jpg";
 import { buildSectorGroups, getTotalEleves, type Niveau } from "@/utils/donneesSectors";
+import { resolveDonneesScope } from "@/utils/donneesScope";
 import {
   DEFAULT_SCHOOL_YEAR,
-  FIRST_SCHOOL_YEAR,
   SCHOOL_YEARS,
   formatAnneeScolaire,
 } from "@/utils/anneeScolaire";
@@ -323,18 +323,21 @@ const Donnees = () => {
   ) as Niveau;
   const meta = NIVEAU_META[niveau];
 
-  // Restriction de périmètre — même principe que Besoins.tsx, mais ici on ne
-  // restreint QUE la DREN (pas le CISCO) : un utilisateur non-admin rattaché
-  // à une DREN ne peut consulter que les données de sa DREN ; le CISCO, la
-  // Commune et le ZAP restent librement sélectionnables à l'intérieur de
-  // cette DREN.
-  const { user } = useAuth();
-  const userDren = useMemo(() => {
-    const d = Number((user as any)?.dren);
-    return Number.isFinite(d) && d > 0 ? d : 0;
-  }, [user]);
-  const isAdmin = !!(user as any)?.is_superuser || !!(user as any)?.is_staff;
-  const drenLocked = !isAdmin && userDren > 0;
+  // Périmètre par défaut : national pour un visiteur ou un profil national,
+  // DREN ou CISCO du profil connecté sinon. La DREN / la CISCO verrouillées
+  // ne peuvent pas être quittées depuis les filtres ; les niveaux inférieurs
+  // (CISCO, ZAP, commune) restent consultables dans ce périmètre.
+  const { user, isLoading: authLoading } = useAuth();
+  const scope = useMemo(() => resolveDonneesScope(user), [user]);
+  const filterScope = useMemo(
+    () => ({
+      dren: scope.defaultDren,
+      cisco: scope.defaultCisco,
+      drenLocked: scope.drenLocked,
+      ciscoLocked: scope.ciscoLocked,
+    }),
+    [scope],
+  );
   const [isFilterDirty, setIsFilterDirty] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [section, setSection] = useState<Section>("ecoles");
@@ -345,74 +348,113 @@ const Donnees = () => {
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportFormat, setExportFormat] = useState<ExportFormat>("xlsx");
   const [selectedAnnee, setSelectedAnnee] = useState(String(DEFAULT_SCHOOL_YEAR));
-  const filters = useDonneesFilters();
+  const filters = useDonneesFilters(filterScope);
 
   const markFilterDirty = () => {
     if (!isResetting) {
       setIsFilterDirty(true);
     }
   };
-  // Verrouille automatiquement la DREN de l'utilisateur connecté (non-admin) :
-  // on la sélectionne une seule fois au montage, ce qui déclenche aussi le
-  // chargement des CISCO correspondants via `handleDrenChange`.
-  useEffect(() => {
-    if (drenLocked && filters.selectedDren !== String(userDren)) {
-      filters.handleDrenChange(String(userDren));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [drenLocked, userDren]);
-
-  // Réinitialiser les données quand on change de niveau
+  // Réinitialiser les données quand on change de niveau ou de périmètre
+  // autorisé (connexion / déconnexion / changement de profil).
   useEffect(() => {
     setData([]);
     setHasLoadedOnce(false);
-  }, [niveau]);
+  }, [niveau, scope.key]);
 
-  const handleFilter = async (overrideAnnee?: number, silent = false) => {
+  const handleFilter = async (
+    overrideAnnee?: number,
+    silent = false,
+    // Périmètre explicite pour le chargement initial : il ne doit pas dépendre
+    // de l'état des filtres, encore en cours de synchronisation après une
+    // connexion.
+    perimeter?: { dren: number; cisco: number },
+  ) => {
     // Un périmètre à 0 signifie « national » (toutes les DREN / CISCO / …).
     setIsFilterDirty(false);
 
-    const dren = Number(filters.selectedDren);
-    const cisco = filters.selectedCisco !== "0" ? Number(filters.selectedCisco) : 0;
-    const commune = filters.selectedCommune !== "0" ? Number(filters.selectedCommune) : 0;
-    const zap = filters.selectedZap !== "0" ? Number(filters.selectedZap) : 0;
+    const dren = perimeter ? perimeter.dren : Number(filters.selectedDren);
+    const cisco = perimeter
+      ? perimeter.cisco
+      : filters.selectedCisco !== "0"
+        ? Number(filters.selectedCisco)
+        : 0;
+    // Le chargement par défaut repart du périmètre, sans réutiliser une
+    // commune / un ZAP choisis précédemment (potentiellement hors périmètre).
+    const commune =
+      !perimeter && filters.selectedCommune !== "0" ? Number(filters.selectedCommune) : 0;
+    const zap = !perimeter && filters.selectedZap !== "0" ? Number(filters.selectedZap) : 0;
     const secteur = Number(filters.selectedSecteur);
-    const annee = overrideAnnee ?? Number(selectedAnnee);
+    const requestedYear = overrideAnnee ?? Number(selectedAnnee);
+
     setLoading(true);
     try {
+      // Si le millésime demandé ne renvoie rien (données absentes pour ce
+      // périmètre) ou si la source échoue (ex. /api/donnees non configuré en
+      // production), on essaie les autres millésimes — le plus récent
+      // d'abord — jusqu'à trouver des lignes, afin que les filtres
+      // (DREN, CISCO, …) affichent toujours des résultats.
+      const yearsToTry = [
+        requestedYear,
+        ...[...SCHOOL_YEARS]
+          .filter((y) => y !== requestedYear)
+          .sort((a, b) => b - a),
+      ];
+      let foundYear: number | null = null;
       let result: any[] = [];
-      switch (niveau) {
-        case "prescolaire":
-          result = await donneesApi.getEtabN0(dren, cisco, commune, zap, secteur, annee);
+      let lastError: unknown = null;
+      for (const year of yearsToTry) {
+        try {
+          let r: any[] = [];
+          switch (niveau) {
+            case "prescolaire":
+              r = await donneesApi.getEtabN0(dren, cisco, commune, zap, secteur, year);
+              break;
+            case "primaire":
+              r = await donneesApi.getEtabN1(dren, cisco, commune, zap, secteur, year);
+              break;
+            case "college":
+              r = await donneesApi.getEtabN2(dren, cisco, commune, zap, secteur, year);
+              break;
+            case "lycee":
+              r = await donneesApi.getEtabN3(dren, cisco, commune, zap, secteur, year);
+              break;
+          }
+          result = Array.isArray(r) ? r : [];
+          lastError = null;
+        } catch (err) {
+          // Une année indisponible ne doit pas bloquer le repli sur les
+          // autres millésimes (source distante absente, permissions, réseau…).
+          console.warn(`Chargement ${niveau} ${year} impossible, repli autre année.`, err);
+          lastError = err;
+          result = [];
+        }
+        if (result.length > 0) {
+          foundYear = year;
           break;
-        case "primaire":
-          result = await donneesApi.getEtabN1(dren, cisco, commune, zap, secteur, annee);
-          break;
-        case "college":
-          result = await donneesApi.getEtabN2(dren, cisco, commune, zap, secteur, annee);
-          break;
-        case "lycee":
-          result = await donneesApi.getEtabN3(dren, cisco, commune, zap, secteur, annee);
-          break;
+        }
       }
 
-      const nextData = Array.isArray(result) ? result : [];
+      const nextData = result;
       setData(nextData);
       setHasLoadedOnce(true);
       setLastUpdate(new Date());
+      if (foundYear !== null && foundYear !== requestedYear) {
+        setSelectedAnnee(String(foundYear));
+      }
 
       if (!silent) {
         if (nextData.length === 0) {
-          toast.info("Aucune donnée ne correspond à ces filtres");
+          if (lastError) {
+            toast.error("Erreur lors du chargement des données");
+          } else {
+            toast.info("Aucune donnée ne correspond à ces filtres");
+          }
         } else {
           toast.success(`${formatNumber(nextData.length)} établissements chargés`);
         }
       }
       return nextData;
-    } catch (err) {
-      console.error(err);
-      if (!silent) toast.error("Erreur lors du chargement des données");
-      return [];
     } finally {
       setLoading(false);
     }
@@ -421,7 +463,9 @@ const Donnees = () => {
   const handleReset = () => {
     setIsResetting(true);
 
-    if (!drenLocked) {
+    // Retour au périmètre par défaut : national pour un visiteur / profil
+    // national, DREN ou CISCO de rattachement pour un utilisateur restreint.
+    if (!scope.drenLocked) {
       filters.handleDrenChange("0");
     }
 
@@ -436,39 +480,32 @@ const Donnees = () => {
 
     setTimeout(() => {
       setIsResetting(false);
+      handleFilter(undefined, true, {
+        dren: Number(scope.defaultDren),
+        cisco: Number(scope.defaultCisco),
+      });
     }, 0);
   };
 
-  // Chargement automatique des données nationales au montage (aucun filtre
-  // géographique sélectionné manuellement). Le périmètre 0 = national.
+  // Chargement automatique du périmètre par défaut au montage et à chaque
+  // changement de niveau ou de profil : national (public / profil national),
+  // DREN ou CISCO de rattachement pour un utilisateur authentifié restreint.
   useEffect(() => {
+    if (authLoading) return;
     let cancelled = false;
-    const timer = window.setTimeout(async () => {
+    const timer = window.setTimeout(() => {
       if (cancelled) return;
-      // Charge la donnée la plus récente disponible : si le millésime par
-      // défaut (ex. 2026) ne renvoie rien (déploiement sans /api/donnees ou
-      // données absentes), on remonte d'une année jusqu'à trouver des lignes.
-      let year = Number(selectedAnnee);
-      while (!cancelled && year >= FIRST_SCHOOL_YEAR) {
-        const rows = await handleFilter(year, true);
-        if (cancelled) return;
-        if (Array.isArray(rows) && rows.length > 0) {
-          if (year !== Number(selectedAnnee)) setSelectedAnnee(String(year));
-          toast.success(`${formatNumber(rows.length)} établissements chargés`);
-          break;
-        }
-        year -= 1;
-      }
-      if (!cancelled && year < FIRST_SCHOOL_YEAR) {
-        toast.info("Aucune donnée ne correspond à ces filtres");
-      }
+      handleFilter(undefined, true, {
+        dren: Number(scope.defaultDren),
+        cisco: Number(scope.defaultCisco),
+      });
     }, 0);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [niveau]);
+  }, [niveau, scope.key, authLoading]);
 
   // Stats globales du périmètre chargé
   const totalEtablissements = data.length;
@@ -575,7 +612,7 @@ const Donnees = () => {
             </div>
 
             <div className="flex flex-wrap items-center gap-2 shrink-0">
-              {drenLocked && (
+              {scope.drenLocked && (
                 <Badge
                   variant="outline"
                   className="gap-1 border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
@@ -697,14 +734,14 @@ const Donnees = () => {
         <CardContent className="p-4 sm:p-5">
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-4 gap-4 items-end">
             {/* DREN */}
-            <FilterField label="DREN" locked={drenLocked}>
+            <FilterField label="DREN" locked={scope.drenLocked}>
               <Select
                 value={filters.selectedDren}
                 onValueChange={(value) => {
                   filters.handleDrenChange(value);
                   markFilterDirty();
                 }}
-                disabled={drenLocked}
+                disabled={scope.drenLocked}
               >
                 <SelectTrigger className="bg-background h-10">
                   <SelectValue placeholder="Sélectionner" />
@@ -728,7 +765,11 @@ const Donnees = () => {
                   filters.handleCiscoChange(value);
                   markFilterDirty();
                 }}
-                disabled={filters.selectedDren === "0" || filters.loadingFilters}
+                disabled={
+                  scope.ciscoLocked ||
+                  filters.selectedDren === "0" ||
+                  filters.loadingFilters
+                }
               >
                 <SelectTrigger className="bg-background h-10">
                   <SelectValue placeholder="Toutes CISCO" />

@@ -32,18 +32,43 @@ types.setTypeParser(1700, (value: string) => Number(value));
 let pool: pg.Pool | null = null;
 
 function getConnectionConfig(): pg.PoolConfig {
-  const connectionString = process.env.DATABASE_URL;
-  if (connectionString) return { connectionString };
+  // Vercel/Supabase exposent parfois l'URL sous d'autres noms selon
+  // l'intégration utilisée ; on accepte les conventions les plus courantes
+  // pour que `/api/donnees` fonctionne aussi sans configuration manuelle.
+  const connectionString =
+    process.env.DATABASE_URL ??
+    process.env.POSTGRES_URL ??
+    process.env.POSTGRES_URL_NON_POOLING ??
+    process.env.SUPABASE_DB_URL ??
+    process.env.PGURL;
+  if (connectionString) {
+    return {
+      connectionString,
+      max: 3,
+      idleTimeoutMillis: 10_000,
+      connectionTimeoutMillis: 10_000,
+      ssl:
+        process.env.DB_SSL === "true" ||
+        /sslmode=(require|verify)/.test(connectionString) ||
+        /supabase\.(co|com)/.test(connectionString)
+          ? { rejectUnauthorized: false }
+          : undefined,
+    };
+  }
 
-  const host = process.env.DB_HOST ?? process.env.PGHOST;
-  const port = Number(process.env.DB_PORT ?? process.env.PGPORT ?? 5432);
-  const database = process.env.DB_NAME ?? process.env.PGDATABASE;
-  const user = process.env.DB_USER ?? process.env.PGUSER;
-  const password = process.env.DB_PASSWORD ?? process.env.PGPASSWORD;
+  const host = process.env.DB_HOST ?? process.env.PGHOST ?? process.env.POSTGRES_HOST;
+  const port = Number(
+    process.env.DB_PORT ?? process.env.PGPORT ?? process.env.POSTGRES_PORT ?? 5432,
+  );
+  const database =
+    process.env.DB_NAME ?? process.env.PGDATABASE ?? process.env.POSTGRES_DATABASE;
+  const user = process.env.DB_USER ?? process.env.PGUSER ?? process.env.POSTGRES_USER;
+  const password =
+    process.env.DB_PASSWORD ?? process.env.PGPASSWORD ?? process.env.POSTGRES_PASSWORD;
 
   if (!host || !database || !user) {
     throw new Error(
-      "Configuration base de données manquante (DATABASE_URL ou DB_HOST/DB_NAME/DB_USER).",
+      "Configuration base de données manquante (DATABASE_URL, POSTGRES_URL ou DB_HOST/DB_NAME/DB_USER).",
     );
   }
 
