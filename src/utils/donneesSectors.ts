@@ -37,7 +37,7 @@ const sumBy = (rows: any[], key: string): number => rows.reduce((acc, r) => acc 
 const isFilled = (v: unknown): boolean => {
   if (v === null || v === undefined) return false;
   const s = String(v).trim();
-  return s !== "" && s !== "-";
+  return s !== "" && s !== "-" && s !== "0";
 };
 
 const hasAnyValue = (rows: any[], key: string): boolean => rows.some((r) => isFilled(r?.[key]));

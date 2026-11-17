@@ -368,10 +368,7 @@ const Donnees = () => {
   }, [niveau]);
 
   const handleFilter = async () => {
-    if (filters.selectedDren === "0") {
-      toast.error("Veuillez sélectionner au moins une DREN");
-      return;
-    }
+    // Un périmètre à 0 signifie « national » (toutes les DREN / CISCO / …).
     setIsFilterDirty(false);
 
     const dren = Number(filters.selectedDren);
@@ -437,10 +434,31 @@ const Donnees = () => {
     }, 0);
   };
 
+  // Chargement automatique des données nationales au montage (aucun filtre
+  // géographique sélectionné manuellement). Le périmètre 0 = national.
+  useEffect(() => {
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      if (cancelled) return;
+      handleFilter();
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [niveau]);
+
   // Stats globales du périmètre chargé
   const totalEtablissements = data.length;
   const totalEleves = getTotalEleves(data, niveau);
-  const totalPersonnels = data.reduce((acc, e) => acc + (Number(e.pers_total) || 0), 0);
+  const hasPersonnelValue = data.some((e) => {
+    const s = String(e?.pers_total ?? "").trim();
+    return s !== "" && s !== "-" && s !== "0";
+  });
+  const totalPersonnels = hasPersonnelValue
+    ? data.reduce((acc, e) => acc + (Number(e.pers_total) || 0), 0)
+    : null;
 
   // Répartition Public (SECTEUR 0) / Privé (SECTEUR 1) / Total
   const sectorGroups = buildSectorGroups(data, niveau);
@@ -620,7 +638,7 @@ const Donnees = () => {
                   <strong className="text-foreground">{formatNumber(totalEleves)}</strong> élèves
                 </span>
                 <span>
-                  <strong className="text-foreground">{formatNumber(totalPersonnels)}</strong>{" "}
+                  <strong className="text-foreground">{totalPersonnels === null ? "—" : formatNumber(totalPersonnels)}</strong>{" "}
                   personnels
                 </span>
               </div>

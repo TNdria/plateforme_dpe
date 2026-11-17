@@ -92,11 +92,6 @@ const DonneesCollege = () => {
   };
 
   const handleFilter = async () => {
-    if (selectedDren === '0') {
-      toast.error('Veuillez sélectionner au moins une DREN');
-      return;
-    }
-    
     setLoading(true);
     try {
       const dren = Number(selectedDren);
@@ -116,6 +111,14 @@ const DonneesCollege = () => {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      handleFilter();
+    }, 0);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleExport = () => {
     if (etablissements.length === 0) {
@@ -249,7 +252,7 @@ const DonneesCollege = () => {
             </Select>
           </div>
 
-          <Button onClick={handleFilter} disabled={loading || selectedDren === '0'} className="col-span-2 sm:col-span-1">
+          <Button onClick={handleFilter} disabled={loading} className="col-span-2 sm:col-span-1">
             {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Filter className="w-4 h-4 mr-2" />}
             Filtrer
           </Button>

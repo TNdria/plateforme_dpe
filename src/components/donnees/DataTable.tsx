@@ -170,6 +170,24 @@ const DataTable = ({
     );
   }, [data, search, columns]);
 
+  // Une colonne dont aucune cellule ne contient de valeur (null / vide /
+  // "-" / 0) dans tout le périmètre est considérée comme « non renseignée » :
+  // on affiche « — » au lieu de 0 pour éviter des résultats trompeurs.
+  const isPresentValue = (v: unknown) => {
+    if (v === null || v === undefined) return false;
+    const s = String(v).trim();
+    if (s === "" || s === "-" || s === "0") return false;
+    return true;
+  };
+  const emptyColumns = useMemo(() => {
+    const set = new Set<string>();
+    for (const col of columns) {
+      const hasValue = data.some((row) => isPresentValue(row?.[col.key]));
+      if (!hasValue) set.add(col.key);
+    }
+    return set;
+  }, [data, columns]);
+
   // Largeur totale = somme des largeurs fixes de chaque colonne. Posée en
   // style inline sur <Table> (plutôt que `min-w-full` seul) pour empêcher le
   // navigateur de redistribuer l'espace excédentaire entre colonnes en
@@ -202,7 +220,8 @@ const DataTable = ({
       const rows = filteredData.map((row) =>
         columns.map((col) => {
           const value = row[col.key];
-          return typeof value === "string" && value.includes(",") ? `"${value}"` : (value ?? "");
+          const out = emptyColumns.has(col.key) ? "—" : (value ?? "");
+          return typeof out === "string" && out.includes(",") ? `"${out}"` : out;
         }),
       );
 
@@ -220,7 +239,10 @@ const DataTable = ({
     } else {
       const rows = filteredData.map((row) =>
         Object.fromEntries(
-          columns.map((col) => [formatColumnLabel(col.label), row[col.key] ?? ""]),
+          columns.map((col) => [
+            formatColumnLabel(col.label),
+            emptyColumns.has(col.key) ? "—" : (row[col.key] ?? ""),
+          ]),
         ),
       );
       const sheet = XLSX.utils.json_to_sheet(rows);
@@ -340,7 +362,11 @@ const DataTable = ({
                 >
                   {columns.map((col, colIndex) => {
                     const value = row[col.key];
-                    const display = col.render ? col.render(value, row) : (value ?? "-");
+                    const display = col.render
+                      ? col.render(value, row)
+                      : emptyColumns.has(col.key)
+                        ? "—"
+                        : (value ?? "-");
 
                     return (
                       <TableCell
