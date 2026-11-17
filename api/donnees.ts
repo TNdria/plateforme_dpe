@@ -19,7 +19,9 @@ import {
   MIN_RECENT_ANNEE,
   buildDonneesRecentSql,
   type DataRecentLevel,
-} from "../supabase/functions/_shared/donneesRecent";
+  // Extension explicite obligatoire : le projet est en ESM (`type: module`),
+  // Node résout alors les chemins relatifs sans extension au runtime Vercel.
+} from "../supabase/functions/_shared/donneesRecent.js";
 
 const { Pool, types } = pg;
 
