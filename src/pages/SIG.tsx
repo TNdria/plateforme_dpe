@@ -70,7 +70,7 @@ import { captureMapPng } from "@/utils/captureMapPng";
 import { buildSigUniqueEstablishmentStats, countUniqueEstablishments } from "@/utils/sigUniqueCounts";
 
 // ====================== CONFIG ======================
-const DJANGO_BASE_URL = import.meta.env.VITE_API_URL || "https://dpe-men.mg";
+const DJANGO_BASE_URL = "https://dpe-men.mg";
 
 class ApiError extends Error {
   status: number;
@@ -650,6 +650,9 @@ const SIG = () => {
   const canStartValidation = Boolean(
     user && sigConfig.permissions.verifier
   );
+
+  const canModifySig =
+    canStartPointage || canStartDeplacement || canStartValidation;
 
   const formatActionDuration = (totalSeconds: number) => {
     const hours = Math.floor(totalSeconds / 3600);
@@ -2954,7 +2957,7 @@ const SIG = () => {
     {/* Deuxième ligne : section et actions */}
     <div className="mt-2 flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t pt-2">
       <div className="text-xs text-foreground">
-        Mode : <strong>Consultation générale</strong>
+        Mode : <strong>{canModifySig ? "Visualisation avec modification accordée" : "Visualisation seulement"}</strong>
       </div>
 
       <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[420px]">
