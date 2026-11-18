@@ -65,7 +65,20 @@ function codeValide(valeur) {
 /* ============================================================ */
 
 export function useDemandeOuvertureLogic() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+
+  /* ============================================================ */
+  /* 🔒 SÉCURITÉ : détection de l'état de connexion                */
+  /* ============================================================ */
+  const estConnecte = useMemo(() => {
+    if (!user) return false;
+    return Boolean(
+      user.id ?? user.pk ?? user.username ?? user.email ?? user.user_id
+    );
+  }, [user]);
+
+  const MESSAGE_NON_CONNECTE =
+    "Vous devez être connecté pour accéder à cette page.";
 
   // États formulaire
   const [form, setForm] = useState(empty);
@@ -136,10 +149,35 @@ export function useDemandeOuvertureLogic() {
     localisationDetail.village,
   ].join("|");
 
+  /* ============================================================ */
+  /* 🔒 EFFET 0 : annulation + purge si déconnexion                */
+  /* ============================================================ */
+  useEffect(() => {
+    if (estConnecte) return;
+    [
+      rechercheAbortRef, proxAbortRef, villagesAbortRef,
+      optionsAbortRef, eligibiliteAbortRef, detailEtabAbortRef,
+    ].forEach((ref) => {
+      if (ref.current) {
+        try { ref.current.abort(); } catch (_) { /* noop */ }
+        ref.current = null;
+      }
+    });
+    setTableProche([]);
+    setAireListe([]);
+    setVillagesFokontany([]);
+    setLocOptions(emptyLocOptions);
+    setEvolutionRecuperee([]);
+    setEvolutionSaisie([]);
+    setPersonnelExistant([]);
+    setPersonnelDetail([]);
+    setEtablissementsTrouves([]);
+    setEtablissementSelectionne(null);
+    setVillagesAlternatifsProposes([]);
+  }, [estConnecte]);
+
   // ============================================================
-  // RÔLES
-  // 🔧 MODIFIÉ : DPE = ADMIN (droits complets, aucune restriction
-  //    DREN/CISCO). Seuls DREN et CISCO restent limités à leur périmètre.
+  // RÔLES (inchangés)
   // ============================================================
   const isAdminBase = !!user?.is_superuser || !!user?.is_staff;
   const hasCisco = codeValide(user?.cisco);
@@ -147,7 +185,6 @@ export function useDemandeOuvertureLogic() {
   const isCISCO = !isAdminBase && hasCisco;
   const isDREN = !isAdminBase && !isCISCO && hasDren;
   const isDPE = !isAdminBase && !isCISCO && !isDREN;
-  // 🔧 DPE est traité comme admin partout dans le formulaire
   const isAdmin = isAdminBase || isDPE;
 
   const codeCiscoUser = isCISCO ? String(user.cisco).trim() : null;
@@ -159,7 +196,6 @@ export function useDemandeOuvertureLogic() {
     form.niveau_etab
   );
 
-  // 🔧 AJOUT : valeurs DREN/CISCO imposées par l'utilisateur connecté
   const locSelectionInitiale = () => {
     if (isCISCO) {
       return {
@@ -177,7 +213,6 @@ export function useDemandeOuvertureLogic() {
     return emptyLocSelection;
   };
 
-  // 🔧 AJOUT : contrôle que DREN/CISCO choisis = ceux de l'utilisateur
   const verifierLocalisationUtilisateur = () => {
     if (isAdmin) return "";
     if (form.type_demande !== "Nouvelle création") return "";
@@ -206,6 +241,7 @@ export function useDemandeOuvertureLogic() {
   // EFFET 1 — PROXIMITÉ
   // ============================================================
   useEffect(() => {
+    if (!estConnecte) return; // 🔒
     if (form.type_demande !== "Nouvelle création") return;
 
     if (eligibiliteActive && eligibiliteStatut !== "eligible") {
@@ -299,18 +335,14 @@ export function useDemandeOuvertureLogic() {
     form.sous_type,
     eligibiliteActive,
     eligibiliteStatut,
+    estConnecte,
   ]);
 
   // ============================================================
-  // EFFET 2 — NOMS DREN/CISCO selon rôle
-  // (DPE = admin → pas de pré-remplissage, sélection libre)
-  // 🔧 MODIFIÉ : résolution code → nom PAR PLUSIEURS CHEMINS EN PARALLÈLE :
-  //    (a) nom déduit du nom du compte (ex "CISCO 326 VOHIBATO" → "VOHIBATO")
-  //        puis requête par NOM (déjà supportée par l'API existante)
-  //    (b) requête par CODE (si le backend a été mis à jour)
-  //    Les codes s'affichent immédiatement, remplacés par les noms ensuite.
+  // EFFET 2 — NOMS DREN/CISCO
   // ============================================================
   useEffect(() => {
+    if (!estConnecte) return; // 🔒
     if (isAdmin) return;
     let actif = true;
 
@@ -343,7 +375,6 @@ export function useDemandeOuvertureLogic() {
       );
       return data?.options || {};
     };
-    // "CISCO 326 VOHIBATO" -> "VOHIBATO" (retire CISCO/DREN et le code)
     const devinerNom = (code) => {
       const brut = [user?.first_name, user?.last_name].filter(Boolean).join(" ");
       return brut
@@ -353,7 +384,6 @@ export function useDemandeOuvertureLogic() {
         .trim();
     };
 
-    // ---------------- CISCO ----------------
     if (isCISCO && user?.cisco) {
       const codeC = String(user.cisco).trim();
       const codeD = String(user.dren || "").trim();
@@ -395,7 +425,6 @@ export function useDemandeOuvertureLogic() {
         }
         if (nomC || nomD) appliquer(nomD || codeD, nomC || codeC);
 
-        // Repli : déduire le DREN depuis le CISCO trouvé (requête légère par nom)
         if (actif && nomC && !nomD) {
           try {
             const o2 = await lireOptions(new URLSearchParams({ cisco: nomC }));
@@ -413,7 +442,6 @@ export function useDemandeOuvertureLogic() {
       return () => { actif = false; };
     }
 
-    // ---------------- DREN ----------------
     if (isDREN && user?.dren) {
       const codeD = String(user.dren).trim();
 
@@ -459,13 +487,15 @@ export function useDemandeOuvertureLogic() {
     }
 
     return () => { actif = false; };
-  }, [user, isAdmin, isCISCO, isDREN]);
+  }, [user, isAdmin, isCISCO, isDREN, estConnecte]);
 
   // ============================================================
-  // VÉRIFICATION APPARTENANCE CISCO / DREN
+  // VÉRIFICATION APPARTENANCE CISCO / DREN (inchangée)
   // ============================================================
   const verifierAppartenanceCisco = (etab, niveauCible = null) => {
-    // 🔧 Admin ET DPE (isAdmin inclut DPE) : tout est autorisé
+    if (!estConnecte) {
+      return { valide: false, message: MESSAGE_NON_CONNECTE }; // 🔒
+    }
     if (isAdmin) return { valide: true };
     const niveauDemande = niveauCible || etab?.niveau_etab || form.niveau_etab;
     const estLycee = String(niveauDemande || "").toLowerCase().includes("lyc");
@@ -503,7 +533,7 @@ export function useDemandeOuvertureLogic() {
   };
 
   const getNiveauxAutorises = () => {
-    // 🔧 isAdmin inclut DPE → les 4 niveaux (dont Lycée)
+    if (!estConnecte) return []; // 🔒
     if (isAdmin) return ["Préscolaire", "Primaire", "Collège", "Lycée"];
     if (isDPE) return ["Lycée"];
     if (isDREN) return ["Préscolaire", "Primaire", "Collège"];
@@ -570,14 +600,12 @@ export function useDemandeOuvertureLogic() {
   }, [form.type_demande, isAdmin, isCISCO, isDREN, nomDren, nomCisco, user]);
 
   // ============================================================
-  // EFFET 3 — OPTIONS DE LOCALISATION (fusion, pas d'écrasement)
-  // 🔧 MODIFIÉ : DREN/CISCO verrouillés sur l'utilisateur connecté
+  // EFFET 3 — OPTIONS DE LOCALISATION
   // ============================================================
   useEffect(() => {
+    if (!estConnecte) return; // 🔒
     if (form.type_demande !== "Nouvelle création") return;
 
-    // 🔧 AJOUT : DREN/CISCO ne chargent rien tant que leur périmètre
-    //    n'est pas connu (évite de récupérer la liste de TOUS les DREN/CISCO)
     if (isDREN && !locSelection.dren) return;
     if (isCISCO && (!locSelection.dren || !locSelection.cisco)) return;
 
@@ -588,8 +616,6 @@ export function useDemandeOuvertureLogic() {
     (async () => {
       try {
         const params = new URLSearchParams();
-        // 🔧 AJOUT : si le nom n'a pas pu être résolu (valeur = code utilisateur),
-        //    on interroge l'API par code plutôt que par nom
         const drenEstCode = (isDREN || isCISCO) && locSelection.dren &&
           locSelection.dren === String(user?.dren || "").trim();
         const ciscoEstCode = isCISCO && locSelection.cisco &&
@@ -615,7 +641,6 @@ export function useDemandeOuvertureLogic() {
             commune: (data?.options?.commune?.length > 0) ? data.options.commune : prev.commune,
             fokontany: (data?.options?.fokontany?.length > 0) ? data.options.fokontany : prev.fokontany,
           };
-          // 🔧 AJOUT : DREN/CISCO limités à leur propre périmètre
           if ((isDREN || isCISCO) && locSelection.dren) {
             next.dren = [locSelection.dren];
           }
@@ -631,12 +656,13 @@ export function useDemandeOuvertureLogic() {
     })();
 
     return () => controller.abort();
-  }, [optionsKey, form.type_demande]);
+  }, [optionsKey, form.type_demande, estConnecte]);
 
   // ============================================================
-  // EFFET 4 — VILLAGES (chargé seulement si fokontany choisi)
+  // EFFET 4 — VILLAGES
   // ============================================================
   useEffect(() => {
+    if (!estConnecte) return; // 🔒
     if (form.type_demande !== "Nouvelle création") return;
     if (!locSelection.fokontany) {
       setVillagesFokontany([]);
@@ -673,12 +699,13 @@ export function useDemandeOuvertureLogic() {
       clearTimeout(timeoutId);
       controller.abort();
     };
-  }, [villagesKey, form.type_demande]);
+  }, [villagesKey, form.type_demande, estConnecte]);
 
   // ============================================================
-  // EFFET 5 — RECHERCHE ÉTABLISSEMENT (régularisation)
+  // EFFET 5 — RECHERCHE ÉTABLISSEMENT
   // ============================================================
   useEffect(() => {
+    if (!estConnecte) return; // 🔒
     if (form.type_demande !== "Régularisation") {
       setRechercheEtabStatut("idle");
       setEtablissementsTrouves([]);
@@ -770,7 +797,7 @@ export function useDemandeOuvertureLogic() {
       clearTimeout(timeout);
       controller.abort();
     };
-  }, [form.type_demande, form.nom_etab, form.code_etab]);
+  }, [form.type_demande, form.nom_etab, form.code_etab, estConnecte]);
 
   // Reset sur changement niveau
   useEffect(() => {
@@ -824,12 +851,13 @@ export function useDemandeOuvertureLogic() {
     });
   };
 
-  const change = (key, value) => { setForm((f) => ({ ...f, [key]: value })); clearFieldError(key); };
-  const changeNouvelleCreation = (key, value) => { setNouvelleCreation((f) => ({ ...f, [key]: value })); clearFieldError(key); };
-  const changeInfoComplementaire = (key, value) => { setInfoComplementaire((f) => ({ ...f, [key]: value })); clearFieldError(key); };
-  const changeChampZap = (key, value) => { setChampsZapValeurs((f) => ({ ...f, [key]: value })); clearFieldError(key); };
-  const changeEnseignants = (newRows) => { setRessources((r) => ({ ...r, enseignants: newRows })); clearFieldError("enseignants"); };
+  const change = (key, value) => { if (!estConnecte) return; setForm((f) => ({ ...f, [key]: value })); clearFieldError(key); };
+  const changeNouvelleCreation = (key, value) => { if (!estConnecte) return; setNouvelleCreation((f) => ({ ...f, [key]: value })); clearFieldError(key); };
+  const changeInfoComplementaire = (key, value) => { if (!estConnecte) return; setInfoComplementaire((f) => ({ ...f, [key]: value })); clearFieldError(key); };
+  const changeChampZap = (key, value) => { if (!estConnecte) return; setChampsZapValeurs((f) => ({ ...f, [key]: value })); clearFieldError(key); };
+  const changeEnseignants = (newRows) => { if (!estConnecte) return; setRessources((r) => ({ ...r, enseignants: newRows })); clearFieldError("enseignants"); };
   const changePiece = (index, file) => {
+    if (!estConnecte) return;
     setPieces((liste) => liste.map((piece, i) => (i === index ? { ...piece, fichier: file } : piece)));
     clearFieldError(`piece.${index}`);
   };
@@ -838,6 +866,12 @@ export function useDemandeOuvertureLogic() {
   // ÉLIGIBILITÉ VILLAGE
   // ============================================================
   const verifierVillageSelectionne = (nomVillage, codeCisco, codeVillage, commune) => {
+    if (!estConnecte) { // 🔒
+      setEligibiliteStatut("non_eligible");
+      setEligibiliteVillageErreur(MESSAGE_NON_CONNECTE);
+      return;
+    }
+
     if (!eligibiliteActive) {
       setEligibiliteStatut("eligible");
       setEligibiliteVillageErreur("");
@@ -890,6 +924,7 @@ export function useDemandeOuvertureLogic() {
   };
 
   const changeLocalisationDetail = (key, value, villageId) => {
+    if (!estConnecte) return; // 🔒
     setLocalisationDetail((f) => ({ ...f, [key]: value }));
     clearFieldError(key);
 
@@ -920,6 +955,7 @@ export function useDemandeOuvertureLogic() {
   };
 
   const choisirVillageAlternatif = (alt) => {
+    if (!estConnecte) return; // 🔒
     if (!alt) return;
     const aUnNom = Boolean(alt.nom);
     const codeAlt = alt.code_village != null && alt.code_village !== "" ? String(alt.code_village) : "";
@@ -999,8 +1035,7 @@ export function useDemandeOuvertureLogic() {
   };
 
   const changeLocSelection = (key, value) => {
-    // 🔧 AJOUT : DREN/CISCO verrouillés pour les utilisateurs restreints
-    //    (DREN : son DREN ; CISCO : son DREN et son CISCO). Admin/DPE : libre.
+    if (!estConnecte) return; // 🔒
     if (!isAdmin && key === "dren") return;
     if (isCISCO && key === "cisco") return;
 
@@ -1036,6 +1071,7 @@ export function useDemandeOuvertureLogic() {
   };
 
   const chargerEvolutionEtablissement = async (codeEtab, niveauCible, options = {}) => {
+    if (!estConnecte) { setEvolutionRecuperee([]); return; } // 🔒
     if (!codeEtab || form.type_demande !== "Régularisation") { setEvolutionRecuperee([]); return; }
     const niveauEvolution = niveauCible || niveauKey;
     const colonnesEffectif = NIVEAU_COLONNES_EFFECTIF[niveauEvolution] || [];
@@ -1064,13 +1100,13 @@ export function useDemandeOuvertureLogic() {
   };
 
   const appliquerDetailEtablissement = async (etab, niveauCible) => {
+    if (!estConnecte) return; // 🔒
     const niveauUtilise = niveauCible || niveauKey;
     const code = etab?.code_etab ?? etab?.code_etablissement ?? etab?.CODE_ETAB ?? etab?.id ?? "";
     const nom = etab?.nom_etab ?? etab?.NOM_ETAB ?? "";
 
     appliquerLatrines(lireLatrines(etab), true);
 
-    // ✅ CALCUL DU NOMBRE D'ANNÉES D'EXISTANT
     const dateOuvrInitiale = formatDateForInput(etab?.date_ouverture ?? etab?.date_ouverture_etablissement);
     const nombreAnneesInitial = calculerNombreAnnees(dateOuvrInitiale);
 
@@ -1167,6 +1203,11 @@ export function useDemandeOuvertureLogic() {
   };
 
   const selectionnerEtablissement = (etab, niveauTrouve) => {
+    if (!estConnecte) { // 🔒
+      setModalSecuriteMessage(MESSAGE_NON_CONNECTE);
+      setModalSecuriteOuvert(true);
+      return;
+    }
     const verification = verifierAppartenanceCisco(etab, niveauTrouve);
     if (!verification.valide) {
       setCodeEtabInvalide(String(etab?.code_etab ?? etab?.code_etablissement ?? etab?.CODE_ETAB ?? ""));
@@ -1197,12 +1238,16 @@ export function useDemandeOuvertureLogic() {
   };
 
   const validationEligibiliteBloquante = () => {
+    if (!estConnecte) return true; // 🔒
     if (!estNiveauAvecEligibiliteVillage(form.type_demande, form.sous_type, form.niveau_etab)) return false;
     if (zoneProposeeSelectionnee) return false;
     return Boolean(eligibiliteVillageErreur);
   };
 
   const validateStep = (stepId) => {
+    if (!estConnecte) { // 🔒
+      return [{ field: "auth", message: MESSAGE_NON_CONNECTE }];
+    }
     const errors = validerEtape(stepId, {
       form, localisationDetail, locSelection, nouvelleCreation,
       regularisation, ressources, pieces, cfg, villageLoading,
@@ -1210,7 +1255,6 @@ export function useDemandeOuvertureLogic() {
     if (stepId === "localisation" && validationEligibiliteBloquante()) {
       errors.push({ field: "village", message: eligibiliteVillageErreur });
     }
-    // 🔧 AJOUT : un CISCO / DREN ne peut agir que sur son propre périmètre
     if (stepId === "localisation") {
       const violation = verifierLocalisationUtilisateur();
       if (violation) {
@@ -1225,6 +1269,7 @@ export function useDemandeOuvertureLogic() {
   };
 
   const goToNext = () => {
+    if (!estConnecte) { setError(MESSAGE_NON_CONNECTE); return; } // 🔒
     const stepId = steps[currentStep].id;
     if (stepId === "localisation" && validationEligibiliteBloquante()) return;
     const errors = validateStep(stepId);
@@ -1238,6 +1283,7 @@ export function useDemandeOuvertureLogic() {
   };
 
   const goToPrev = () => {
+    if (!estConnecte) return; // 🔒
     setValidationErrors({});
     if (currentStep > 0) setCurrentStep(currentStep - 1);
   };
@@ -1247,6 +1293,8 @@ export function useDemandeOuvertureLogic() {
     setValidationErrors({});
     setError("");
     setOk("");
+
+    if (!estConnecte) { setError(MESSAGE_NON_CONNECTE); return; } // 🔒
 
     if (validationEligibiliteBloquante()) {
       setError(eligibiliteVillageErreur);
@@ -1383,7 +1431,6 @@ export function useDemandeOuvertureLogic() {
       setRechercheEtabStatut("idle");
       setEtablissementsTrouves([]);
       setEtablissementSelectionne(null);
-      // 🔧 MODIFIÉ : on conserve DREN/CISCO automatiques pour CISCO/DREN
       setLocSelection(locSelectionInitiale());
       setLocOptions(emptyLocOptions);
       setVillagesFokontany([]);
@@ -1406,6 +1453,11 @@ export function useDemandeOuvertureLogic() {
   };
 
   return {
+    // 🔒 expose au composant
+    estConnecte,
+    authLoading,
+    messageNonConnecte: MESSAGE_NON_CONNECTE,
+
     form, setForm,
     nouvelleCreation, setNouvelleCreation,
     regularisation, setRegularisation,

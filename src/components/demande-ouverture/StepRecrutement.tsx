@@ -44,11 +44,11 @@ export default function StepRecrutement({
               Récupération de l'aire de recrutement...
             </div>
           ) : aireListe.length === 0 ? (
-            <div className="p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg text-amber-700 dark:text-amber-400 text-xs flex items-start gap-2">
-              <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+            <div className="p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg text-blue-700 dark:text-blue-400 text-xs flex items-start gap-2">
+              
               <span>
                 {form.type_demande === "Nouvelle création"
-                  ? "Sélectionnez d'abord un fokontany pour récupérer l'aire de recrutement."
+                  ? "Sélectionnez d'abord un le lieu d'implantation pour récupérer l'aire de recrutement."
                   : "Aucune donnée d'aire de recrutement récupérée."}
               </span>
             </div>

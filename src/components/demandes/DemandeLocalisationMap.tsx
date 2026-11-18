@@ -27,10 +27,14 @@ export const COULEUR_LIGNE_INTERSECTION = "#000000";
 export const COULEUR_VILLAGE_NON_ELIGIBLE = "#dc2626";
 export const COULEUR_ZONE_PROPOSEE = "#16a34a";
 
+const KM_PAR_DEG_LAT = 110.574;
+
+/* ------------------------------------------------------------------ */
+/*  Lignes d'intersection (régularisation) - inchangé                  */
+/* ------------------------------------------------------------------ */
 const calculerLignesIntersection = (centres, rKm) => {
   if (!Array.isArray(centres) || centres.length < 2 || !(rKm > 0)) return [];
 
-  const KM_PAR_DEG_LAT = 110.574;
   const latRef = centres.reduce((s, c) => s + c.pos[0], 0) / centres.length;
   const kmParDegLng = 111.320 * Math.cos((latRef * Math.PI) / 180);
   if (!kmParDegLng) return [];
@@ -101,6 +105,93 @@ const calculerLignesIntersection = (centres, rKm) => {
   }
 
   return lignes;
+};
+
+/* ------------------------------------------------------------------ */
+/*  VORONOI (nouvelle création, tous niveaux) - lignes seulement       */
+/* ------------------------------------------------------------------ */
+const clipDemiPlan = (poly, a, b, c) => {
+  const out = [];
+  const n = poly.length;
+  for (let i = 0; i < n; i++) {
+    const P = poly[i];
+    const Q = poly[(i + 1) % n];
+    const fp = a * P.x + b * P.y - c;
+    const fq = a * Q.x + b * Q.y - c;
+    if (fp <= 0) out.push(P);
+    if ((fp < 0 && fq > 0) || (fp > 0 && fq < 0)) {
+      const t = fp / (fp - fq);
+      out.push({ x: P.x + t * (Q.x - P.x), y: P.y + t * (Q.y - P.y) });
+    }
+  }
+  return out;
+};
+
+const analyserVoronoi = (centres, pointsBruts, rKm) => {
+  if (!Array.isArray(centres) || centres.length < 2 || !(rKm > 0)) return null;
+
+  const latRef = centres.reduce((s, c) => s + c.pos[0], 0) / centres.length;
+  const kmParDegLng = 111.320 * Math.cos((latRef * Math.PI) / 180);
+  if (!kmParDegLng) return null;
+  const lat0 = centres[0].pos[0];
+  const lng0 = centres[0].pos[1];
+
+  const versXY = (p) => ({ x: (p[1] - lng0) * kmParDegLng, y: (p[0] - lat0) * KM_PAR_DEG_LAT });
+  const versLatLng = (x, y) => [lat0 + y / KM_PAR_DEG_LAT, lng0 + x / kmParDegLng];
+  const xy = centres.map((c) => versXY(c.pos));
+
+  // Frontières de Voronoi (médiatrices) limitées aux rayons réglementaires
+  const lignes = [];
+  centres.forEach((c, i) => {
+    let poly = Array.from({ length: 72 }, (_, k) => {
+      const t = (2 * Math.PI * k) / 72;
+      return { x: xy[i].x + rKm * Math.cos(t), y: xy[i].y + rKm * Math.sin(t) };
+    });
+    for (let j = 0; j < centres.length; j++) {
+      if (j === i) continue;
+      const dx = xy[j].x - xy[i].x;
+      const dy = xy[j].y - xy[i].y;
+      if (Math.hypot(dx, dy) < 1e-6) continue;
+      const cst = (xy[j].x ** 2 + xy[j].y ** 2 - xy[i].x ** 2 - xy[i].y ** 2) / 2;
+      poly = clipDemiPlan(poly, dx, dy, cst);
+      if (!poly.length) break;
+    }
+    // On ne garde que les côtés qui ne sont pas des arcs du cercle
+    for (let a = 0; a < poly.length; a++) {
+      const P = poly[a];
+      const Q = poly[(a + 1) % poly.length];
+      const dist = (p) => Math.hypot(p.x - xy[i].x, p.y - xy[i].y);
+      const M = { x: (P.x + Q.x) / 2, y: (P.y + Q.y) / 2 };
+      const surCercle = Math.abs(dist(P) - rKm) < 1e-3 && Math.abs(dist(Q) - rKm) < 1e-3 && Math.abs(dist(M) - rKm) < 0.02 * rKm;
+      if (surCercle) continue;
+      if (Math.hypot(P.x - Q.x, P.y - Q.y) < 1e-6) continue;
+      lignes.push({
+        positions: [versLatLng(P.x, P.y), versLatLng(Q.x, Q.y)],
+        noms: [c.nom],
+      });
+    }
+  });
+
+  // Chaque point de l'aire est alimenté par l'établissement le plus proche
+  const comptes = centres.map(() => 0);
+  const alimente = new Map();
+  (pointsBruts || []).forEach((pb) => {
+    if (!pb?.pos) return;
+    const q = versXY(pb.pos);
+    let best = -1;
+    let bd = Infinity;
+    xy.forEach((c, i) => {
+      const d = Math.hypot(q.x - c.x, q.y - c.y);
+      if (d < bd) { bd = d; best = i; }
+    });
+    if (best < 0) return;
+    const cle = `${pb.pos[0].toFixed(5)}|${pb.pos[1].toFixed(5)}`;
+    if (alimente.has(cle)) return;
+    alimente.set(cle, { owner: best, nomOwner: centres[best].nom, distanceKm: bd });
+    if (bd <= rKm + 0.05) comptes[best] += 1;
+  });
+
+  return { lignes, comptes, alimente };
 };
 
 const LARGEUR_REFERENCE_PX = 800;
@@ -314,6 +405,16 @@ const positionPointAire = (a, niveauKey) => {
   return Number.isFinite(lat) && Number.isFinite(lng) ? [lat, lng] : null;
 };
 
+const nomPointAire = (info) =>
+  info?.nom_inferieur || info?.nom_village || info?.nom || info?.nom_etab || "Point";
+
+const estNouvelleCreationDemande = (demande) => {
+  const t = String(demande?.type_demande || demande?.type_demande_label || "")
+    .toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (t.includes("regularisation")) return false;
+  return t.includes("nouvelle") || (!t && !!demande?.nouvelle_creation);
+};
+
 export default function DemandeLocalisationMap({
   demande,
   etablissementsProches,
@@ -326,13 +427,13 @@ export default function DemandeLocalisationMap({
   captureSize = null,
   masquerAireVoisins = false,
   vueInitiale = null,
+  modeVoronoi: modeVoronoiProp = null,
 }) {
   const [zoomCourant, setZoomCourant] = useState(null);
 
   const niveauKey = niveauToKey(demande?.niveau_etab || demande?.niveau);
   const niveauLabel = mapNiveau(demande?.niveau_etab || demande?.niveau);
   const rayonCarte = getRayonCarteKm(niveauKey);
-  const futurePosition = getPosition(demande);
 
   const pointsNouvelleCreation = useMemo(
     () => getPointsNouvelleCreation(demande),
@@ -341,6 +442,25 @@ export default function DemandeLocalisationMap({
   const villageNonEligible = pointsNouvelleCreation.villageNonEligible;
   const zoneProposee = pointsNouvelleCreation.zoneProposee;
   const remplaceVillage = pointsNouvelleCreation.remplaceVillage;
+
+  const positionDemande = getPosition(demande);
+
+  const positionZone = (() => {
+    const la = Number(zoneProposee?.latitude);
+    const lo = Number(zoneProposee?.longitude);
+    return zoneProposee && Number.isFinite(la) && Number.isFinite(lo) ? [la, lo] : null;
+  })();
+  const futurePosition = positionZone || positionDemande;
+
+  const estNouvelleCreation = estNouvelleCreationDemande(demande);
+  const modeVoronoi = modeVoronoiProp === null ? estNouvelleCreation : Boolean(modeVoronoiProp);
+
+  // ✅ En mode LOCALISATION (masquerAireVoisins=true) : afficher les marqueurs
+  //    des voisins et de leur aire, mais PAS le rayon réglementaire des voisins
+  //    ni les lignes d'intersection/Voronoi.
+  const voisinsVisibles = modeVoronoi || !masquerAireVoisins;
+  const afficherAnneauxVoisins = !masquerAireVoisins;
+  const afficherLignes = !masquerAireVoisins;
 
   const prochesEffectifs = (Array.isArray(etablissementsProches) && etablissementsProches.length > 0)
     ? etablissementsProches
@@ -415,30 +535,55 @@ export default function DemandeLocalisationMap({
     return { item, position, points: pointsAire, nbAire: liste.length };
   });
 
-  const lignesIntersection = useMemo(() => {
-    if (masquerAireVoisins) return [];
+  const nomNouveau = zoneProposee?.aUnNom
+    ? zoneProposee.nom
+    : (demande?.nom_etab || "Nouvel établissement");
 
-    const centres = [];
+  // ---------------- Voronoi (nouvelle création) ----------------
+  const voronoi = useMemo(() => {
+    if (!modeVoronoi || !futurePosition) return null;
 
-    if (futurePosition) {
-      centres.push({
-        pos: futurePosition,
-        nom: demande?.nom_etab || "Nouvel établissement",
-      });
-    }
-
+    const centres = [{ pos: futurePosition, nom: nomNouveau }];
     nearby.forEach(({ item, position }) => {
       centres.push({ pos: position, nom: getNomAireItem(item) });
     });
 
+    const pointsBruts = [];
+    feeders.forEach(({ item, position }) => pointsBruts.push({ pos: position }));
+    voisins.forEach(({ points }) => points.forEach((pt) => pointsBruts.push({ pos: pt.pos })));
+
+    return analyserVoronoi(centres, pointsBruts, rayonNormeKm);
+  }, [
+    modeVoronoi,
+    futurePosition ? futurePosition.join(",") : "",
+    nearby.map(({ item, position }) => `${getNomAireItem(item)}@${position.join(",")}`).join("|"),
+    feeders.map(({ position }) => position.join(",")).join("|"),
+    voisins.map(({ points }) => points.length).join(","),
+    rayonNormeKm, nomNouveau,
+  ]);
+
+  const infoAlimente = (pos) => {
+    if (!voronoi || !pos) return null;
+    return voronoi.alimente.get(`${pos[0].toFixed(5)}|${pos[1].toFixed(5)}`) || null;
+  };
+
+  // ---------------- Lignes d'intersection (mode classique) ----------------
+  const lignesIntersection = useMemo(() => {
+    if (modeVoronoi || !voisinsVisibles) return [];
+    const centres = [];
+    if (futurePosition) centres.push({ pos: futurePosition, nom: nomNouveau });
+    nearby.forEach(({ item, position }) => {
+      centres.push({ pos: position, nom: getNomAireItem(item) });
+    });
     return calculerLignesIntersection(centres, rayonNormeKm);
   }, [
-    masquerAireVoisins,
+    modeVoronoi, voisinsVisibles,
     futurePosition ? futurePosition.join(",") : "",
     nearby.map(({ position }) => position.join(",")).join("|"),
-    rayonNormeKm,
-    demande?.nom_etab,
+    rayonNormeKm, nomNouveau,
   ]);
+
+  const lignesAffichees = voronoi ? voronoi.lignes : lignesIntersection;
 
   const contourCommune = extraireContour(demande, "commune");
   const contourFokontany = extraireContour(demande, "fokontany");
@@ -455,7 +600,7 @@ export default function DemandeLocalisationMap({
       cercle.push([la - dLat, lo - dLng], [la + dLat, lo + dLng]);
     }
     const cerclesVoisins = [];
-    if (!masquerAireVoisins) {
+    if (voisinsVisibles) {
       voisins.forEach(({ position }) => {
         const [la, lo] = position;
         const dLat = rayonNormeKm / 111;
@@ -497,7 +642,7 @@ export default function DemandeLocalisationMap({
   const nomCommune = getLocalisationValue(demande, "commune");
   const nomFokontany = getLocalisationValue(demande, "fokontany");
 
-  const afficherFuturePosition = Boolean(futurePosition) && !remplaceVillage;
+  const afficherFuturePosition = Boolean(positionDemande) && !remplaceVillage;
 
   return (
     <div className="space-y-3">
@@ -555,7 +700,8 @@ export default function DemandeLocalisationMap({
 
           {voisins.map(({ item, position, points }, index) => (
             <Fragment key={`voisin-zone-${index}`}>
-              {!masquerAireVoisins && (
+              {/* ✅ Rayon réglementaire des voisins : uniquement en mode RECRUTEMENT */}
+              {afficherAnneauxVoisins && (
                 <Circle
                   center={position}
                   radius={rayonNorme}
@@ -565,29 +711,26 @@ export default function DemandeLocalisationMap({
                 </Circle>
               )}
 
-              {!masquerAireVoisins && points.map((pt, i) => {
-                const nomLieu =
-                  pt.info?.nom_inferieur ||
-                  pt.info?.nom_village ||
-                  pt.info?.nom ||
-                  pt.info?.nom_etab ||
-                  "Point";
+              {/* ✅ Marqueurs de l'aire des voisins : visibles dans les deux modes */}
+              {voisinsVisibles && points.map((pt, i) => {
+                const nomLieu = nomPointAire(pt.info);
+                const al = infoAlimente(pt.pos);
+                const hors = al ? al.distanceKm > rayonNormeKm + 0.05 : false;
                 return (
                   <Marker
                     key={`voisin-pt-${index}-${i}`}
                     position={pt.pos}
                     zIndexOffset={50}
                     icon={createLabeledMapIcon(
-                      COULEUR_COUVERT, null, "",
-                      nomLieu,
-                      "", 5, 180, "dot",
-                      avecCapture, echelleTexte
+                      hors ? COULEUR_HORS_ZONE : COULEUR_COUVERT, null, "",
+                      nomLieu, "", 5, 180, "dot", avecCapture, echelleTexte
                     )}
                   >
                     <Tooltip direction="top">
                       <div className="text-xs">
                         <strong>{nomLieu}</strong><br />
                         Aire de : {getNomAireItem(item)}<br />
+                        {al && <>Alimente : {al.nomOwner}<br /></>}
                         Distance : {pt.info?.distance_future ?? "—"} km
                       </div>
                     </Tooltip>
@@ -607,23 +750,29 @@ export default function DemandeLocalisationMap({
             </Circle>
           )}
 
-          {!masquerAireVoisins && lignesIntersection.map((ligne, index) => (
+          {/* ✅ Lignes de Voronoi / intersection : uniquement en mode RECRUTEMENT */}
+          {afficherLignes && lignesAffichees.map((ligne, index) => (
             <Polyline
               key={`intersection-${index}`}
               positions={ligne.positions}
               pathOptions={{ color: COULEUR_LIGNE_INTERSECTION, weight: poids(2), opacity: 0.9 }}
             >
               <Tooltip sticky>
-                <strong>Ligne d'intersection</strong><br />
-                {ligne.noms[0]} ↔ {ligne.noms[1]}
+                {voronoi ? (
+                  <strong>Limite d'influence (Voronoi)</strong>
+                ) : (
+                  <>
+                    <strong>Ligne d'intersection</strong><br />
+                    {ligne.noms[0]} ↔ {ligne.noms[1]}
+                  </>
+                )}
               </Tooltip>
             </Polyline>
           ))}
 
-          {/* ✅ Marqueur principal (nouvel établissement) */}
           {afficherFuturePosition && (
             <Marker
-              position={futurePosition}
+              position={positionDemande}
               zIndexOffset={1000}
               icon={createLabeledMapIcon(
                 COULEUR_ECOLE_NOUVELLE, null, "",
@@ -647,7 +796,6 @@ export default function DemandeLocalisationMap({
             </Marker>
           )}
 
-          {/* ✅ Zone proposée (point vert — petite taille "12" comme les autres points) */}
           {zoneProposee && (
             <Marker
               position={[zoneProposee.latitude, zoneProposee.longitude]}
@@ -655,7 +803,7 @@ export default function DemandeLocalisationMap({
               icon={createLabeledMapIcon(
                 COULEUR_ZONE_PROPOSEE, null, "",
                 zoneProposee.nom || `Zone proposée (${demande?.nom_etab || "Nouvel établissement"})`,
-                remplaceVillage ? "Zone éligible (remplace le village)" : "Zone éligible proposée",
+                remplaceVillage ? "Zone éligible" : "Zone éligible proposée",
                 12, 280, "dot", avecCapture, echelleTexte,
                 true
               )}
@@ -676,7 +824,6 @@ export default function DemandeLocalisationMap({
             </Marker>
           )}
 
-          {/* ✅ Village non éligible (drapeau rouge) */}
           {villageNonEligible && !remplaceVillage && (
             <Marker
               position={[villageNonEligible.latitude, villageNonEligible.longitude]}
@@ -734,6 +881,7 @@ export default function DemandeLocalisationMap({
             const isSchool = niveauKey === "college" || niveauKey === "lycee";
             const label = getMapPointLabel(item, niveauKey, "alimentant", demandeContext);
             const hors = estHorsRayon(item);
+            const al = infoAlimente(position);
             return (
               <Marker
                 key={`alimentant-${index}`}
@@ -763,6 +911,7 @@ export default function DemandeLocalisationMap({
                         <div><strong>Population scolarisable :</strong> {item?.population_scolarisable ?? "—"}</div>
                       </>
                     )}
+                    {al && <div><strong>Alimente :</strong> {al.nomOwner}</div>}
                     <div><strong>Distance :</strong> {item?.distance_future ?? item?.distance_km ?? item?.distance ?? "—"} km</div>
                     <div className={hors ? "font-bold text-red-600" : "font-bold text-green-700"}>
                       {hors ? `Hors du rayon (> ${rayonLabel})` : `Dans le rayon (≤ ${rayonLabel})`}
@@ -815,6 +964,7 @@ export default function DemandeLocalisationMap({
           </div>
         )}
 
+        {/* ✅ LÉGENDE : rayons voisins + lignes uniquement en mode RECRUTEMENT */}
         <div
           className="absolute left-3 bottom-3 z-[1000] bg-white/96 border border-slate-500 rounded p-2 text-[10px] leading-4 shadow-md min-w-[220px]"
           style={{
@@ -847,16 +997,18 @@ export default function DemandeLocalisationMap({
             Hors zone (hors du rayon)
           </div>
 
-          {!masquerAireVoisins && (
+          {afficherAnneauxVoisins && (
             <div className="flex items-center gap-1.5">
               <span className="inline-block w-3 h-3 rounded-full border border-dashed" style={{ borderColor: COULEUR_RAYON }} />
               Rayon réglementaire ({rayonLabel})
             </div>
           )}
-          {!masquerAireVoisins && lignesIntersection.length > 0 && (
+          {afficherLignes && lignesAffichees.length > 0 && (
             <div className="flex items-center gap-1.5">
               <span className="inline-block w-3 h-1" style={{ background: COULEUR_LIGNE_INTERSECTION }} />
-              Ligne d'intersection ({lignesIntersection.length})
+              {voronoi
+                ? `Frontières de Voronoi (${lignesAffichees.length})`
+                : `Ligne d'intersection (${lignesAffichees.length})`}
             </div>
           )}
           {contourCommune && (
@@ -875,7 +1027,7 @@ export default function DemandeLocalisationMap({
           {zoneProposee && (
             <div className="flex items-center gap-1.5">
               <span className="inline-block w-3 h-3 rounded-full" style={{ background: COULEUR_ZONE_PROPOSEE }} />
-              Zone éligible proposée{zoneProposee.aUnNom ? " (remplace le village)" : ""}
+              Zone éligible proposée
             </div>
           )}
           {villageNonEligible && !remplaceVillage && (
@@ -897,8 +1049,6 @@ export default function DemandeLocalisationMap({
           </div>
         </div>
       )}
-
-      {/* ❌ Bandeau d'information vert SUPPRIMÉ (demandé) */}
     </div>
   );
 }

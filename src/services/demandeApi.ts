@@ -1,67 +1,112 @@
-type JsonValue = string | number | boolean | null | undefined | JsonObject | JsonValue[];
-type JsonObject = { [key: string]: JsonValue };
+// @ts-nocheck
+const BASE_URL =
+  (import.meta as any)?.env?.VITE_API_URL || "http://127.0.0.1:8000/api";
 
-function normalizeResponse(data: unknown): unknown {
-  if (Array.isArray(data)) return data;
-  if (!data || typeof data !== "object") return [];
+const BASE_URL_NORMALISEE = (() => {
+  const base = String(BASE_URL).trim().replace(/\/+$/, "");
+  return /\/api$/i.test(base) ? base : `${base}/api`;
+})();
 
-  const candidate = (data as Record<string, unknown>).data ?? (data as Record<string, unknown>).results ?? (data as Record<string, unknown>).items;
-  if (Array.isArray(candidate)) return candidate;
-
-  const values = Object.values(data as Record<string, unknown>);
-  const firstArray = values.find(Array.isArray);
-  if (Array.isArray(firstArray)) return firstArray;
-
-  return [];
+function getCsrfToken() {
+  const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
 }
 
-export function asList<T = Record<string, unknown>>(response: unknown): T[] {
-  const value = normalizeResponse(response);
-  return Array.isArray(value) ? (value as T[]) : [];
-}
+async function request(path, options = {}) {
+  const isFormData = options.body instanceof FormData;
 
-async function request<T>(method: string, url: string, body?: JsonObject | unknown): Promise<T> {
-  const options: RequestInit = {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    credentials: "include",
+  const headers = {
+    Accept: "application/json",
+    ...(isFormData ? {} : { "Content-Type": "application/json" }),
+    ...((options.headers) || {}),
   };
 
-  if (body !== undefined) {
-    options.body = JSON.stringify(body);
-  }
+  const csrfToken = getCsrfToken();
+  if (csrfToken) headers["X-CSRFToken"] = csrfToken;
 
-  const response = await fetch(url, options);
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`${response.status}: ${text || response.statusText}`);
-  }
+  const chemin = path.startsWith("/") ? path : `/${path}`;
+  const url = `${BASE_URL_NORMALISEE}${chemin}`;
 
-  const contentType = response.headers.get("content-type") || "";
-  if (contentType.includes("application/json")) {
-    return response.json() as Promise<T>;
-  }
+  try {
+    const response = await fetch(url, {
+      credentials: "include",
+      ...options,
+      headers,
+    });
 
-  return undefined as T;
+    if (!response.ok) {
+      const responseText = await response.text();
+      let detail = "";
+      if (responseText) {
+        try {
+          const data = JSON.parse(responseText);
+          detail =
+            data?.detail || data?.error || data?.message || JSON.stringify(data);
+        } catch {
+          detail = responseText;
+        }
+      }
+      throw new Error(detail || `Erreur ${response.status} sur ${url}`);
+    }
+
+    if (response.status === 204) return undefined;
+
+    const responseText = await response.text();
+    if (!responseText) return undefined;
+
+    try {
+      return JSON.parse(responseText);
+    } catch {
+      throw new Error(`La réponse du serveur n'est pas un JSON valide pour ${url}`);
+    }
+  } catch (e) {
+    // Si l'appelant a annulé (AbortController externe), on propage tel quel
+    if (e?.name === "AbortError") throw e;
+    throw e;
+  }
 }
 
 export const api = {
-  get: <T = unknown>(url: string) => request<T>("GET", url),
-  post: <T = unknown>(url: string, body?: JsonObject | unknown) => request<T>("POST", url, body),
-  put: <T = unknown>(url: string, body?: JsonObject | unknown) => request<T>("PUT", url, body),
-  patch: <T = unknown>(url: string, body?: JsonObject | unknown) => request<T>("PATCH", url, body),
-  delete: <T = unknown>(url: string, body?: JsonObject | unknown) => request<T>("DELETE", url, body),
+  get: (path, options = {}) =>
+    request(path, { ...options, method: "GET" }),
+
+  post: (path, body, options = {}) =>
+    request(path, {
+      ...options,
+      method: "POST",
+      body: body instanceof FormData ? body : JSON.stringify(body ?? {}),
+    }),
+
+  patch: (path, body, options = {}) =>
+    request(path, {
+      ...options,
+      method: "PATCH",
+      body: body instanceof FormData ? body : JSON.stringify(body ?? {}),
+    }),
+
+  del: (path, options = {}) =>
+    request(path, { ...options, method: "DELETE" }),
 };
 
-export async function verifierEligibiliteVillage(_payload: Record<string, unknown>) {
-  return {
-    eligible: true,
-    villages: [],
-    message: "",
-  };
+export function asList(response) {
+  if (!response) return [];
+  if (Array.isArray(response)) return response;
+  if (Array.isArray(response?.results)) return response.results;
+  return [];
 }
 
-export default api;
+export async function verifierEligibiliteVillage(params, options = {}) {
+  const usp = new URLSearchParams();
+  if (params.nom_village) usp.set("nom_village", params.nom_village);
+  if (params.code_village != null && params.code_village !== "")
+    usp.set("code_village", String(params.code_village));
+  if (params.code_cisco != null && params.code_cisco !== "")
+    usp.set("code_cisco", String(params.code_cisco));
+  if (params.niveau) usp.set("niveau", params.niveau);
+  if (params.commune) usp.set("commune", params.commune);
+
+  return api.get(
+    `/ouverture/referentiel/villages/eligible-nouvelle-creation/?${usp.toString()}`,
+    options
+  );
+}

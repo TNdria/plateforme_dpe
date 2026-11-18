@@ -8,12 +8,15 @@ import { cn } from "@/lib/utils";
 import { LABEL_CLS, INPUT_CLS } from "@/constants/demandeOuvertureConfig";
 
 export function SectionBar({ num, title, sub, accent }) {
+  // ✅ L'orange (amber) est remplacé par du bleu. 
+  // Même si un fichier demande "amber", ça affichera du bleu.
   const colorMap = {
     green: "bg-emerald-600",
-    amber: "bg-amber-500",
+    amber: "bg-blue-600", 
     blue: "bg-blue-600",
     violet: "bg-violet-600",
   };
+  
   const bg = accent ? colorMap[accent] || "bg-primary" : "bg-primary";
 
   return (

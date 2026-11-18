@@ -1,7 +1,8 @@
-
+// @ts-nocheck
 import { useCallback } from "react";
+import { Navigate, useLocation } from "react-router-dom";
 import {
-  CheckCircle2, ClipboardList, School, AlertTriangle,
+  CheckCircle2, ClipboardList, School, AlertTriangle, Loader2,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +26,8 @@ import StepPieces from "@/components/demande-ouverture/StepPieces";
 
 export default function DemandeOuverture() {
   const logic = useDemandeOuvertureLogic();
+  const location = useLocation();
+
   const {
     form, change, niveauKey, cfg, steps, currentStep, setCurrentStep,
     validationErrors, error, ok, loading,
@@ -48,7 +51,24 @@ export default function DemandeOuverture() {
     choisirVillageAlternatif,
     codeVillageSelectionne,
     zoneProposeeSelectionnee,
+    // 🔒 sécurité
+    estConnecte,
+    authLoading,
+    messageNonConnecte,
   } = logic;
+
+  /* 🔒 Blocage du rendu si non connecté */
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!estConnecte) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
 
   const stepId = steps[currentStep].id;
   const errors = validationErrors[stepId] || [];
@@ -64,7 +84,6 @@ export default function DemandeOuverture() {
 
   const estSurEtapeLocalisation = stepId === "localisation";
 
-  // ✅ Le blocage est levé dès qu'une zone proposée (avec ou sans nom) est sélectionnée
   const zoneProposeeChoisie = Boolean(zoneProposeeSelectionnee);
   const blocageEligibilite =
     estSurEtapeLocalisation &&
@@ -194,7 +213,7 @@ export default function DemandeOuverture() {
   };
 
   return (
-    <div className="space-y-2 pb-2">
+    <div className="space-y-4 pb-8">
       <div className="sticky top-0 z-30 border-b border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 shadow-sm">
         <div className="mx-auto max-w-none px-3 sm:px-4 py-2 sm:py-3">
           <div className="flex flex-wrap items-center gap-3">
@@ -221,20 +240,6 @@ export default function DemandeOuverture() {
         </div>
       </div>
 
-      {/* ✅ Bandeau d'éligibilité — bleu au lieu d'orange */}
-      {eligibiliteVillageErreur && !zoneProposeeChoisie && (
-        <div className="mx-3 sm:mx-4 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-300 dark:border-blue-800 text-blue-800 dark:text-blue-300 text-xs font-medium flex items-start gap-2">
-          <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <p className="font-semibold mb-0.5">Village non éligible</p>
-            <p>{eligibiliteVillageErreur}</p>
-            <p className="mt-1 text-[11px] opacity-80">
-              Sélectionnez une zone éligible proposée ci-dessous, ou un autre village de la liste, pour continuer.
-            </p>
-          </div>
-        </div>
-      )}
-
       {error && (
         <div className="mx-3 sm:mx-4 p-3 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 text-xs font-medium flex items-start gap-2">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
@@ -249,7 +254,7 @@ export default function DemandeOuverture() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="px-3 sm:px-4 space-y-2">
+      <form onSubmit={handleSubmit} className="px-3 sm:px-4 space-y-4">
         <StepProgressBar
           steps={steps}
           currentStep={currentStep}
@@ -261,8 +266,8 @@ export default function DemandeOuverture() {
               : null
           }
         />
-        <Card className="min-h-[320px]">
-          <CardContent className="p-2 sm:p-4">{renderStep()}</CardContent>
+        <Card className="min-h-[400px]">
+          <CardContent className="p-3 sm:p-5">{renderStep()}</CardContent>
         </Card>
         <StepFooter
           currentStep={currentStep}
@@ -275,7 +280,11 @@ export default function DemandeOuverture() {
           disabledNext={blocageEligibilite}
           blockedMessage={
             blocageEligibilite
-              ? "Sélectionnez une zone éligible proposée pour continuer."
+              ? (
+                  <span className="text-blue-600 dark:text-blue-400">
+                    Sélectionnez une zone éligible pour continuer.
+                  </span>
+                )
               : ""
           }
         />

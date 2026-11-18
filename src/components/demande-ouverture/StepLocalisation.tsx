@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { Loader2, AlertTriangle, MapPin, Navigation, Info, CheckCircle2 } from "lucide-react";
+import { Loader2, AlertTriangle, MapPin, Navigation, CheckCircle2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -147,10 +147,7 @@ export default function StepLocalisation({
   zoneProposeeSelectionnee = null,
 }) {
 
-  // 🔧 AJOUT : verrouillage DREN / CISCO selon l'utilisateur connecté
-  //   - isAdmin (admin + DPE) : tout est sélectionnable
-  //   - DREN  : DREN automatique (verrouillé), CISCO sélectionnable (dans son DREN)
-  //   - CISCO : DREN et CISCO automatiques (verrouillés)
+  // 🔧 Verrouillage DREN / CISCO selon l'utilisateur connecté
   const drenVerrouille = !isAdmin;
   const ciscoVerrouille = Boolean(isCISCO);
 
@@ -220,20 +217,11 @@ export default function StepLocalisation({
       {form.type_demande === "Nouvelle création" ? (
         <>
 
-          <div className="p-2.5 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-400 text-xs flex items-start gap-2">
-            <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-            <span>
-              {drenVerrouille
-                ? ciscoVerrouille
-                  ? "Votre DREN et votre CISCO sont renseignés automatiquement. Sélectionnez le ZAP, la Commune et le Fokontany, puis choisissez le village."
-                  : "Votre DREN est renseigné automatiquement. Sélectionnez le CISCO de votre DREN, le ZAP, la Commune et le Fokontany, puis choisissez le village."
-                : "Sélectionnez en cascade le DREN, le CISCO, le ZAP, la Commune et le Fokontany, puis choisissez le village."}
-            </span>
-          </div>
+          {/* Le bandeau d'information (Info) a été supprimé ici */}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
 
-            {/* DREN : automatique pour DREN et CISCO */}
+            {/* DREN */}
             <Field label="DREN" error={getFieldErrorMessage("dren")}>
               {drenVerrouille ? (
                 <Input
@@ -253,7 +241,7 @@ export default function StepLocalisation({
               )}
             </Field>
 
-            {/* CISCO : automatique pour CISCO uniquement */}
+            {/* CISCO */}
             <Field label="CISCO" error={getFieldErrorMessage("cisco")}>
               {ciscoVerrouille ? (
                 <Input
@@ -274,6 +262,7 @@ export default function StepLocalisation({
               )}
             </Field>
 
+            {/* ZAP */}
             <Field label="ZAP" error={getFieldErrorMessage("zap")}>
               <SelectAvecRecherche
                 value={locSelection.zap || ""}
@@ -292,6 +281,7 @@ export default function StepLocalisation({
               />
             </Field>
 
+            {/* Commune */}
             <Field label="Commune" error={getFieldErrorMessage("commune")}>
               <SelectAvecRecherche
                 value={locSelection.commune || ""}
@@ -304,6 +294,7 @@ export default function StepLocalisation({
               />
             </Field>
 
+            {/* Fokontany */}
             <Field label="Fokontany" error={getFieldErrorMessage("fokontany")}>
               <SelectAvecRecherche
                 value={locSelection.fokontany || ""}
@@ -316,6 +307,7 @@ export default function StepLocalisation({
               />
             </Field>
 
+            {/* Village */}
             <Field label="Village" error={getFieldErrorMessage("village")}>
               <Select
                 value={codeVillageSelectionne || ""}
@@ -365,6 +357,7 @@ export default function StepLocalisation({
                 </SelectContent>
               </Select>
 
+              {/* Message d'erreur d'éligibilité sous le champ */}
               {eligibiliteVillageErreur && (
                 <p className="text-xs text-blue-700 dark:text-blue-400 flex items-start gap-1 mt-1">
                   <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />

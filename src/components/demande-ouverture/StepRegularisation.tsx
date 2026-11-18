@@ -13,10 +13,6 @@ export default function StepRegularisation({
     <div className="space-y-5">
       <SectionBar num="3" title="Informations du régularisation" sub="" accent="amber" />
 
-      <div className="p-2.5 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-400 text-xs flex items-start gap-2">
-        <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-        <span>Les champs grisés sont récupérés automatiquement depuis l'ORS.</span>
-      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
         <ReadOnlyField label="Nombre de salle de classe" value={regularisation.nbr_salle} error={getFieldErrorMessage("nbr_salle")} />
@@ -35,7 +31,7 @@ export default function StepRegularisation({
         <CardContent>
           {personnelExistant.length === 0 ? (
             <div className="p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg text-amber-700 dark:text-amber-400 text-xs flex items-start gap-2">
-              <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+              
               <span>Aucune donnée de personnel enseignant n'a été retrouvée dans l'ORS pour cet établissement.</span>
             </div>
           ) : (

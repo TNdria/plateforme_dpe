@@ -19,8 +19,8 @@ export default function StepGeneral({
   isAdmin, isDPE, getNiveauxAutorises,
 }) {
   // ✅ On récupère les niveaux autorisés pour l'utilisateur
-  const niveauxDisponibles = getNiveauxAutorises
-    ? getNiveauxAutorises()
+  const niveauxDisponibles = getNiveauxAutorises 
+    ? getNiveauxAutorises() 
     : ["Préscolaire", "Primaire", "Collège", "Lycée"];
 
   // ✅ On verrouille le niveau UNIQUEMENT pour le DPE (forcé sur Lycée)
@@ -28,15 +28,15 @@ export default function StepGeneral({
   const verrouillerNiveau = isDPE || estRegularisation;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-5">
       <SectionBar num="1" title="Informations générales" sub="" accent="" />
 
       <Card className="bg-muted/30 border-border">
-        <CardHeader className="pb-2">
+        <CardHeader className="pb-3">
           <CardTitle className="text-sm sm:text-base">Informations du demandeur</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
             <Field label="Demandeur" error={getFieldErrorMessage("nom_demandeur")}>
               <Input type="text" placeholder="le demandeur"
                 className={cn(INPUT_CLS, getFieldErrorClass("nom_demandeur"))}
@@ -64,7 +64,7 @@ export default function StepGeneral({
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
         <Field label="Type de demande" error={getFieldErrorMessage("type_demande")}>
           <Select value={form.type_demande} onValueChange={(v) => change("type_demande", v)}>
             <SelectTrigger className={cn("h-9 w-full", getFieldErrorClass("type_demande"))}>
@@ -157,8 +157,8 @@ export default function StepGeneral({
             <Input className={cn(INPUT_CLS, "bg-muted text-muted-foreground")}
               value={form.niveau_etab || ""} readOnly disabled />
           ) : (
-            <Select
-              value={form.niveau_etab || ""}
+            <Select 
+              value={form.niveau_etab || ""} 
               onValueChange={(v) => change("niveau_etab", v)}
             >
               <SelectTrigger className={cn("h-9 w-full", getFieldErrorClass("niveau_etab"))}>

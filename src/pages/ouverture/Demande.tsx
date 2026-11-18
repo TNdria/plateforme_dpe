@@ -508,7 +508,7 @@ export default function Demandes() {
           <div className="flex items-center gap-2">
             <Database className="h-4 w-4 text-primary" />
             <h3 className="text-sm font-semibold text-foreground">
-              Liste des demandes — {NIVEAU_LABEL[filtres.niveau]}
+              Liste des demandes {NIVEAU_LABEL[filtres.niveau]}
             </h3>
             {demandesFiltrees.length > 0 && (
               <Badge variant="secondary" className="font-normal">
@@ -552,7 +552,7 @@ export default function Demandes() {
                         <td className="py-3 px-3 text-sm">{demande.demandeur}</td>
                         <td className="py-3 px-3 whitespace-nowrap text-sm">
                           <div className="flex items-center gap-2">
-                            <CalendarDays className="h-4 w-4 text-muted-foreground" /> {demande.date_depot}
+                             {demande.date_depot}
                           </div>
                         </td>
                         <td className="py-3 px-3 whitespace-nowrap">

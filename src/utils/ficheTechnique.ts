@@ -8,7 +8,6 @@ import {
   getEtablissementsProchesPourNiveau, getPiecesAnalyse, getPersonnelDetailAnalyse,
   getNomAireItem, getCodeAireItem, estPayeParEtat, estDiplomeSuperieur, valeurOuiNon,
   texteObstacle, getDistancePlusProche,
-  // ✅ Nouveaux helpers nouvelle création
   getVillageNonEligible, getZoneProposee,
 } from "@/utils/demandeHelpers";
 
@@ -16,6 +15,71 @@ import {
   SEUIL_EFFECTIF_MIN, SURFACE_NORME_M2, RAYON_TABLEAU_PROCHES_KM,
   FICHE_NIVEAU, NIVEAU_COLONNES_EFFECTIF,
 } from "@/components/demandes/ConstantesColonnes";
+
+/* ============================================================
+ * ✅ VORONOI — filtrage des villages/EPP qui alimentent réellement le futur
+ *    (même logique que la carte : un village n'est conservé que s'il est plus
+ *     proche du futur que de tout concurrent public non saturé).
+ * ============================================================ */
+const SEUIL_SATURATION_ELEVES = 2000;
+
+const _estPriveEtab = (e) => {
+  if (!e) return false;
+  const statut = String(e.statut_juridique ?? "")
+    .trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (statut === "prive") return true;
+  if (statut === "public") return false;
+  const secteur = e.secteur ?? e.secteur_code;
+  if (secteur !== null && secteur !== undefined && String(secteur).trim() !== "") {
+    const s = String(secteur).trim().toLowerCase();
+    if (s !== "0" && s !== "0.0" && s !== "public") return true;
+  }
+  return false;
+};
+
+const _estSatureEtab = (e) => {
+  if (!e) return false;
+  const eff = toNumber(e.effectif ?? e.effectif_total ?? e.nombre_eleves);
+  return eff !== null && eff >= SEUIL_SATURATION_ELEVES;
+};
+
+const _haversineKm = (lat1, lng1, lat2, lng2) => {
+  const R = 6371;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.asin(Math.min(1, Math.sqrt(a)));
+};
+
+const _filtrerAireVoronoi = (aire, proches, futurePos, estNouvelleCreation) => {
+  if (!estNouvelleCreation || !Array.isArray(aire) || !aire.length) return aire;
+  if (!futurePos) return aire;
+
+  const concurrents = (Array.isArray(proches) ? proches : [])
+    .filter((p) => !_estPriveEtab(p) && !_estSatureEtab(p))
+    .map((p) => {
+      const lat = toNumber(p.latitude ?? p.lat);
+      const lng = toNumber(p.longitude ?? p.lng ?? p.lon);
+      return lat !== null && lng !== null ? { lat, lng } : null;
+    })
+    .filter(Boolean);
+
+  if (!concurrents.length) return aire;
+
+  return aire.filter((v) => {
+    const latV = toNumber(v.latitude ?? v.lat);
+    const lngV = toNumber(v.longitude ?? v.lng ?? v.lon);
+    const dFutur = toNumber(v.distance_future ?? v.distance_km ?? v.distance);
+    if (latV === null || lngV === null || dFutur === null) return false;
+    const dConc = Math.min(
+      ...concurrents.map((c) => _haversineKm(latV, lngV, c.lat, c.lng))
+    );
+    return dFutur <= dConc;
+  });
+};
 
 export const genererFicheTechnique = (demande, carteBase64 = null, analyseValidee = null) => {
   if (!demande) return "";
@@ -29,7 +93,6 @@ export const genererFicheTechnique = (demande, carteBase64 = null, analyseValide
   const cfg = FICHE_NIVEAU[niveauKey] || FICHE_NIVEAU.primaire;
   const estEcole = niveauKey === "college" || niveauKey === "lycee";
 
-  // ✅ Nouvelle création : points particuliers
   const villageNonEligible = getVillageNonEligible(demande);
   const zoneProposee = getZoneProposee(demande);
   const remplaceVillage = Boolean(zoneProposee?.aUnNom);
@@ -38,8 +101,28 @@ export const genererFicheTechnique = (demande, carteBase64 = null, analyseValide
     zoneProposee && zoneProposee.aUnNom ? zoneProposee.nom : demande?.nom_etab
   );
   const commune = getLocalisationValue(demande, "commune");
-  const cisco = getLocalisationValue(demande, "cisco");
-  const dren = getLocalisationValue(demande, "dren");
+
+  const localisation = demande?.localisation_detail || demande?.localisation || {};
+
+  const resoudreNom = (val, fallback) => {
+    if (!val) return fallback || "—";
+    const str = String(val).trim();
+    if (!str || /^\d+$/.test(str) || ["0", "null", "undefined", "nan"].includes(str.toLowerCase())) {
+      return fallback || "—";
+    }
+    return str;
+  };
+
+  const cisco = resoudreNom(
+    localisation.cisco || localisation.nom_cisco || demande?.code_cisco,
+    "—"
+  );
+
+  const dren = resoudreNom(
+    localisation.dren || localisation.nom_dren || demande?.code_dren,
+    "—"
+  );
+
   const fokontany = getLocalisationValue(demande, "fokontany");
   const village = getLocalisationValue(demande, "village");
   const zap = getLocalisationValue(demande, "zap");
@@ -77,8 +160,23 @@ export const genererFicheTechnique = (demande, carteBase64 = null, analyseValide
     demande?.info_complementaire?.superficie_terrain,
   );
 
-  const aire = getAireRecrutementAnalyse(demande);
+  // ✅ VORONOI : filtrer l'aire pour la fiche technique (nouvelle création)
+  const aireBrute = getAireRecrutementAnalyse(demande);
   const proches = getEtablissementsProchesPourNiveau(demande);
+
+  const futurePos = (() => {
+    const lat = toNumber(demande?.latitude ?? demande?.localisation?.latitude);
+    const lng = toNumber(demande?.longitude ?? demande?.localisation?.longitude);
+    return lat !== null && lng !== null ? [lat, lng] : null;
+  })();
+
+  const aire = _filtrerAireVoronoi(
+    aireBrute,
+    proches,
+    futurePos,
+    !estRegularisation
+  );
+
   const pieces = getPiecesAnalyse(demande);
   const evolutionNorm = normaliserEvolutionPourAffichage(demande);
 
@@ -104,7 +202,6 @@ export const genererFicheTechnique = (demande, carteBase64 = null, analyseValide
     const colgroup = largeurs.length
       ? `<colgroup>${largeurs.map((w) => `<col style="width:${w}%" width="${w}%" />`).join("")}</colgroup>`
       : "";
-    // Ligne de total : simplement en gras, sans aucune couleur de fond
     const corps = tbody.replace(/<tr class="total">[\s\S]*?<\/tr>/g, (m) =>
       m.replace(/<td /g, '<td style="font-weight:bold;" ')
     );
@@ -114,14 +211,12 @@ export const genererFicheTechnique = (demande, carteBase64 = null, analyseValide
   const tiret = (html) => `<p class="tiret">–&nbsp;&nbsp;${html}</p>`;
   const puce = (html) => `<p class="puce-titre">•&nbsp;&nbsp;${html}</p>`;
   const vide = `<p class="vide">NÉANT</p>`;
-  // Titre de section : numéro en gras, intitulé souligné (comme la fiche de référence)
   const section = (num, titre) =>
     `<h2><span class="num">${num} -</span>&nbsp;&nbsp;&nbsp;<u>${esc(titre)}</u> :</h2>`;
   const sousTitre = (num, titre) => `<h3>${num ? `${num} - ` : ""}${esc(titre)}</h3>`;
   const ligneLoc = (label, valeur) =>
     `<p class="loc">${esc(label).padEnd(10, " ").replace(/ /g, "&nbsp;")}<span class="deux-points">:</span> <strong>${esc(valeur)}</strong></p>`;
 
-  // ✅ Mention nouvelle création dans l'objet
   const suffixeVillage = (() => {
     if (zoneProposee && zoneProposee.aUnNom) {
       return ` <em>(zone éligible : ${esc(zoneProposee.nom)})</em>`;
@@ -152,7 +247,6 @@ export const genererFicheTechnique = (demande, carteBase64 = null, analyseValide
     [village !== "—" ? village : "", fokontany !== "—" ? `fokontany ${fokontany}` : ""]
       .filter(Boolean).join(", ") || "NÉANT";
 
-  // ✅ Bloc localisation enrichi avec les infos nouvelle création
   const nouvelleCreationLocalisationHtml = (() => {
     if (!villageNonEligible && !zoneProposee) return "";
 
@@ -470,7 +564,6 @@ export const genererFicheTechnique = (demande, carteBase64 = null, analyseValide
     c5 = `La surface du terrain disponible pour la construction des infrastructures scolaires est de <strong>${esc(fmtMilliers(surfaceNum))} m²</strong>, <strong>inférieure</strong> à la norme requise de ${esc(fmtMilliers(normeSurface))} m².`;
   }
 
-  // ✅ Conclusion : mention de l'éligibilité
   const mentionEligibilite = (() => {
     if (zoneProposee && zoneProposee.aUnNom) {
       return `Le village initialement sélectionné${villageNonEligible?.nom ? ` (« ${esc(villageNonEligible.nom)} »)` : ""} n'est pas éligible à une nouvelle création. La zone éligible <strong>${esc(zoneProposee.nom)}</strong> a été retenue pour l'implantation de ${esc(cfg.leNouveau)}.`;
@@ -492,9 +585,6 @@ export const genererFicheTechnique = (demande, carteBase64 = null, analyseValide
     ? `${mentionEligibilite} ${verdictHtml}`
     : verdictHtml;
 
-  // ─────────────────────────────────────────────────────────────
-  // DESIGN : identique à la fiche de référence
-  // ─────────────────────────────────────────────────────────────
   const css = `
     @page { size: A4; margin: 15mm; }
     body { font-family: "Times New Roman", Times, serif; font-size: 12pt; line-height: 1.5; color: #000000; background: #ffffff; }
