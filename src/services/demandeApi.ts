@@ -1,30 +1,72 @@
-// @ts-nocheck
-const BASE_URL =
-  (import.meta as any)?.env?.VITE_API_URL || "http://127.0.0.1:8000/api";
 
-const BASE_URL_NORMALISEE = (() => {
-  const base = String(BASE_URL).trim().replace(/\/+$/, "");
-  return /\/api$/i.test(base) ? base : `${base}/api`;
-})();
+// @ts-nocheck
+
+const DEFAULT_DJANGO_BACKEND_URL = "https://dpe-men.mg";
+
+function normalizeDjangoBackendUrl(url: string) {
+  const cleaned = String(url || DEFAULT_DJANGO_BACKEND_URL)
+    .trim()
+    .replace(/\/+$/, "");
+
+  // Remplacement de l'adresse IP uniquement pour le module Ouverture.
+  // Les autres modules continuent d'utiliser leur configuration habituelle.
+  return cleaned.replace(
+    /^https?:\/\/102\.16\.234\.114(?::\d+)?$/i,
+    DEFAULT_DJANGO_BACKEND_URL
+  );
+}
+
+const BASE_URL_NORMALISEE = normalizeDjangoBackendUrl(
+  (import.meta as any)?.env?.VITE_API_URL ||
+    DEFAULT_DJANGO_BACKEND_URL
+);
+
+// ============================================================
+// TOKEN CSRF DJANGO
+// ============================================================
 
 function getCsrfToken() {
-  const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  const match = document.cookie.match(
+    /(?:^|;\s*)csrftoken=([^;]+)/
+  );
+
   return match ? decodeURIComponent(match[1]) : null;
 }
 
+// ============================================================
+// FONCTION PRINCIPALE DE REQUÊTE
+// ============================================================
+
 async function request(path, options = {}) {
-  const isFormData = options.body instanceof FormData;
+  const isFormData =
+    typeof FormData !== "undefined" &&
+    options.body instanceof FormData;
 
   const headers = {
     Accept: "application/json",
-    ...(isFormData ? {} : { "Content-Type": "application/json" }),
-    ...((options.headers) || {}),
+
+    ...(isFormData
+      ? {}
+      : { "Content-Type": "application/json" }),
+
+    ...(options.headers || {}),
   };
 
   const csrfToken = getCsrfToken();
-  if (csrfToken) headers["X-CSRFToken"] = csrfToken;
 
-  const chemin = path.startsWith("/") ? path : `/${path}`;
+  if (csrfToken) {
+    headers["X-CSRFToken"] = csrfToken;
+  }
+
+  const chemin = path.startsWith("/")
+    ? path
+    : `/${path}`;
+
+  // Aucun préfixe /api ajouté automatiquement.
   const url = `${BASE_URL_NORMALISEE}${chemin}`;
 
   try {
@@ -34,79 +76,182 @@ async function request(path, options = {}) {
       headers,
     });
 
+    // ========================================================
+    // GESTION DES ERREURS HTTP
+    // ========================================================
+
     if (!response.ok) {
       const responseText = await response.text();
+
       let detail = "";
+
       if (responseText) {
         try {
           const data = JSON.parse(responseText);
+
           detail =
-            data?.detail || data?.error || data?.message || JSON.stringify(data);
+            data?.detail ||
+            data?.error ||
+            data?.message ||
+            JSON.stringify(data);
         } catch {
           detail = responseText;
         }
       }
-      throw new Error(detail || `Erreur ${response.status} sur ${url}`);
+
+      const error = new Error(
+        detail || `Erreur ${response.status} sur ${url}`
+      );
+
+      error.status = response.status;
+      error.url = url;
+
+      throw error;
     }
 
-    if (response.status === 204) return undefined;
+    // ========================================================
+    // RÉPONSE SANS CONTENU
+    // ========================================================
+
+    if (response.status === 204) {
+      return undefined;
+    }
 
     const responseText = await response.text();
-    if (!responseText) return undefined;
+
+    if (!responseText) {
+      return undefined;
+    }
+
+    // ========================================================
+    // CONVERSION JSON
+    // ========================================================
 
     try {
       return JSON.parse(responseText);
     } catch {
-      throw new Error(`La réponse du serveur n'est pas un JSON valide pour ${url}`);
+      throw new Error(
+        `La réponse du serveur n'est pas un JSON valide pour ${url}`
+      );
     }
-  } catch (e) {
-    // Si l'appelant a annulé (AbortController externe), on propage tel quel
-    if (e?.name === "AbortError") throw e;
-    throw e;
+  } catch (error) {
+    // Conserver le comportement d'annulation AbortController.
+    if (error?.name === "AbortError") {
+      throw error;
+    }
+
+    console.error(
+      `[API Ouverture] Erreur lors de la requête : ${url}`,
+      error
+    );
+
+    throw error;
   }
 }
 
+// ============================================================
+// MÉTHODES API
+// ============================================================
+
 export const api = {
   get: (path, options = {}) =>
-    request(path, { ...options, method: "GET" }),
+    request(path, {
+      ...options,
+      method: "GET",
+    }),
 
   post: (path, body, options = {}) =>
     request(path, {
       ...options,
       method: "POST",
-      body: body instanceof FormData ? body : JSON.stringify(body ?? {}),
+      body:
+        typeof FormData !== "undefined" &&
+        body instanceof FormData
+          ? body
+          : JSON.stringify(body ?? {}),
     }),
 
   patch: (path, body, options = {}) =>
     request(path, {
       ...options,
       method: "PATCH",
-      body: body instanceof FormData ? body : JSON.stringify(body ?? {}),
+      body:
+        typeof FormData !== "undefined" &&
+        body instanceof FormData
+          ? body
+          : JSON.stringify(body ?? {}),
     }),
 
   del: (path, options = {}) =>
-    request(path, { ...options, method: "DELETE" }),
+    request(path, {
+      ...options,
+      method: "DELETE",
+    }),
 };
 
+// ============================================================
+// CONVERSION D'UNE RÉPONSE API EN LISTE
+// ============================================================
+
 export function asList(response) {
-  if (!response) return [];
-  if (Array.isArray(response)) return response;
-  if (Array.isArray(response?.results)) return response.results;
+  if (!response) {
+    return [];
+  }
+
+  if (Array.isArray(response)) {
+    return response;
+  }
+
+  if (Array.isArray(response?.results)) {
+    return response.results;
+  }
+
   return [];
 }
 
-export async function verifierEligibiliteVillage(params, options = {}) {
+// ============================================================
+// VÉRIFICATION DE L'ÉLIGIBILITÉ D'UN VILLAGE
+// ============================================================
+
+export async function verifierEligibiliteVillage(
+  params,
+  options = {}
+) {
   const usp = new URLSearchParams();
-  if (params.nom_village) usp.set("nom_village", params.nom_village);
-  if (params.code_village != null && params.code_village !== "")
+
+  if (params?.nom_village) {
+    usp.set("nom_village", params.nom_village);
+  }
+
+  if (
+    params?.code_village != null &&
+    params.code_village !== ""
+  ) {
     usp.set("code_village", String(params.code_village));
-  if (params.code_cisco != null && params.code_cisco !== "")
+  }
+
+  if (
+    params?.code_cisco != null &&
+    params.code_cisco !== ""
+  ) {
     usp.set("code_cisco", String(params.code_cisco));
-  if (params.niveau) usp.set("niveau", params.niveau);
-  if (params.commune) usp.set("commune", params.commune);
+  }
+
+  if (params?.niveau) {
+    usp.set("niveau", params.niveau);
+  }
+
+  if (params?.commune) {
+    usp.set("commune", params.commune);
+  }
+
+  const query = usp.toString();
+
+  const path =
+    "/ouverture/referentiel/villages/eligible-nouvelle-creation/";
 
   return api.get(
-    `/ouverture/referentiel/villages/eligible-nouvelle-creation/?${usp.toString()}`,
+    query ? `${path}?${query}` : path,
     options
   );
 }
