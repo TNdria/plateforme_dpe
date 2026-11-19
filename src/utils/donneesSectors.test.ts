@@ -79,6 +79,7 @@ describe("buildSectorGroups", () => {
         pers_admin: 20,
         ens_fonct: 50,
         ens_enf: 30,
+        ens_sub: 10,
         admin_fonct: 12,
         admin_enf: 8,
         eff_t1: 0,
@@ -88,6 +89,10 @@ describe("buildSectorGroups", () => {
     expect(pub.ens).toBe(80);
     expect(pub.ensFonct).toBe(50);
     expect(pub.ensEnf).toBe(30);
+    // Enseignants en classe = fonctionnaires + ENF subventionnés + non subventionnés.
+    expect(pub.ensSub).toBe(10);
+    expect(pub.ensNonSub).toBe(20);
+    expect(pub.ensFonct + pub.ensSub + pub.ensNonSub).toBe(pub.ens);
     expect(pub.admin).toBe(20);
     expect(pub.adminFonct).toBe(12);
     expect(pub.adminEnf).toBe(8);

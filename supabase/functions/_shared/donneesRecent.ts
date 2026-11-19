@@ -196,7 +196,7 @@ export function buildDonneesRecentSql(
       COALESCE(eveff.eff_2024, 0) AS eff_2024, COALESCE(eveff.eff_2025, 0) AS eff_2025,
       COALESCE(p1p.total, pers.total) AS pers_total,
       COALESCE(p1p.en_classe, pers.en_classe) AS en_classe,
-      p1p.pers_admin, p1p.ens_fonct, p1p.ens_enf,
+      p1p.pers_admin, p1p.ens_fonct, p1p.ens_enf, p1p.ens_sub,
       p1p.admin_fonct, p1p.admin_enf,
       pers.fonctionnaire, pers.fram_sub, pers.fram_nonsub, pers.bepc, pers.bacc, pers.qualifiee,
       ${cfg.effCols}${currentEffCol}, ${annee} AS "ANNEE_SCOLAIRE"
@@ -216,6 +216,9 @@ export function buildDonneesRecentSql(
         COUNT(*) FILTER (WHERE COALESCE("EN_SALLE", 0) = 0) AS pers_admin,
         COUNT(*) FILTER (WHERE COALESCE("EN_SALLE", 0) = 1 AND "CODE_STATUT" IN ('1','2')) AS ens_fonct,
         COUNT(*) FILTER (WHERE COALESCE("EN_SALLE", 0) = 1 AND "CODE_STATUT" NOT IN ('1','2')) AS ens_enf,
+        -- Parmi les ENF enseignants : statut 3 = FRAM subventionné, les autres
+        -- statuts (4 = FRAM non subventionné, 9 = autres) sont non subventionnés.
+        COUNT(*) FILTER (WHERE COALESCE("EN_SALLE", 0) = 1 AND "CODE_STATUT" = '3') AS ens_sub,
         COUNT(*) FILTER (WHERE COALESCE("EN_SALLE", 0) = 0 AND "CODE_STATUT" IN ('1','2')) AS admin_fonct,
         COUNT(*) FILTER (WHERE COALESCE("EN_SALLE", 0) = 0 AND "CODE_STATUT" NOT IN ('1','2')) AS admin_enf
       FROM fpe_p1

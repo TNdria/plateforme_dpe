@@ -45,7 +45,12 @@ import { cn } from "@/lib/utils";
 import { getZoneInfo } from "@/lib/zone";
 import logoMen from "@/assets/logoMen.jpg";
 import logoDpe from "@/assets/logoDpe.jpg";
-import { buildSectorGroups, getTotalEleves, type Niveau } from "@/utils/donneesSectors";
+import {
+  buildSectorGroups,
+  getTotalEleves,
+  type Niveau,
+  type SectorGroup,
+} from "@/utils/donneesSectors";
 import { resolveDonneesScope } from "@/utils/donneesScope";
 import {
   DEFAULT_SCHOOL_YEAR,
@@ -960,33 +965,12 @@ const Donnees = () => {
           const icon = section === "ecoles" ? School : section === "eleves" ? Users : GraduationCap;
           const base = section === "ecoles" ? "Établissements" : section === "eleves" ? "Élèves" : "Personnels";
           const value = section === "ecoles" ? g.etabs : section === "eleves" ? g.eleves : g.pers;
-          // Chaque catégorie (enseignants en classe / administratif) est
-          // affichée une seule fois en colonne ; les statuts sont en lignes.
-          const personnelValue = (n: number) =>
-            g.breakdownKnown ? formatNumber(n) : "—";
+          // Le détail reste distinct par catégorie : les enseignants en classe
+          // seuls sont ventilés en subventionnés / non subventionnés.
+          // Un secteur absent du périmètre (filtre secteur) n'a pas de
+          // ventilation à montrer : ni détail, ni message de donnée manquante.
           const breakdown =
-            section === "personnels"
-              ? {
-                  columns: [
-                    { label: "Enseignants", title: "Personnel enseignant en classe" },
-                    { label: "Administratif", title: "Personnel administratif (PA)" },
-                  ],
-                  rows: [
-                    {
-                      label: "Total",
-                      values: [personnelValue(g.ens), personnelValue(g.admin)],
-                    },
-                    {
-                      label: "Fonctionnaires",
-                      values: [personnelValue(g.ensFonct), personnelValue(g.adminFonct)],
-                    },
-                    {
-                      label: "ENF",
-                      values: [personnelValue(g.ensEnf), personnelValue(g.adminEnf)],
-                    },
-                  ],
-                }
-              : undefined;
+            section === "personnels" && g.etabs > 0 ? buildPersonnelBreakdown(g) : undefined;
           return (
             <StatCard
               key={g.key}
@@ -998,9 +982,13 @@ const Donnees = () => {
               value={formatNumber(value)}
               breakdown={breakdown}
               hint={
-                section === "personnels" && !g.breakdownKnown
-                  ? "Ventilation par statut non disponible"
-                  : "Dans le périmètre filtré"
+                section !== "personnels"
+                  ? "Dans le périmètre filtré"
+                  : g.etabs === 0
+                    ? "Aucun établissement dans le périmètre"
+                    : g.breakdownKnown
+                      ? "Dans le périmètre filtré"
+                      : "Ventilation par statut non disponible"
               }
             />
           );
@@ -1265,8 +1253,56 @@ const FilterField = ({
 type StatCardTheme = { ring: string; iconBg: string; iconColor: string; tint: string; tintBorder: string };
 
 type StatCardBreakdown = {
-  columns: { label: string; title?: string }[];
-  rows: { label: string; values: string[] }[];
+  // Faux quand la ventilation par statut n'est pas servie : on affiche alors
+  // des tirets plutôt que des zéros trompeurs.
+  available: boolean;
+  groups: {
+    label: string;
+    total: number;
+    // Statuts composant la catégorie ; absents quand seul le total est connu.
+    lines?: { label: string; value: number }[];
+  }[];
+};
+
+/**
+ * Détail Personnels d'une carte de synthèse. Dans le public, l'enseignement en
+ * classe se décompose en fonctionnaires + ENF subventionnés + ENF non
+ * subventionnés, et le personnel administratif en fonctionnaires + ENF. Le
+ * privé et le total n'affichent que les deux catégories dont la somme forme le
+ * total de la carte.
+ */
+const buildPersonnelBreakdown = (g: SectorGroup): StatCardBreakdown => {
+  if (g.key === "public") {
+    return {
+      available: g.breakdownKnown,
+      groups: [
+        {
+          label: "Enseignants en classe",
+          total: g.ens,
+          lines: [
+            { label: "Fonctionnaires", value: g.ensFonct },
+            { label: "ENF subventionnés", value: g.ensSub },
+            { label: "ENF non subventionnés", value: g.ensNonSub },
+          ],
+        },
+        {
+          label: "Personnel administratif",
+          total: g.admin,
+          lines: [
+            { label: "Fonctionnaires", value: g.adminFonct },
+            { label: "ENF", value: g.adminEnf },
+          ],
+        },
+      ],
+    };
+  }
+  return {
+    available: g.breakdownKnown,
+    groups: [
+      { label: "Enseignants en classe", total: g.ens },
+      { label: "Personnel administratif", total: g.admin },
+    ],
+  };
 };
 
 const StatCard = ({
@@ -1288,9 +1324,22 @@ const StatCard = ({
   breakdown?: StatCardBreakdown;
   highlight?: boolean;
 }) => {
-  // Le tableau de ventilation est masqué au départ : la carte reste compacte
-  // et le chevron révèle le détail sans quitter la page.
+  // Le détail est masqué au départ : la carte reste compacte et le chevron
+  // révèle la composition sans quitter la page. Le public ouvre d'abord les
+  // deux catégories, puis un second chevron révèle la ventilation par statut.
   const [showBreakdown, setShowBreakdown] = useState(false);
+  const [showStatuses, setShowStatuses] = useState(false);
+  const hasStatuses = breakdown?.groups.some((group) => group.lines?.length) ?? false;
+  const breakdownTotal = breakdown
+    ? breakdown.groups.reduce((sum, group) => sum + group.total, 0)
+    : 0;
+  const breakdownValue = (n: number) => (breakdown?.available ? formatNumber(n) : "—");
+  // Chaque part est rapportée au total de la carte : les lignes d'un groupe
+  // comme les groupes eux-mêmes s'additionnent à 100 %.
+  const breakdownShare = (n: number) =>
+    breakdown?.available && breakdownTotal > 0
+      ? `${Math.round((n / breakdownTotal) * 100)} %`
+      : "";
   return (
     <Card
       className={cn(
@@ -1324,7 +1373,7 @@ const StatCard = ({
       <p className="px-5 pb-3 pt-2 text-3xl font-bold leading-none tracking-tight tabular-nums text-foreground">
         {value}
       </p>
-      {breakdown && breakdown.rows.length > 0 && (
+      {breakdown && breakdown.groups.length > 0 && (
         // Dépliage animé façon tiroir : la grille passe de 0fr à 1fr, ce qui
         // anime une hauteur inconnue sans mesure JavaScript.
         <div
@@ -1337,45 +1386,54 @@ const StatCard = ({
           )}
         >
           <div className="overflow-hidden">
-            <div className={cn("border-t border-border/50 px-5 pb-2", theme.tint)}>
-              <table className="w-full table-fixed border-collapse text-[11px]">
+            <div className={cn("border-t border-border/50 px-5 py-3", theme.tint)}>
+              <table className="w-full border-collapse text-[11px]">
+                <caption className="sr-only">Répartition des personnels par catégorie</caption>
                 <thead>
                   <tr className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                    <th className="w-[32%] py-2 pr-1 text-left font-medium">Statut</th>
-                    {breakdown.columns.map((column) => (
-                      <th
-                        key={column.label}
-                        title={column.title}
-                        className="py-2 pl-1 text-right font-medium leading-tight"
-                      >
-                        {column.label}
-                      </th>
-                    ))}
+                    <th scope="col" className="pb-1.5 text-left font-medium">
+                      Catégorie
+                    </th>
+                    <th scope="col" className="pb-1.5 pl-2 text-right font-medium">
+                      Effectif
+                    </th>
+                    <th scope="col" className="w-10 pb-1.5 pl-2 text-right font-medium">
+                      Part
+                    </th>
                   </tr>
                 </thead>
-                <tbody>
-                  {breakdown.rows.map((row, rowIndex) => (
-                    <tr key={row.label} className="border-t border-border/40">
-                      <th
-                        scope="row"
-                        className={cn(
-                          "py-2 pr-1 text-left font-medium",
-                          rowIndex === 0 ? "text-foreground" : "text-muted-foreground",
-                        )}
-                      >
-                        {row.label}
-                      </th>
-                      {row.values.map((cell, cellIndex) => (
-                        <td
-                          key={`${row.label}-${cellIndex}`}
-                          className="py-2 pl-1 text-right font-semibold tabular-nums text-foreground"
-                        >
-                          {cell}
+                {breakdown.groups.map((group) => (
+                  <tbody key={group.label}>
+                    <tr className="border-t border-border/50">
+                        <th scope="row" className="py-1.5 text-left font-semibold text-foreground">
+                          {group.label}
+                        </th>
+                        <td className="py-1.5 pl-2 text-right font-semibold tabular-nums text-foreground">
+                          {breakdownValue(group.total)}
                         </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
+                        <td className="py-1.5 pl-2 text-right tabular-nums text-muted-foreground">
+                          {breakdownShare(group.total)}
+                        </td>
+                      </tr>
+                      {showStatuses &&
+                        group.lines?.map((line) => (
+                          <tr key={line.label}>
+                            <th
+                              scope="row"
+                              className="py-1 pl-3 text-left font-normal text-muted-foreground"
+                            >
+                              {line.label}
+                            </th>
+                            <td className="py-1 pl-2 text-right font-semibold tabular-nums text-foreground">
+                              {breakdownValue(line.value)}
+                            </td>
+                            <td className="py-1 pl-2 text-right tabular-nums text-muted-foreground">
+                              {breakdownShare(line.value)}
+                            </td>
+                          </tr>
+                        ))}
+                  </tbody>
+                ))}
               </table>
             </div>
           </div>
@@ -1384,25 +1442,49 @@ const StatCard = ({
       {(hint || breakdown) && (
         <div className="mt-auto flex items-center justify-between gap-2 border-t border-border/50 px-5 py-2">
           <p className="min-w-0 truncate text-[11px] text-muted-foreground">{hint}</p>
-          {breakdown && breakdown.rows.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowBreakdown((value) => !value)}
-              aria-expanded={showBreakdown}
-              aria-label={
-                showBreakdown ? "Masquer le détail par statut" : "Afficher le détail par statut"
-              }
-              className="inline-flex shrink-0 items-center gap-0.5 text-[11px] font-semibold text-primary transition-colors hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-            >
-              {showBreakdown ? "Masquer" : "Voir le détail"}
-              <ChevronDown
-                aria-hidden="true"
-                className={cn(
-                  "h-3.5 w-3.5 transition-transform duration-300 ease-out motion-reduce:transition-none",
-                  showBreakdown && "rotate-180",
-                )}
-              />
-            </button>
+          {breakdown && breakdown.groups.length > 0 && (
+            <div className="flex shrink-0 items-center gap-2">
+              {showBreakdown && hasStatuses && (
+                <button
+                  type="button"
+                  onClick={() => setShowStatuses((value) => !value)}
+                  aria-expanded={showStatuses}
+                  aria-label={
+                    showStatuses
+                      ? "Masquer le détail des personnels par statut"
+                      : "Afficher le détail des personnels par statut"
+                  }
+                  className="inline-flex shrink-0 items-center gap-0.5 text-[11px] font-semibold text-primary transition-colors hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+                >
+                  {showStatuses ? "Réduire les statuts" : "Détail par statut"}
+                  <ChevronDown
+                    aria-hidden="true"
+                    className={cn(
+                      "h-3.5 w-3.5 transition-transform duration-300 ease-out motion-reduce:transition-none",
+                      showStatuses && "rotate-180",
+                    )}
+                  />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowBreakdown((value) => !value)}
+                aria-expanded={showBreakdown}
+                aria-label={
+                  showBreakdown ? "Masquer le détail des personnels" : "Afficher le détail des personnels"
+                }
+                className="inline-flex shrink-0 items-center gap-0.5 text-[11px] font-semibold text-primary transition-colors hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+              >
+                {showBreakdown ? "Masquer" : "Voir le détail"}
+                <ChevronDown
+                  aria-hidden="true"
+                  className={cn(
+                    "h-3.5 w-3.5 transition-transform duration-300 ease-out motion-reduce:transition-none",
+                    showBreakdown && "rotate-180",
+                  )}
+                />
+              </button>
+            </div>
           )}
         </div>
       )}

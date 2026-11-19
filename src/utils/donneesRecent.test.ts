@@ -43,6 +43,10 @@ describe('buildDonneesRecentSql — millésimes servis', () => {
     expect(sql).toContain('AS pers_admin');
     expect(sql).toContain('AS ens_fonct');
     expect(sql).toContain('AS ens_enf');
+    // Statut 3 = FRAM subventionné, isolé pour distinguer subventionnés et non
+    // subventionnés parmi les ENF enseignants.
+    expect(sql).toContain('AS ens_sub');
+    expect(sql).toContain('"CODE_STATUT" = \'3\'');
     expect(sql).toContain('AS admin_fonct');
     expect(sql).toContain('AS admin_enf');
     // EN_SALLE distingue les deux catégories ; le statut 1-2 (État) est

@@ -17,6 +17,11 @@ export type SectorGroup = {
   ens: number;
   ensFonct: number;
   ensEnf: number;
+  // Parmi les ENF enseignants : subventionnés (FRAM subventionné) et non
+  // subventionnés (FRAM non subventionné + autres statuts). ensSub +
+  // ensNonSub = ensEnf, donc ensFonct + ensSub + ensNonSub = ens.
+  ensSub: number;
+  ensNonSub: number;
   admin: number;
   adminFonct: number;
   adminEnf: number;
@@ -72,6 +77,8 @@ export const buildSectorGroups = (data: any[], niveau: Niveau): SectorGroup[] =>
       : Math.max(pers - ens, 0);
     const ensFonct = sumBy(rows, "ens_fonct");
     const ensEnf = sumBy(rows, "ens_enf");
+    const ensSub = sumBy(rows, "ens_sub");
+    const ensNonSub = Math.max(0, ensEnf - ensSub);
     const adminFonct = sumBy(rows, "admin_fonct");
     const adminEnf = sumBy(rows, "admin_enf");
     const breakdownKnown =
@@ -92,6 +99,8 @@ export const buildSectorGroups = (data: any[], niveau: Niveau): SectorGroup[] =>
       ens,
       ensFonct,
       ensEnf,
+      ensSub,
+      ensNonSub,
       admin,
       adminFonct,
       adminEnf,
