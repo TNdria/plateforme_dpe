@@ -12,6 +12,17 @@ export type SectorGroup = {
   pers: number;
   fonct: number;
   enf: number;
+  // Personnel enseignant (en classe) et administratif (PA), ventilés par
+  // statut. Les deux catégories et leurs totaux restent distincts.
+  ens: number;
+  ensFonct: number;
+  ensEnf: number;
+  admin: number;
+  adminFonct: number;
+  adminEnf: number;
+  // Faux si la source ne fournit aucune ventilation par statut : la carte
+  // affiche alors « — » plutôt qu'un zéro inventé.
+  breakdownKnown: boolean;
   sub: number;
   nonSub: number;
   // Une colonne FRAM vide dans toutes les lignes du groupe signifie « non
@@ -55,6 +66,19 @@ export const buildSectorGroups = (data: any[], niveau: Niveau): SectorGroup[] =>
     const pers = sumBy(rows, "pers_total");
     // Personnel de l'État = fonctionnaires + contractuels de l'État.
     const fonct = sumBy(rows, "fonctionnaire") + sumBy(rows, "contractuel");
+    const ens = sumBy(rows, "en_classe");
+    const admin = hasAnyValue(rows, "pers_admin")
+      ? sumBy(rows, "pers_admin")
+      : Math.max(pers - ens, 0);
+    const ensFonct = sumBy(rows, "ens_fonct");
+    const ensEnf = sumBy(rows, "ens_enf");
+    const adminFonct = sumBy(rows, "admin_fonct");
+    const adminEnf = sumBy(rows, "admin_enf");
+    const breakdownKnown =
+      hasAnyValue(rows, "ens_fonct") ||
+      hasAnyValue(rows, "ens_enf") ||
+      hasAnyValue(rows, "admin_fonct") ||
+      hasAnyValue(rows, "admin_enf");
     const sub = sumBy(rows, "fram_sub");
     const nonSubKnown = hasAnyValue(rows, "fram_nonsub") || hasAnyValue(rows, "autres");
     // Non subventionnés = FRAM non subventionnés + autres (reste du personnel).
@@ -65,6 +89,13 @@ export const buildSectorGroups = (data: any[], niveau: Niveau): SectorGroup[] =>
       pers,
       fonct,
       enf: Math.max(0, pers - fonct),
+      ens,
+      ensFonct,
+      ensEnf,
+      admin,
+      adminFonct,
+      adminEnf,
+      breakdownKnown,
       sub,
       nonSub,
       subKnown: hasAnyValue(rows, "fram_sub"),

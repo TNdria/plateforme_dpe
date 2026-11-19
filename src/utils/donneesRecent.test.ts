@@ -37,6 +37,22 @@ describe('buildDonneesRecentSql — millésimes servis', () => {
     expect(sql).toContain('v.eff_total AS "eff_2026"');
   });
 
+  it('ventile enseignants et personnel administratif par statut depuis fpe_p1', () => {
+    const sql = build(2026);
+    expect(sql).toContain('FROM fpe_p1');
+    expect(sql).toContain('AS pers_admin');
+    expect(sql).toContain('AS ens_fonct');
+    expect(sql).toContain('AS ens_enf');
+    expect(sql).toContain('AS admin_fonct');
+    expect(sql).toContain('AS admin_enf');
+    // EN_SALLE distingue les deux catégories ; le statut 1-2 (État) est
+    // séparé des ENF pour chacune d'elles.
+    expect(sql).toContain('COALESCE("EN_SALLE", 0) = 1');
+    expect(sql).toContain('COALESCE("EN_SALLE", 0) = 0');
+    expect(sql).toContain('"CODE_STATUT" IN (\'1\',\'2\')');
+    expect(sql).toContain('"CODE_STATUT" NOT IN (\'1\',\'2\')');
+  });
+
   it('refuse les millésimes absents des tables de collecte', () => {
     expect(() => build(MIN_DONNEES_ANNEE - 1)).toThrow();
   });

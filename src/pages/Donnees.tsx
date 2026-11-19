@@ -272,6 +272,7 @@ const getPersonnelsColumns = (annee: string = String(DEFAULT_SCHOOL_YEAR)) => [
     align: "right" as const,
     width: 130,
   },
+  // Personnel enseignant (en classe) : total puis ventilation par statut.
   {
     key: "en_classe",
     label: "ENSEIGNANTS EN CLASSE",
@@ -279,16 +280,35 @@ const getPersonnelsColumns = (annee: string = String(DEFAULT_SCHOOL_YEAR)) => [
     width: 160,
   },
   {
-    key: "fonctionnaire",
-    label: "FONCTIONNAIRES",
+    key: "ens_fonct",
+    label: "ENS. FONCTIONNAIRES",
     align: "right" as const,
     width: 130,
   },
   {
-    key: "contractuel",
-    label: "CONTRACTUELS",
+    key: "ens_enf",
+    label: "ENS. ENF",
     align: "right" as const,
-    width: 120,
+    width: 100,
+  },
+  // Personnel administratif (PA) : total puis ventilation par statut.
+  {
+    key: "pers_admin",
+    label: "PERSONNEL ADMINISTRATIF (PA)",
+    align: "right" as const,
+    width: 160,
+  },
+  {
+    key: "admin_fonct",
+    label: "PA FONCTIONNAIRES",
+    align: "right" as const,
+    width: 130,
+  },
+  {
+    key: "admin_enf",
+    label: "PA ENF",
+    align: "right" as const,
+    width: 100,
   },
   { key: "fram_sub", label: "FRAM SUB", align: "right" as const, width: 100 },
   {
@@ -542,7 +562,7 @@ const Donnees = () => {
     },
     {
       id: "personnels",
-      label: "Données enseignants",
+      label: "Données personnels",
       icon: GraduationCap,
       getColumns: () => getPersonnelsColumns(selectedAnnee),
     },
@@ -939,16 +959,32 @@ const Donnees = () => {
           const icon = section === "ecoles" ? School : section === "eleves" ? Users : GraduationCap;
           const base = section === "ecoles" ? "Établissements" : section === "eleves" ? "Élèves" : "Personnels";
           const value = section === "ecoles" ? g.etabs : section === "eleves" ? g.eleves : g.pers;
-          // Seule la carte « Secteur public » détaille par statut : le privé et la
-          // carte Total n'affichent que leur total de personnels.
-          const details =
-            section === "personnels" && g.key === "public"
-              ? [
-                  { label: "Fonctionnaires", value: formatNumber(g.fonct) },
-                  { label: "ENF", value: formatNumber(g.enf) },
-                  { label: "Subventionnés", value: g.subKnown ? formatNumber(g.sub) : "—" },
-                  { label: "Non subventionnés", value: g.nonSubKnown ? formatNumber(g.nonSub) : "—" },
-                ]
+          // Chaque catégorie (enseignants en classe / administratif) est
+          // affichée une seule fois en colonne ; les statuts sont en lignes.
+          const personnelValue = (n: number) =>
+            g.breakdownKnown ? formatNumber(n) : "—";
+          const breakdown =
+            section === "personnels"
+              ? {
+                  columns: [
+                    { label: "Enseignants", title: "Personnel enseignant en classe" },
+                    { label: "Administratif", title: "Personnel administratif (PA)" },
+                  ],
+                  rows: [
+                    {
+                      label: "Total",
+                      values: [personnelValue(g.ens), personnelValue(g.admin)],
+                    },
+                    {
+                      label: "Fonctionnaires",
+                      values: [personnelValue(g.ensFonct), personnelValue(g.adminFonct)],
+                    },
+                    {
+                      label: "ENF",
+                      values: [personnelValue(g.ensEnf), personnelValue(g.adminEnf)],
+                    },
+                  ],
+                }
               : undefined;
           return (
             <StatCard
@@ -959,10 +995,10 @@ const Donnees = () => {
               sector={g.key === "total" ? "Total" : `Secteur ${g.label.toLowerCase()}`}
               highlight={g.key === "total"}
               value={formatNumber(value)}
-              details={details}
+              breakdown={breakdown}
               hint={
-                section === "personnels" && g.key === "prive"
-                  ? "Ventilation par statut non disponible pour le privé"
+                section === "personnels" && !g.breakdownKnown
+                  ? "Ventilation par statut non disponible"
                   : "Dans le périmètre filtré"
               }
             />
@@ -1227,6 +1263,11 @@ const FilterField = ({
 
 type StatCardTheme = { ring: string; iconBg: string; iconColor: string; tint: string; tintBorder: string };
 
+type StatCardBreakdown = {
+  columns: { label: string; title?: string }[];
+  rows: { label: string; values: string[] }[];
+};
+
 const StatCard = ({
   icon: Icon,
   theme,
@@ -1234,7 +1275,7 @@ const StatCard = ({
   sector,
   value,
   hint,
-  details,
+  breakdown,
   highlight,
 }: {
   icon: any;
@@ -1243,7 +1284,7 @@ const StatCard = ({
   sector: string;
   value: string;
   hint?: string;
-  details?: { label: string; value: string }[];
+  breakdown?: StatCardBreakdown;
   highlight?: boolean;
 }) => (
   <Card
@@ -1273,14 +1314,47 @@ const StatCard = ({
     <p className="px-5 pb-3 pt-2 text-3xl font-bold leading-none tracking-tight tabular-nums text-foreground">
       {value}
     </p>
-    {details && details.length > 0 && (
-      <div className={cn("grid grid-cols-2 gap-px border-t border-border/50", theme.tintBorder)}>
-        {details.map((d) => (
-          <div key={d.label} className={cn("px-4 py-2.5", theme.tint)}>
-            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{d.label}</p>
-            <p className="text-base font-semibold tabular-nums text-foreground">{d.value}</p>
-          </div>
-        ))}
+    {breakdown && breakdown.rows.length > 0 && (
+      <div className={cn("border-t border-border/50 px-5 pb-2", theme.tint)}>
+        <table className="w-full table-fixed border-collapse text-[11px]">
+          <thead>
+            <tr className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              <th className="w-[32%] py-2 pr-1 text-left font-medium">Statut</th>
+              {breakdown.columns.map((column) => (
+                <th
+                  key={column.label}
+                  title={column.title}
+                  className="py-2 pl-1 text-right font-medium leading-tight"
+                >
+                  {column.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {breakdown.rows.map((row, rowIndex) => (
+              <tr key={row.label} className="border-t border-border/40">
+                <th
+                  scope="row"
+                  className={cn(
+                    "py-2 pr-1 text-left font-medium",
+                    rowIndex === 0 ? "text-foreground" : "text-muted-foreground",
+                  )}
+                >
+                  {row.label}
+                </th>
+                {row.values.map((cell, cellIndex) => (
+                  <td
+                    key={`${row.label}-${cellIndex}`}
+                    className="py-2 pl-1 text-right font-semibold tabular-nums text-foreground"
+                  >
+                    {cell}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     )}
     {hint && (

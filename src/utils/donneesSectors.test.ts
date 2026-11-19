@@ -70,6 +70,40 @@ describe("buildSectorGroups", () => {
     expect(priv.sub).toBe(0);
   });
 
+  it("ventile enseignants et personnel administratif par statut sans les fusionner", () => {
+    const [pub] = buildSectorGroups(
+      [{
+        SECTEUR: "0",
+        pers_total: 100,
+        en_classe: 80,
+        pers_admin: 20,
+        ens_fonct: 50,
+        ens_enf: 30,
+        admin_fonct: 12,
+        admin_enf: 8,
+        eff_t1: 0,
+      }],
+      "primaire",
+    );
+    expect(pub.ens).toBe(80);
+    expect(pub.ensFonct).toBe(50);
+    expect(pub.ensEnf).toBe(30);
+    expect(pub.admin).toBe(20);
+    expect(pub.adminFonct).toBe(12);
+    expect(pub.adminEnf).toBe(8);
+    expect(pub.breakdownKnown).toBe(true);
+    // Le total de chaque catégorie reste distinct ; aucune fusion.
+    expect(pub.ensFonct + pub.ensEnf).toBe(pub.ens);
+    expect(pub.adminFonct + pub.adminEnf).toBe(pub.admin);
+    expect(pub.ens + pub.admin).toBe(pub.pers);
+  });
+
+  it("signale une ventilation par statut absente au lieu d'inventer des zéros", () => {
+    const [pub] = buildSectorGroups([{ SECTEUR: "0", pers_total: 10, en_classe: 8 }], "primaire");
+    expect(pub.breakdownKnown).toBe(false);
+    expect(pub.admin).toBe(2);
+  });
+
   it("borne les effectifs au niveau demandé", () => {
     expect(getTotalEleves([{ eff_t6: 3, eff_t1: 99 }], "college")).toBe(3);
     expect(getTotalEleves([{ _2nde: 2, _1re: 3, tle: 4 }], "lycee")).toBe(9);

@@ -194,14 +194,34 @@ export function buildDonneesRecentSql(
       a1."TYPE_SOURCE_EAU", a1."TYPE_SOURCE_ELECTRICITE",
       COALESCE(eveff.eff_2022, 0) AS eff_2022, COALESCE(eveff.eff_2023, 0) AS eff_2023,
       COALESCE(eveff.eff_2024, 0) AS eff_2024, COALESCE(eveff.eff_2025, 0) AS eff_2025,
-      pers.total AS pers_total, pers.en_classe, pers.fonctionnaire,
-      pers.fram_sub, pers.fram_nonsub, pers.bepc, pers.bacc, pers.qualifiee,
+      COALESCE(p1p.total, pers.total) AS pers_total,
+      COALESCE(p1p.en_classe, pers.en_classe) AS en_classe,
+      p1p.pers_admin, p1p.ens_fonct, p1p.ens_enf,
+      p1p.admin_fonct, p1p.admin_enf,
+      pers.fonctionnaire, pers.fram_sub, pers.fram_nonsub, pers.bepc, pers.bacc, pers.qualifiee,
       ${cfg.effCols}${currentEffCol}, ${annee} AS "ANNEE_SCOLAIRE"
     FROM fpe_a1 a1
     LEFT JOIN ${cfg.evolutionView} eveff ON eveff."CODE_ETAB" = a1."CODE_ETAB"
     LEFT JOIN v_sdc sdc ON sdc."CODE_ETAB" = a1."CODE_ETAB" AND sdc."ANNEE_SCOLAIRE" = ${annee}
     LEFT JOIN v_place_assises vp ON vp."CODE_ETAB" = a1."CODE_ETAB" AND vp."ANNEE_SCOLAIRE" = ${annee}
     LEFT JOIN v_personnel pers ON pers."CODE_ETAB" = a1."CODE_ETAB" AND pers."ANNEE_SCOLAIRE" = ${annee}
+    LEFT JOIN (
+      -- Le personnel enseignant (EN_SALLE = 1) et administratif (EN_SALLE = 0)
+      -- est ventilé par statut à la source : Fonctionnaires / État (codes 1-2)
+      -- et ENF (tous les autres statuts). Les deux catégories ne sont jamais
+      -- additionnées l'une à l'autre.
+      SELECT "CODE_ETAB", "SECTEUR",
+        COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE COALESCE("EN_SALLE", 0) = 1) AS en_classe,
+        COUNT(*) FILTER (WHERE COALESCE("EN_SALLE", 0) = 0) AS pers_admin,
+        COUNT(*) FILTER (WHERE COALESCE("EN_SALLE", 0) = 1 AND "CODE_STATUT" IN ('1','2')) AS ens_fonct,
+        COUNT(*) FILTER (WHERE COALESCE("EN_SALLE", 0) = 1 AND "CODE_STATUT" NOT IN ('1','2')) AS ens_enf,
+        COUNT(*) FILTER (WHERE COALESCE("EN_SALLE", 0) = 0 AND "CODE_STATUT" IN ('1','2')) AS admin_fonct,
+        COUNT(*) FILTER (WHERE COALESCE("EN_SALLE", 0) = 0 AND "CODE_STATUT" NOT IN ('1','2')) AS admin_enf
+      FROM fpe_p1
+      WHERE "ANNEE_SCOLAIRE" = ${annee}
+      GROUP BY "CODE_ETAB", "SECTEUR"
+    ) p1p ON p1p."CODE_ETAB" = a1."CODE_ETAB" AND p1p."SECTEUR" = a1."SECTEUR"
     INNER JOIN (${cfg.effectifSql(annee)}) v ON v."CODE_ETAB" = a1."CODE_ETAB"
     WHERE a1."ANNEE_SCOLAIRE" = ${annee} AND a1."${cfg.existsCol}" = 1
       AND a1."CODE_DREN" ${opDren} ${valDren} AND a1."CODE_CISCO" ${opCisco} ${valCisco}
