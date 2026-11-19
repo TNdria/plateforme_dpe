@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { User, Lock, Loader2, ArrowRight, Eye, EyeOff, ShieldCheck, Sparkles } from "lucide-react";
+import { User, Lock, Loader2, ArrowRight, Eye, EyeOff, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { AnimatedLogo } from "@/components/AnimatedLogo";
 
@@ -104,13 +104,11 @@ const Login = () => {
           {/* Logo Section — animated MEN ↔ DPE */}
           <div className="text-center mb-8 animate-fade-in-up">
             <div className="inline-flex items-center justify-center mb-5">
-              <div className="relative group">
-                <div className="absolute -inset-2 bg-gradient-to-br from-primary/40 via-info/30 to-primary/40 rounded-3xl blur-xl group-hover:blur-2xl transition-all animate-pulse-soft" />
-                <div className="relative h-24 w-24 bg-white rounded-2xl flex items-center justify-center shadow-2xl ring-1 ring-border/40 p-2 transition-transform group-hover:scale-105">
-                  <AnimatedLogo className="h-full w-full rounded-xl" imgClassName="object-contain rounded-xl" interval={2600} />
-                </div>
-                <Sparkles className="absolute -top-1.5 -right-1.5 h-5 w-5 text-warning animate-pulse-soft drop-shadow" />
-              </div>
+              <AnimatedLogo
+                variant="bare"
+                className="h-24 w-24 transition-transform duration-300 hover:scale-105"
+                interval={2600}
+              />
             </div>
             <h1 className="text-3xl font-bold font-heading tracking-tight bg-gradient-to-r from-primary to-info bg-clip-text text-transparent">
               DPE Plateforme
