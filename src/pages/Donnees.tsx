@@ -32,6 +32,7 @@ import {
   RefreshCw,
   Layers,
   Lock,
+  ChevronDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
@@ -1286,81 +1287,127 @@ const StatCard = ({
   hint?: string;
   breakdown?: StatCardBreakdown;
   highlight?: boolean;
-}) => (
-  <Card
-    className={cn(
-      "relative overflow-hidden border border-border/60 border-t-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg",
-      theme.ring,
-      highlight && "bg-gradient-to-br from-card to-accent/60",
-    )}
-  >
-    <div className="flex items-start justify-between gap-3 px-5 pt-4">
-      <div className="min-w-0">
-        <p className="text-xs font-medium text-muted-foreground">{label}</p>
-        <span
+}) => {
+  // Le tableau de ventilation est masqué au départ : la carte reste compacte
+  // et le chevron révèle le détail sans quitter la page.
+  const [showBreakdown, setShowBreakdown] = useState(false);
+  return (
+    <Card
+      className={cn(
+        "relative flex flex-col overflow-hidden border border-border/60 border-t-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg",
+        theme.ring,
+        highlight && "bg-gradient-to-br from-card to-accent/60",
+      )}
+    >
+      <div className="flex items-start justify-between gap-3 px-5 pt-4">
+        <div className="min-w-0">
+          <p className="text-xs font-medium text-muted-foreground">{label}</p>
+          <span
+            className={cn(
+              "mt-1 inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
+              theme.iconBg,
+              theme.iconColor,
+            )}
+          >
+            {sector}
+          </span>
+        </div>
+        <div
           className={cn(
-            "mt-1 inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
+            "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
             theme.iconBg,
-            theme.iconColor,
           )}
         >
-          {sector}
-        </span>
+          <Icon className={cn("h-5 w-5", theme.iconColor)} />
+        </div>
       </div>
-      <div className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-xl", theme.iconBg)}>
-        <Icon className={cn("h-5 w-5", theme.iconColor)} />
-      </div>
-    </div>
-    <p className="px-5 pb-3 pt-2 text-3xl font-bold leading-none tracking-tight tabular-nums text-foreground">
-      {value}
-    </p>
-    {breakdown && breakdown.rows.length > 0 && (
-      <div className={cn("border-t border-border/50 px-5 pb-2", theme.tint)}>
-        <table className="w-full table-fixed border-collapse text-[11px]">
-          <thead>
-            <tr className="text-[10px] uppercase tracking-wide text-muted-foreground">
-              <th className="w-[32%] py-2 pr-1 text-left font-medium">Statut</th>
-              {breakdown.columns.map((column) => (
-                <th
-                  key={column.label}
-                  title={column.title}
-                  className="py-2 pl-1 text-right font-medium leading-tight"
-                >
-                  {column.label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {breakdown.rows.map((row, rowIndex) => (
-              <tr key={row.label} className="border-t border-border/40">
-                <th
-                  scope="row"
-                  className={cn(
-                    "py-2 pr-1 text-left font-medium",
-                    rowIndex === 0 ? "text-foreground" : "text-muted-foreground",
-                  )}
-                >
-                  {row.label}
-                </th>
-                {row.values.map((cell, cellIndex) => (
-                  <td
-                    key={`${row.label}-${cellIndex}`}
-                    className="py-2 pl-1 text-right font-semibold tabular-nums text-foreground"
-                  >
-                    {cell}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    )}
-    {hint && (
-      <p className="border-t border-border/50 px-5 py-2 text-[11px] text-muted-foreground">{hint}</p>
-    )}
-  </Card>
-);
+      <p className="px-5 pb-3 pt-2 text-3xl font-bold leading-none tracking-tight tabular-nums text-foreground">
+        {value}
+      </p>
+      {breakdown && breakdown.rows.length > 0 && (
+        // Dépliage animé façon tiroir : la grille passe de 0fr à 1fr, ce qui
+        // anime une hauteur inconnue sans mesure JavaScript.
+        <div
+          aria-hidden={!showBreakdown}
+          className={cn(
+            "grid transition-all duration-300 ease-out motion-reduce:transition-none",
+            showBreakdown
+              ? "grid-rows-[1fr] opacity-100"
+              : "pointer-events-none grid-rows-[0fr] opacity-0",
+          )}
+        >
+          <div className="overflow-hidden">
+            <div className={cn("border-t border-border/50 px-5 pb-2", theme.tint)}>
+              <table className="w-full table-fixed border-collapse text-[11px]">
+                <thead>
+                  <tr className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                    <th className="w-[32%] py-2 pr-1 text-left font-medium">Statut</th>
+                    {breakdown.columns.map((column) => (
+                      <th
+                        key={column.label}
+                        title={column.title}
+                        className="py-2 pl-1 text-right font-medium leading-tight"
+                      >
+                        {column.label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {breakdown.rows.map((row, rowIndex) => (
+                    <tr key={row.label} className="border-t border-border/40">
+                      <th
+                        scope="row"
+                        className={cn(
+                          "py-2 pr-1 text-left font-medium",
+                          rowIndex === 0 ? "text-foreground" : "text-muted-foreground",
+                        )}
+                      >
+                        {row.label}
+                      </th>
+                      {row.values.map((cell, cellIndex) => (
+                        <td
+                          key={`${row.label}-${cellIndex}`}
+                          className="py-2 pl-1 text-right font-semibold tabular-nums text-foreground"
+                        >
+                          {cell}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+      {(hint || breakdown) && (
+        <div className="mt-auto flex items-center justify-between gap-2 border-t border-border/50 px-5 py-2">
+          <p className="min-w-0 truncate text-[11px] text-muted-foreground">{hint}</p>
+          {breakdown && breakdown.rows.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowBreakdown((value) => !value)}
+              aria-expanded={showBreakdown}
+              aria-label={
+                showBreakdown ? "Masquer le détail par statut" : "Afficher le détail par statut"
+              }
+              className="inline-flex shrink-0 items-center gap-0.5 text-[11px] font-semibold text-primary transition-colors hover:text-primary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+            >
+              {showBreakdown ? "Masquer" : "Voir le détail"}
+              <ChevronDown
+                aria-hidden="true"
+                className={cn(
+                  "h-3.5 w-3.5 transition-transform duration-300 ease-out motion-reduce:transition-none",
+                  showBreakdown && "rotate-180",
+                )}
+              />
+            </button>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+};
 
 export default Donnees;
