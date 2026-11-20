@@ -16,7 +16,10 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  /** Jeton de session signé, conservé uniquement en mémoire. */
+  sessionToken: string | null;
   authorizeTdbDownload: (level: string, code: string | number) => Promise<boolean>;
+  authorizeDiagnostic: (codeDren: number, codeCisco: number) => Promise<boolean>;
   login: (
     username: string,
     password: string,
@@ -49,6 +52,13 @@ interface AuthProviderProps {
 }
 
 const DJANGO_BASE_URL = "https://dpe-men.mg";
+
+const getSupabaseUrl = (): string | undefined => {
+  const configured = import.meta.env.VITE_SUPABASE_URL;
+  if (configured) return configured.replace(/\/$/, "");
+  const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+  return projectId ? `https://${projectId}.supabase.co` : undefined;
+};
 
 async function loginDjangoSession(username: string, password: string): Promise<boolean> {
   try {
@@ -92,10 +102,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return { success: false, error: "Nom d'utilisateur et mot de passe requis" };
       }
 
-      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-      const supabaseUrl = projectId
-        ? `https://${projectId}.supabase.co`
-        : import.meta.env.VITE_SUPABASE_URL;
+      const supabaseUrl = getSupabaseUrl();
+      if (!supabaseUrl) {
+        return { success: false, error: "Configuration Supabase manquante (VITE_SUPABASE_URL)." };
+      }
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 20000);
       let response: Response;
@@ -239,10 +249,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return { success: false, error: "Le mot de passe actuel est obligatoire" };
       }
 
-      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-      const supabaseUrl = projectId
-        ? `https://${projectId}.supabase.co`
-        : import.meta.env.VITE_SUPABASE_URL;
+      const supabaseUrl = getSupabaseUrl();
+      if (!supabaseUrl) {
+        return { success: false, error: "Configuration Supabase manquante (VITE_SUPABASE_URL)." };
+      }
       const response = await fetch(`${supabaseUrl}/functions/v1/db-query?action=updatePassword`, {
         method: "POST",
         headers: {
@@ -287,10 +297,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const authorizeTdbDownload = React.useCallback(async (level: string, code: string | number): Promise<boolean> => {
     if (!sessionToken) return false;
     try {
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/db-query?action=authorizeTdbDownload`, {
+      const response = await fetch(`${getSupabaseUrl()}/functions/v1/db-query?action=authorizeTdbDownload`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
         body: JSON.stringify({ sessionToken, level, code }),
+        signal: AbortSignal.timeout(15000),
+      });
+      return response.ok && (await response.json()).allowed === true;
+    } catch { return false; }
+  }, [sessionToken]);
+
+  const authorizeDiagnostic = React.useCallback(async (codeDren: number, codeCisco: number): Promise<boolean> => {
+    if (!sessionToken) return false;
+    try {
+      const response = await fetch(`${getSupabaseUrl()}/functions/v1/db-query?action=authorizeDiagnostic`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
+        body: JSON.stringify({ sessionToken, codeDren, codeCisco }),
         signal: AbortSignal.timeout(15000),
       });
       return response.ok && (await response.json()).allowed === true;
@@ -301,10 +324,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     user,
     isAuthenticated: !!user,
     isLoading,
+    sessionToken,
     login,
     logout,
     updateProfile,
     authorizeTdbDownload,
+    authorizeDiagnostic,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

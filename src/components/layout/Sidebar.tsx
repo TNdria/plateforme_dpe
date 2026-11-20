@@ -40,6 +40,8 @@ interface MenuItem {
   children?: MenuChild[];
   requiresAuth?: boolean;
   adminOnly?: boolean;
+  /** Réservé aux comptes ayant un périmètre DREN ou CISCO (ou admin). */
+  requiresScope?: boolean;
 }
 
 const menuItems: { section?: string; items: MenuItem[] }[] = [
@@ -86,6 +88,7 @@ const menuItems: { section?: string; items: MenuItem[] }[] = [
         icon: FileText,
         path: "/diagnostic",
         requiresAuth: true,
+        requiresScope: true,
       },
     ],
   },
@@ -188,6 +191,9 @@ const Sidebar = () => {
           .filter((item) => {
             if (item.adminOnly && !isAdmin) return false;
             if (item.requiresAuth && !isAuthenticated) return false;
+            // Deny by default : un compte sans DREN ni CISCO n'a aucun
+            // diagnostic autorisé, on ne lui montre pas l'entrée de menu.
+            if (item.requiresScope && !isAdmin && !(Number(user?.dren) > 0 || Number(user?.cisco) > 0)) return false;
             return true;
           })
           .map((item) => {
@@ -202,7 +208,7 @@ const Sidebar = () => {
           .filter((item) => !item.children || item.children.length > 0),
       }))
       .filter((group) => group.items.length > 0);
-  }, [isAuthenticated, isAdmin]);
+  }, [isAuthenticated, isAdmin, user]);
 
   const toggleMenu = (label: string) => {
     setOpenMenus((prev) =>

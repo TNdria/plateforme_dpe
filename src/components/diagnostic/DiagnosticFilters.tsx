@@ -15,6 +15,8 @@ interface DiagnosticFiltersProps {
   loading: boolean;
   statsLoading: boolean;
   hasDiagnostic: boolean;
+  drenLocked?: boolean;
+  ciscoLocked?: boolean;
   onDrenChange: (value: string) => void;
   onCiscoChange: (value: string) => void;
   onSecteurChange: (value: string) => void;
@@ -26,7 +28,7 @@ interface DiagnosticFiltersProps {
 
 const DiagnosticFilters = ({
   drens, ciscos, selectedDren, selectedCisco, selectedSecteur, selectedAnnee,
-  generating, loading, statsLoading, hasDiagnostic,
+  generating, loading, statsLoading, hasDiagnostic, drenLocked = false, ciscoLocked = false,
   onDrenChange, onCiscoChange, onSecteurChange, onAnneeChange,
   onGenerate, onExportPDF, onExportDocx,
 }: DiagnosticFiltersProps) => {
@@ -44,10 +46,10 @@ const DiagnosticFilters = ({
     <div className="flex flex-wrap gap-3 items-end">
       <div className="space-y-1">
         <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">DREN</label>
-        <Select value={selectedDren} onValueChange={onDrenChange}>
+        <Select value={selectedDren} onValueChange={onDrenChange} disabled={drenLocked}>
           <SelectTrigger className="w-48"><SelectValue placeholder="Sélectionner DREN" /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="0">Tous (National)</SelectItem>
+            {!drenLocked && <SelectItem value="0">Tous (National)</SelectItem>}
             {drens.map((d) => (
               <SelectItem key={d.CODE_DREN} value={d.CODE_DREN.toString()}>{d.DREN}</SelectItem>
             ))}
@@ -57,10 +59,10 @@ const DiagnosticFilters = ({
 
       <div className="space-y-1">
         <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">CISCO</label>
-        <Select value={selectedCisco} onValueChange={onCiscoChange} disabled={selectedDren === '0'}>
+        <Select value={selectedCisco} onValueChange={onCiscoChange} disabled={ciscoLocked || selectedDren === '0'}>
           <SelectTrigger className="w-56"><SelectValue placeholder="Sélectionner CISCO" /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="0">Tous les CISCOs</SelectItem>
+            {!ciscoLocked && <SelectItem value="0">Tous les CISCOs</SelectItem>}
             {ciscos.map((c) => (
               <SelectItem key={c.CODE_CISCO} value={c.CODE_CISCO.toString()}>{c.CISCO}</SelectItem>
             ))}

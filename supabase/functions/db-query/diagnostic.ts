@@ -105,11 +105,28 @@ export async function executeDiagnosticDataset(client: any, s: Scope) {
     FROM fpe_g1 g WHERE ${scopeSql("g", s)} GROUP BY 1`;
 
   // ---------- 6. Places assises ----------
+  // `v_place_assises` compte les bancs 3 places avec la formule `* 2 * 3`
+  // (soit 6 places par banc) : chaque niveau collège/lycée/primaire est
+  // surévalué de 3 places par banc de 3. On recalcule donc la capacité réelle
+  // depuis `fpe_k1` (1 place par chaise, N places par banc de N places),
+  // en ne retenant un niveau que si l'établissement l'offre (`EXISTE_*`).
+  const seatCell = (col: string) => `COALESCE(${n(`k1."${col}"`)},0)`;
+  const benchSeats = (level: string, widths: Array<[string, number]>) =>
+    `CASE WHEN k1."EXISTE_${level}" = 1 THEN ${widths
+      .map(([width, capacity]) =>
+        `(${seatCell(`${level}_TABLES_BANCS_${width}_BON_ETAT`)}+${seatCell(`${level}_TABLES_BANCS_${width}_MAUVAIS_ETAT`)})*${capacity}`)
+      .join("+")} ELSE 0 END`;
+  const benches: Array<[string, number]> = [["1PL", 1], ["2PL", 2], ["3PL", 3], ["4PL", 4], ["5PL_PLUS", 5]];
   const qPl = `
-    SELECT ${yr('v."ANNEE_SCOLAIRE"')} AS y,
-      SUM(COALESCE(v."places_n0",0)) AS presco, SUM(COALESCE(v."places_n1",0)) AS primaire,
-      SUM(COALESCE(v."places_n2",0)) AS college, SUM(COALESCE(v."places_n3",0)) AS lycee
-    FROM v_place_assises v WHERE ${scopeSql("v", s)} GROUP BY 1`;
+    SELECT ${yr('k1."ANNEE_SCOLAIRE"')} AS y,
+      SUM(CASE WHEN k1."EXISTE_PRESCO" = 1 THEN
+        ${seatCell("PRESCO_PETITES_CHAISES_BON_ETAT")}+${seatCell("PRESCO_PETITES_CHAISES_MAUVAIS_ETAT")}
+        +(${seatCell("PRESCO_TABLES_BANCS_2PL_BON_ETAT")}+${seatCell("PRESCO_TABLES_BANCS_2PL_MAUVAIS_ETAT")})*2
+        ELSE 0 END) AS presco,
+      SUM(${benchSeats("PRIMAIRE", benches)}) AS primaire,
+      SUM(${benchSeats("COLLEGE", benches)}) AS college,
+      SUM(${benchSeats("LYCEE", benches)}) AS lycee
+    FROM fpe_k1 k1 WHERE ${scopeSql("k1", s)} GROUP BY 1`;
 
   // ---------- 7. Manuels primaire (fpe_l1) ----------
   const qL1 = `
@@ -156,7 +173,24 @@ export async function executeDiagnosticDataset(client: any, s: Scope) {
     FROM population_2025 WHERE ${popWhere}`;
 
   // ---------- 10. Examens ----------
+  // Périmètre des examens : les candidats sont rattachés par CODE_ETAB. Ce
+  // code manque pour ~5 % des lignes BEPC et certains codes absents de
+  // fpe_a1 ; on retombe alors sur le nom de DREN/CISCO fourni par la source
+  // (texte), sans jamais réattribuer un code connu d'un autre périmètre.
+  // Au national, tous les candidats sont retenus (aucune perte).
   const etabScope = `SELECT DISTINCT "CODE_ETAB" FROM fpe_a1 WHERE ${scopeSql("fpe_a1", s)}`;
+  const examNameScope = (alias: string) =>
+    s.codeCisco > 0
+      ? `EXISTS (SELECT 1 FROM v_cisco vc WHERE vc."CODE_CISCO" = ${s.codeCisco} AND upper(btrim(vc."CISCO")) = upper(btrim(${alias}."CISCO")))`
+      : s.codeDren > 0
+      ? `EXISTS (SELECT 1 FROM v_dren vd WHERE vd."CODE_DREN" = ${s.codeDren} AND upper(btrim(vd."DREN")) = upper(btrim(${alias}."DREN")))`
+      : "FALSE";
+  const examWhere = (alias: string) => {
+    if (s.codeCisco <= 0 && s.codeDren <= 0) return "TRUE";
+    return `(${alias}."CODE_ETAB" IN (${etabScope})
+      OR (${alias}."CODE_ETAB" NOT IN (SELECT "CODE_ETAB" FROM fpe_a1 WHERE "CODE_ETAB" IS NOT NULL)
+          AND ${examNameScope(alias)}))`;
+  };
   const qCepe = `SELECT ${yr('c."ANNEE_SCOLAIRE"')} AS y,
       COUNT(*) AS presentes,
       SUM(CASE WHEN upper(COALESCE(c."CEPE",'')) IN ('A','ADMIS') THEN 1 ELSE 0 END) AS admis,
@@ -165,7 +199,7 @@ export async function executeDiagnosticDataset(client: any, s: Scope) {
       AVG(NULLIF(${n('c."MALAGASY"')},0)) AS moy_malagasy,
       AVG(NULLIF(${n('c."FRANCAIS"')},0)) AS moy_francais,
       AVG(NULLIF(${n('c."OP"')},0)) AS moy_calcul
-    FROM examen_cepe_candidates c WHERE c."CODE_ETAB" IN (${etabScope}) GROUP BY 1`;
+    FROM examen_cepe_candidates c WHERE ${examWhere("c")} GROUP BY 1`;
 
   // Une requête en erreur ne doit jamais vider tout le diagnostic :
   // on isole chaque bloc et on renvoie des lignes vides en cas d'échec.
@@ -183,15 +217,33 @@ export async function executeDiagnosticDataset(client: any, s: Scope) {
     safe("examen_cepe", qCepe),
   ]);
 
-  let rBepc: any = { rows: [] };
-  try {
-    rBepc = await client.queryObject(`SELECT ${yr('b."ANNEE_SCOLAIRE"')} AS y, COUNT(*) AS presentes,
-      SUM(CASE WHEN upper(COALESCE(b."BEPC",'')) IN ('A','ADMIS') THEN 1 ELSE 0 END) AS admis
-      FROM examen_bepc_candidates b WHERE b."CODE_ETAB" IN (${etabScope}) GROUP BY 1`);
-  } catch (_) { /* BEPC column layout may differ */ }
+  // BEPC : même périmètre que le CEPE. On garde l'isolation par bloc pour
+  // qu'une erreur BEPC n'efface pas le reste du diagnostic, mais elle est
+  // désormais tracée dans `warnings` au lieu d'être avalée silencieusement.
+  const admisBepc = `upper(COALESCE(b."BEPC",'')) IN ('A','ADMIS')`;
+  const fillesBepc = `upper(COALESCE(b."GENRE",'')) LIKE 'F%'`;
+  const garconsBepc = `upper(COALESCE(b."GENRE",'')) LIKE 'G%'`;
+  const matieresBepc: Array<[string, string]> = [
+    ["malagasy", "MALAGASY"], ["francais", "FRANCAIS"], ["anglais", "ANGLAIS"],
+    ["mathematique", "MATHEMATIQUE"], ["physique", "PHYSIQUE"], ["svt", "SVT"],
+    ["histoGeo", "HISTO_GEO"],
+  ];
+  const rBepc = await safe("examen_bepc_candidates", `SELECT ${yr('b."ANNEE_SCOLAIRE"')} AS y,
+      COUNT(*) AS presentes,
+      COUNT(*) FILTER (WHERE ${fillesBepc}) AS filles,
+      COUNT(*) FILTER (WHERE ${garconsBepc}) AS garcons,
+      COUNT(*) FILTER (WHERE ${admisBepc}) AS admis,
+      COUNT(*) FILTER (WHERE ${admisBepc} AND ${fillesBepc}) AS admis_filles,
+      COUNT(*) FILTER (WHERE ${admisBepc} AND ${garconsBepc}) AS admis_garcons,
+      AVG(NULLIF(${n('b."MOYENNE"')},0)) AS moyenne,
+      ${matieresBepc.map(([k, c]) => `
+      AVG(NULLIF(${n(`b."${c}"`)},0)) AS "moy_${k}",
+      COUNT(*) FILTER (WHERE ${n(`b."${c}"`)} > 10) AS "gt10_${k}"`).join(",")},
+      COUNT(*) - COUNT(DISTINCT NULLIF(btrim(COALESCE(b."MATRICULE",'')),'')) AS doublons
+      FROM examen_bepc_candidates b WHERE ${examWhere("b")} GROUP BY 1`);
 
   // ============ Assemblage par année ============
-  const empty = () => ({ g: 0, f: 0, pub: 0, priv: 0, total: 0 });
+  const empty = () => ({ g: 0, f: 0, garcons: 0, filles: 0, pub: 0, priv: 0, total: 0 });
   const annees: Record<string, any> = {};
   const ensure = (y: number) => {
     const k = String(y);
@@ -207,7 +259,12 @@ export async function executeDiagnosticDataset(client: any, s: Scope) {
         etablissements: { presco: { pub: 0, priv: 0, total: 0 }, primaire: { pub: 0, priv: 0, total: 0 }, college: { pub: 0, priv: 0, total: 0 }, lycee: { pub: 0, priv: 0, total: 0 }, eppAvecCap: 0, electrifie: 0, pointEau: 0 },
         salles: { presco: { bon: 0, mauvais: 0, total: 0 }, primaire: { bon: 0, mauvais: 0, total: 0 }, college: { bon: 0, mauvais: 0, total: 0 }, lycee: { bon: 0, mauvais: 0, total: 0 } },
         sections: { presco: 0, primaire: 0, college: 0, lycee: 0, multigrade: 0 },
-        places: { presco: 0, primaire: 0, college: 0, lycee: 0 },
+        // Places assises recalculées depuis `fpe_k1` (la vue `v_place_assises`
+        // surévalue les bancs de 3 places).
+        places: {
+          presco: { total: 0 }, primaire: { total: 0 },
+          college: { total: 0 }, lycee: { total: 0 },
+        },
         manuels: { malagasy: 0, francais: 0, maths: 0 },
         enseignants: {
           presco: { total: 0, qualifie: 0, fonctionnaire: 0, femmes: 0, pub: 0, priv: 0 },
@@ -228,7 +285,12 @@ export async function executeDiagnosticDataset(client: any, s: Scope) {
     bucket.grades[code] = cur;
   };
   const addLevel = (lv: any, g: number, f: number, isPrive: boolean) => {
-    lv.g += g; lv.f += f; lv.total += g + f;
+    lv.g += g; lv.f += f;
+    // `filles`/`garcons` sont les libellés consommés par les vues Monographie
+    // et Qualité ; `g`/`f` restent pour compatibilité.
+    lv.garcons = (lv.garcons || 0) + g;
+    lv.filles = (lv.filles || 0) + f;
+    lv.total += g + f;
     if (isPrive) lv.priv += g + f; else lv.pub += g + f;
   };
 
@@ -281,7 +343,12 @@ export async function executeDiagnosticDataset(client: any, s: Scope) {
   }
   for (const row of rPl.rows as any[]) {
     const y = ensure(num(row.y));
-    y.places = { presco: num(row.presco), primaire: num(row.primaire), college: num(row.college), lycee: num(row.lycee) };
+    y.places = {
+      presco: { total: num(row.presco) },
+      primaire: { total: num(row.primaire) },
+      college: { total: num(row.college) },
+      lycee: { total: num(row.lycee) },
+    };
   }
   for (const row of rL1.rows as any[]) {
     const y = ensure(num(row.y));
@@ -309,7 +376,20 @@ export async function executeDiagnosticDataset(client: any, s: Scope) {
   }
   for (const row of (rBepc.rows || []) as any[]) {
     const y = ensure(num(row.y));
-    y.examens.bepc = { presentes: num(row.presentes), admis: num(row.admis) };
+    y.examens.bepc = {
+      presentes: num(row.presentes), admis: num(row.admis),
+      filles: num(row.filles), garcons: num(row.garcons),
+      admisFilles: num(row.admis_filles), admisGarcons: num(row.admis_garcons),
+      moyenne: r2(num(row.moyenne)),
+      scores: Object.fromEntries(matieresBepc.map(([k]) => [k, r2(num(row[`moy_${k}`]))])),
+      notesSup10: Object.fromEntries(matieresBepc.map(([k]) => [k, num(row[`gt10_${k}`])])),
+      doublonsMatricule: num(row.doublons),
+    };
+    // Les doublons de matricule de la source sont signalés, pas corrigés en
+    // silence : les totaux restent ceux des candidats officiellement présents.
+    if (num(row.doublons) > 0) {
+      warnings.push(`BEPC ${num(row.y)} : ${num(row.doublons)} matricule(s) en doublon dans la source`);
+    }
   }
 
   const popRow: any = (rPop.rows as any[])[0] || {};
@@ -418,10 +498,10 @@ export async function executeDiagnosticDataset(client: any, s: Scope) {
           lycee: r1(div(el.lycee.total, ens.lycee.total)),
         },
         ratioElevePlaceAssise: {
-          presco: r2(div(el.presco.total, pl.presco)),
-          primaire: r2(div(el.primaire.total, pl.primaire)),
-          college: r2(div(el.college.total, pl.college)),
-          lycee: r2(div(el.lycee.total, pl.lycee)),
+          presco: r2(div(el.presco.total, pl.presco.total)),
+          primaire: r2(div(el.primaire.total, pl.primaire.total)),
+          college: r2(div(el.college.total, pl.college.total)),
+          lycee: r2(div(el.lycee.total, pl.lycee.total)),
         },
         ratioEleveManuel: {
           malagasy: r2(div(el.primaire.total, d.manuels.malagasy)),
@@ -453,8 +533,14 @@ export async function executeDiagnosticDataset(client: any, s: Scope) {
         bepc: bepc
           ? {
               tauxReussite: r1(pct(bepc.admis, bepc.presentes)),
+              tauxReussiteFilles: r1(pct(bepc.admisFilles, bepc.filles)),
+              tauxReussiteGarcons: r1(pct(bepc.admisGarcons, bepc.garcons)),
               tauxReussiteSurInscrits: r1(pct(bepc.admis, gr("college", "T9").total)),
               presentes: bepc.presentes, admis: bepc.admis,
+              filles: bepc.filles, garcons: bepc.garcons,
+              admisFilles: bepc.admisFilles, admisGarcons: bepc.admisGarcons,
+              moyenne: bepc.moyenne, scores: bepc.scores, notesSup10: bepc.notesSup10,
+              doublonsMatricule: bepc.doublonsMatricule,
             }
           : null,
       },
@@ -495,6 +581,14 @@ export async function executeDiagnosticDataset(client: any, s: Scope) {
     };
   }
 
+  // Dernière session d'examen réellement disponible par examen. Les vues
+  // Qualité peuvent ainsi afficher le BEPC 2025 quand l'année sélectionnée
+  // (2026) n'a pas encore de session, sans rattacher ces chiffres à 2026.
+  const lastYearWith = (exam: "cepe" | "bepc") => {
+    const available = yearList.filter((y) => !!annees[String(y)].examens[exam]);
+    return available.length ? available[available.length - 1] : null;
+  };
+
   return {
     scope: s,
     years: yearList.length ? yearList : years,
@@ -502,6 +596,7 @@ export async function executeDiagnosticDataset(client: any, s: Scope) {
     annees,
     indicateurs,
     retention,
+    sessionsExamens: { cepe: lastYearWith("cepe"), bepc: lastYearWith("bepc") },
     warnings,
   };
 }

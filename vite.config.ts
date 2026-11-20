@@ -5,13 +5,13 @@ import { componentTagger } from "lovable-tagger";
 
 /**
  * Vite ne sert pas les fonctions serverless de `api/`. En développement, ce
- * middleware charge `api/donnees.ts` via le pipeline SSR de Vite pour que
- * `/api/donnees` renvoie les mêmes données 2026+ qu'en production.
+ * middleware charge les fichiers de `api/` via le pipeline SSR de Vite pour
+ * que `/api/donnees` et `/api/diagnostic` répondent comme en production.
  *
  * Les identifiants de la base restent côté serveur : ils ne portent pas le
  * préfixe `VITE_` et ne sont donc jamais exposés au bundle client.
  */
-function apiDonneesDevPlugin(env: Record<string, string>): Plugin {
+function apiDevPlugin(env: Record<string, string>): Plugin {
   const serverKeys = [
     "DATABASE_URL",
     "DB_HOST",
@@ -20,38 +20,46 @@ function apiDonneesDevPlugin(env: Record<string, string>): Plugin {
     "DB_USER",
     "DB_PASSWORD",
     "DB_SSL",
+    "TDB_SESSION_SECRET",
   ];
+  const endpoints: Record<string, string> = {
+    "/api/donnees": "/api/donnees.ts",
+    "/api/diagnostic": "/api/diagnostic.ts",
+  };
 
   return {
-    name: "api-donnees-dev",
+    name: "api-dev",
     apply: "serve",
     configureServer(server) {
       for (const key of serverKeys) {
         if (env[key] && !process.env[key]) process.env[key] = env[key];
       }
 
-      server.middlewares.use("/api/donnees", async (req, res) => {
-        try {
-          const mod = await server.ssrLoadModule("/api/donnees.ts");
-          const url = new URL(req.url ?? "/", "http://localhost");
-          await mod.default(
-            {
-              method: req.method,
-              url: req.url,
-              query: Object.fromEntries(url.searchParams),
-            },
-            res,
-          );
-        } catch (error) {
-          res.statusCode = 500;
-          res.setHeader("Content-Type", "application/json; charset=utf-8");
-          res.end(
-            JSON.stringify({
-              error: error instanceof Error ? error.message : String(error),
-            }),
-          );
-        }
-      });
+      for (const [route, modulePath] of Object.entries(endpoints)) {
+        server.middlewares.use(route, async (req, res) => {
+          try {
+            const mod = await server.ssrLoadModule(modulePath);
+            const url = new URL(req.url ?? "/", "http://localhost");
+            await mod.default(
+              {
+                method: req.method,
+                url: req.url,
+                query: Object.fromEntries(url.searchParams),
+                body: req,
+              },
+              res,
+            );
+          } catch (error) {
+            res.statusCode = 500;
+            res.setHeader("Content-Type", "application/json; charset=utf-8");
+            res.end(
+              JSON.stringify({
+                error: error instanceof Error ? error.message : String(error),
+              }),
+            );
+          }
+        });
+      }
     },
   };
 }
@@ -76,7 +84,7 @@ export default defineConfig(({ mode }) => {
         },
       },*/
     },
-    plugins: [react(), mode === "development" && componentTagger(), mode === "development" && apiDonneesDevPlugin(env)].filter(Boolean),
+    plugins: [react(), mode === "development" && componentTagger(), mode === "development" && apiDevPlugin(env)].filter(Boolean),
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "./src"),

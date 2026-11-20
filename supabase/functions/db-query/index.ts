@@ -13,6 +13,7 @@ import { executeTdbDrenNiveau, type NiveauDren } from "./tdbDrenNiveau.ts";
 import { ensureRefTables, CE_SRC, popSource, importReference } from "./refImport.ts";
 import { repairReferenceBatch } from "./refBatch.ts";
 import { canDownloadTdb, issueTdbSession, verifyTdbSession, passwordMatchesSession } from './tdbDownloadAuth.ts';
+import { authorizeDiagnosticRequest } from './diagnosticRequestAuth.ts';
 import {
   importTdbRows, latestTdbRow, ensureTdbTables, isTdbTable, updateTdbRow, insertTdbRow, listTdbRows,
   type TdbTable,
@@ -932,11 +933,33 @@ serve(async (req: Request) => {
         result = await executeStatsPlaces(client, codeDren, codeCisco, secteur);
         break;
 
+      // Diagnostic : lecture autorisée par jeton de session signé, avec
+      // relecture du compte en base à chaque appel (les droits serveur font foi).
+      case "authorizeDiagnostic": {
+        const body = await req.json().catch(() => ({}));
+        const auth = await authorizeDiagnosticRequest(client, body);
+        try { await client.end(); } catch (_e) { /* ignore */ }
+        return new Response(
+          JSON.stringify(auth.ok
+            ? { allowed: true, scope: auth.scope, level: auth.level }
+            : { allowed: false, error: auth.error }),
+          { status: auth.ok ? 200 : auth.status, headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" } },
+        );
+      }
       case "getDiagnosticDataset": {
-        const dataset = await executeDiagnosticDataset(client, { codeDren, codeCisco });
+        const body = await req.json().catch(() => ({}));
+        const auth = await authorizeDiagnosticRequest(client, body);
+        if (!auth.ok) {
+          try { await client.end(); } catch (_e) { /* ignore */ }
+          return new Response(JSON.stringify({ error: auth.error }), {
+            status: auth.status,
+            headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" },
+          });
+        }
+        const dataset = await executeDiagnosticDataset(client, auth.scope);
         try { await client.end(); } catch (_e) { /* ignore */ }
         return new Response(JSON.stringify(serializeData(dataset)), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" },
         });
       }
 
@@ -1369,7 +1392,11 @@ serve(async (req: Request) => {
         const dren = user.dren;
         const cisco = user.cisco;
         const redirect = user.username === 'eager' ? '/eager' : '/donnees/prescolaire';
-        const sessionToken = await issueTdbSession(Number(user.id), user.password, Deno.env.get('TDB_SESSION_SECRET') || '');
+        const sessionToken = await issueTdbSession(Number(user.id), user.password, Deno.env.get('TDB_SESSION_SECRET') || '', {
+          admin: !!user.is_staff || !!user.is_superuser,
+          dren: user.dren,
+          cisco: user.cisco,
+        });
         await client.end();
         return new Response(JSON.stringify({
           success: true,

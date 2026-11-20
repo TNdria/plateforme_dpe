@@ -51,17 +51,40 @@ export const DiagnosticLoading = ({ loading, error, scope, annee, onRetry }: Dia
     >
       <div className="w-[min(92%,430px)] animate-scale-in rounded-xl border border-border bg-card/95 p-6 shadow-xl">
         <div className="flex items-center gap-4">
-          <div className="relative h-14 w-14 shrink-0">
-            <span
-              className={`absolute inset-0 rounded-full border-2 border-transparent ${
-                failed ? 'border-destructive/60' : 'border-t-primary border-r-secondary/70 border-b-secondary/20 animate-spin'
-              }`}
-            />
+          <div className="relative grid h-14 w-14 shrink-0 place-items-center">
+            {/* Anneau tracé au centre exact du carré (viewBox 56) : la rotation
+                ne peut plus décaler le cercle par rapport au logo. */}
+            <svg
+              viewBox="0 0 56 56"
+              className={`absolute inset-0 h-full w-full origin-center ${failed ? '' : 'animate-spin'}`}
+              aria-hidden="true"
+            >
+              <circle
+                cx="28"
+                cy="28"
+                r="26"
+                fill="none"
+                strokeWidth="2"
+                className={failed ? 'stroke-destructive/40' : 'stroke-primary/15'}
+              />
+              {!failed && (
+                <circle
+                  cx="28"
+                  cy="28"
+                  r="26"
+                  fill="none"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeDasharray="55 108"
+                  className="stroke-primary"
+                />
+              )}
+            </svg>
             <img
               src={logoMen}
               alt=""
               aria-hidden="true"
-              className="absolute inset-1.5 rounded-full bg-card object-contain p-1"
+              className="relative h-11 w-11 rounded-full bg-card object-contain"
             />
           </div>
           <div className="min-w-0 leading-tight">

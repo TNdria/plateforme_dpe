@@ -6,6 +6,8 @@ import { toast } from 'sonner';
 import { Target, ShieldCheck, Activity, Sparkles, Building2, Sigma } from 'lucide-react';
 import { dashboardApi, Dren, Cisco } from '@/services/api';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { useUserScope } from '@/hooks/useUserScope';
 import { useDiagnosticDataset } from '@/hooks/useDiagnosticDataset';
 import DiagnosticFilters from '@/components/diagnostic/DiagnosticFilters';
 import DiagnosticTextView from '@/components/diagnostic/DiagnosticTextView';
@@ -95,6 +97,8 @@ const Kpi = ({ label, value, hint }: { label: string; value: string; hint?: stri
 );
 
 const Diagnostic = () => {
+  const { sessionToken, authorizeDiagnostic } = useAuth();
+  const userScope = useUserScope();
   const [drens, setDrens] = useState<Dren[]>([]);
   const [ciscos, setCiscos] = useState<Cisco[]>([]);
   const [selectedDren, setSelectedDren] = useState('0');
@@ -103,16 +107,51 @@ const Diagnostic = () => {
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [diagnosticResult, setDiagnosticResult] = useState<DiagnosticResult | null>(null);
+  const [generatedScope, setGeneratedScope] = useState<{ codeDren: number; codeCisco: number } | null>(null);
   const [genError, setGenError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('monographie');
 
   const [reloadKey, setReloadKey] = useState(0);
+
+  // Périmètre effectivement demandé : les comptes DREN/CISCO sont verrouillés
+  // sur leur rattachement, les administrateurs gardent la sélection libre.
+  const requestDren = userScope.drenLocked ? userScope.initialDren : Number(selectedDren) || 0;
+  const requestCisco = userScope.ciscoLocked ? userScope.initialCisco : Number(selectedCisco) || 0;
+  const hasAuthorizedScope = userScope.isAdmin || userScope.initialDren > 0;
+
   const { dataset, loading: statsLoading, error: statsError } = useDiagnosticDataset(
-    Number(selectedDren), Number(selectedCisco), reloadKey,
+    requestDren, requestCisco, sessionToken, reloadKey, hasAuthorizedScope,
   );
 
-
   useEffect(() => { dashboardApi.getDrens().then(setDrens).catch(() => {}); }, []);
+
+  // Aligne les sélecteurs sur le rattachement du compte (affichage uniquement,
+  // la requête utilise déjà `requestDren`/`requestCisco`).
+  useEffect(() => {
+    if (userScope.drenLocked) setSelectedDren(String(userScope.initialDren));
+  }, [userScope.drenLocked, userScope.initialDren]);
+  useEffect(() => {
+    if (userScope.ciscoLocked) setSelectedCisco(String(userScope.initialCisco));
+  }, [userScope.ciscoLocked, userScope.initialCisco]);
+
+  // Charge les CISCO de la DREN active (y compris quand elle est imposée).
+  useEffect(() => {
+    if (!requestDren) { setCiscos([]); return; }
+    let cancelled = false;
+    setLoading(true);
+    dashboardApi.getCiscos(requestDren)
+      .then((list) => { if (!cancelled) setCiscos(list); })
+      .catch(() => { if (!cancelled) toast.error('Erreur lors du chargement des CISCOs'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [requestDren]);
+
+  // Toute changement de périmètre invalide le document généré et son export.
+  useEffect(() => {
+    setDiagnosticResult(null);
+    setGeneratedScope(null);
+    setGenError(null);
+  }, [requestDren, requestCisco]);
 
   const years = dataset?.years ?? [];
   const annee = useMemo(() => {
@@ -123,13 +162,14 @@ const Diagnostic = () => {
   const cur = dataset?.annees?.[annee];
   const ind = dataset?.indicateurs?.[annee];
 
-  const handleDrenChange = async (value: string) => {
-    setSelectedDren(value); setSelectedCisco('0'); setDiagnosticResult(null);
-    if (value !== '0') {
-      try { setLoading(true); setCiscos(await dashboardApi.getCiscos(Number(value))); }
-      catch { toast.error('Erreur lors du chargement des CISCOs'); }
-      finally { setLoading(false); }
-    } else setCiscos([]);
+  const handleDrenChange = (value: string) => {
+    if (userScope.drenLocked) return;
+    setSelectedDren(value); setSelectedCisco('0');
+  };
+
+  const handleCiscoChange = (value: string) => {
+    if (userScope.ciscoLocked) return;
+    setSelectedCisco(value);
   };
 
   const handleGenerateDiagnostic = async () => {
@@ -139,17 +179,28 @@ const Diagnostic = () => {
       setGenError(msg); setActiveTab('diagnostic'); toast.error(msg);
       return;
     }
-    setGenerating(true); setGenError(null); setDiagnosticResult(null); setActiveTab('diagnostic');
+    if (!sessionToken) {
+      const msg = 'Session expirée ou invalide. Reconnectez-vous pour générer un diagnostic.';
+      setGenError(msg); setActiveTab('diagnostic'); toast.error(msg);
+      return;
+    }
+    // Identité du rapport effectivement chargé (et non les filtres en cours).
+    const loadedScope = dataset.scope;
+    setGenerating(true); setGenError(null); setDiagnosticResult(null); setGeneratedScope(null); setActiveTab('diagnostic');
     try {
-      const drenName = drens.find(d => d.CODE_DREN === Number(selectedDren))?.DREN || '';
-      const ciscoName = ciscos.find(c => c.CODE_CISCO === Number(selectedCisco))?.CISCO || '';
+      const drenName = drens.find(d => d.CODE_DREN === Number(loadedScope.codeDren))?.DREN || '';
+      const ciscoName = ciscos.find(c => c.CODE_CISCO === Number(loadedScope.codeCisco))?.CISCO || '';
       const { data, error } = await supabase.functions.invoke('ai-diagnostic', {
-        body: { dataset, drenName, ciscoName, annee },
+        body: {
+          dataset, drenName, ciscoName, annee, sessionToken,
+          codeDren: loadedScope.codeDren, codeCisco: loadedScope.codeCisco,
+        },
       });
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
       if (!(data as any)?.diagnostic) throw new Error('Le service de génération n\'a renvoyé aucun contenu.');
       setDiagnosticResult(data as DiagnosticResult);
+      setGeneratedScope({ codeDren: Number(loadedScope.codeDren) || 0, codeCisco: Number(loadedScope.codeCisco) || 0 });
       toast.success('Diagnostic généré selon le plan officiel du MEN');
     } catch (err: any) {
       console.error(err);
@@ -161,11 +212,57 @@ const Diagnostic = () => {
 
   const evo = (get: (y: string) => any) => years.map((y) => get(String(y)));
 
-  const drenLabel = drens.find(d => d.CODE_DREN === Number(selectedDren))?.DREN || '';
-  const ciscoLabel = ciscos.find(c => c.CODE_CISCO === Number(selectedCisco))?.CISCO || '';
-  const scopeLabel = ciscoLabel ? `CISCO ${ciscoLabel}` : drenLabel ? `DREN ${drenLabel}` : 'Niveau national — Madagascar';
+  const activeDren = Number(dataset?.scope?.codeDren) || requestDren;
+  const activeCisco = Number(dataset?.scope?.codeCisco) || requestCisco;
+  const drenLabel = drens.find(d => d.CODE_DREN === activeDren)?.DREN || '';
+  const ciscoLabel = ciscos.find(c => c.CODE_CISCO === activeCisco)?.CISCO || '';
+  const scopeLabel = activeCisco ? `CISCO ${ciscoLabel}` : activeDren ? `DREN ${drenLabel}` : 'Niveau national — Madagascar';
+
+  const visibleDrens = userScope.drenLocked ? drens.filter(d => d.CODE_DREN === userScope.initialDren) : drens;
+  const visibleCiscos = userScope.ciscoLocked ? ciscos.filter(c => c.CODE_CISCO === userScope.initialCisco) : ciscos;
+
+  // Examens : uniquement les sessions de l'année sélectionnée. Si une session
+  // n'existe pas encore, la ligne reste vide (« — ») — on n'affiche pas à la
+  // place les résultats d'une autre session, qui ne concernent pas l'année.
+  const bepcDetail = ind?.resultats?.bepc ?? null;
+  const bepcDetailYear = annee;
+
+  const runExport = async (kind: 'pdf' | 'docx') => {
+    if (!diagnosticResult) return;
+    const scope = generatedScope ?? dataset?.scope;
+    if (!scope) {
+      toast.error('Aucun diagnostic autorisé à exporter.');
+      return;
+    }
+    // Contrôle serveur au moment de l'export (les droits peuvent avoir changé).
+    const allowed = await authorizeDiagnostic(Number(scope.codeDren) || 0, Number(scope.codeCisco) || 0);
+    if (!allowed) {
+      toast.error("Accès refusé : vous n'êtes pas autorisé à exporter ce diagnostic.");
+      return;
+    }
+    if (kind === 'pdf') exportDiagnosticToPDF(diagnosticResult);
+    else exportDiagnosticToDocx(diagnosticResult);
+  };
 
   const totalLevels = (path: any) => LEVELS.reduce((s, l) => s + (Number(path?.[l.key]?.total) || 0), 0);
+
+  if (!hasAuthorizedScope) {
+    return (
+      <div className="flex h-full items-center justify-center bg-background p-6">
+        <Card className="max-w-lg border-destructive/40">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base text-destructive">
+              <ShieldCheck className="h-5 w-5" /> Accès non autorisé
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            Votre compte n'est rattaché à aucune DREN ni CISCO. Contactez l'administrateur
+            pour obtenir un périmètre de consultation des diagnostics.
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -194,16 +291,17 @@ const Diagnostic = () => {
         <div className="rounded-lg border border-border bg-card p-3 shadow-sm">
 
           <DiagnosticFilters
-            drens={drens} ciscos={ciscos}
+            drens={visibleDrens} ciscos={visibleCiscos}
             selectedDren={selectedDren} selectedCisco={selectedCisco}
             selectedSecteur="2" selectedAnnee={annee}
             generating={generating} loading={loading} statsLoading={statsLoading}
             hasDiagnostic={!!diagnosticResult}
-            onDrenChange={handleDrenChange} onCiscoChange={(v) => { setSelectedCisco(v); setDiagnosticResult(null); }}
+            drenLocked={userScope.drenLocked} ciscoLocked={userScope.ciscoLocked}
+            onDrenChange={handleDrenChange} onCiscoChange={handleCiscoChange}
             onSecteurChange={() => {}} onAnneeChange={setSelectedAnnee}
             onGenerate={handleGenerateDiagnostic}
-            onExportPDF={() => { if (diagnosticResult) exportDiagnosticToPDF(diagnosticResult); }}
-            onExportDocx={() => { if (diagnosticResult) exportDiagnosticToDocx(diagnosticResult); }}
+            onExportPDF={() => { void runExport('pdf'); }}
+            onExportDocx={() => { void runExport('docx'); }}
           />
         </div>
         {statsLoading && !dataset ? (
@@ -271,6 +369,10 @@ const Diagnostic = () => {
                   ['Enseignants', ...LEVELS.map(l => nf(cur?.enseignants?.[l.key]?.total))],
                   ['Places assises', ...LEVELS.map(l => nf(cur?.places?.[l.key]?.total))],
                 ]} />
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Places assises = capacité réelle des tables-bancs et chaises recensées
+                  (bancs de 3 places comptés 3 places) pour les niveaux ouverts dans l'établissement.
+                </p>
               </Block>
             </div></ScrollArea>
           </TabsContent>
@@ -365,6 +467,11 @@ const Diagnostic = () => {
                   ['CEPE', nf(ind?.resultats?.cepe?.presentes), nf(ind?.resultats?.cepe?.admis), pct(ind?.resultats?.cepe?.tauxReussite), pct(ind?.resultats?.cepe?.tauxReussiteSurInscrits)],
                   ['BEPC', nf(ind?.resultats?.bepc?.presentes), nf(ind?.resultats?.bepc?.admis), pct(ind?.resultats?.bepc?.tauxReussite), pct(ind?.resultats?.bepc?.tauxReussiteSurInscrits)],
                 ]} />
+                {dataset?.warnings?.some((w) => w.startsWith('examen_bepc')) && (
+                  <p className="mt-2 text-xs text-destructive">
+                    Les résultats BEPC n'ont pas pu être récupérés pour ce périmètre. Signalez-le à l'administrateur.
+                  </p>
+                )}
                 {ind?.resultats?.cepe?.scores && (
                   <div className="mt-3">
                     <p className="text-sm font-semibold mb-1">Scores moyens CEPE</p>
@@ -372,6 +479,27 @@ const Diagnostic = () => {
                       rat(ind.resultats.cepe.scores.malagasy), rat(ind.resultats.cepe.scores.francais),
                       rat(ind.resultats.cepe.scores.calcul), rat(ind.resultats.cepe.moyenne),
                     ]]} />
+                  </div>
+                )}
+                {bepcDetail?.scores && (
+                  <div className="mt-3">
+                    <p className="text-sm font-semibold mb-1">BEPC — session {bepcDetailYear || '—'} : moyennes et notes &gt; 10 par matière</p>
+                    <Table head={['Matière', 'Moyenne', 'Candidats > 10']} rows={[
+                      ['Malagasy', rat(bepcDetail.scores.malagasy), nf(bepcDetail.notesSup10?.malagasy)],
+                      ['Français', rat(bepcDetail.scores.francais), nf(bepcDetail.notesSup10?.francais)],
+                      ['Anglais', rat(bepcDetail.scores.anglais), nf(bepcDetail.notesSup10?.anglais)],
+                      ['Mathématiques', rat(bepcDetail.scores.mathematique), nf(bepcDetail.notesSup10?.mathematique)],
+                      ['Physique', rat(bepcDetail.scores.physique), nf(bepcDetail.notesSup10?.physique)],
+                      ['SVT', rat(bepcDetail.scores.svt), nf(bepcDetail.notesSup10?.svt)],
+                      ['Histoire-Géographie', rat(bepcDetail.scores.histoGeo), nf(bepcDetail.notesSup10?.histoGeo)],
+                      ['Moyenne générale', rat(bepcDetail.moyenne), '—'],
+                    ]} />
+                    {bepcDetail.doublonsMatricule ? (
+                      <p className="mt-2 text-xs text-amber-600">
+                        Source {bepcDetailYear} : {nf(bepcDetail.doublonsMatricule)} matricule(s) en doublon —
+                        les totaux restent ceux des candidats présents.
+                      </p>
+                    ) : null}
                   </div>
                 )}
               </Block>

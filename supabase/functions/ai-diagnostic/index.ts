@@ -1,4 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { verifyTdbSession } from "../db-query/tdbDownloadAuth.ts";
+import { resolveDiagnosticScope } from "../db-query/diagnosticAccess.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -144,7 +146,29 @@ serve(async (req) => {
       });
     }
 
-    const { dataset, drenName, ciscoName, annee } = await req.json();
+    const body = (await req.json().catch(() => ({}))) || {};
+    const { dataset, drenName, ciscoName, annee, sessionToken, codeDren, codeCisco } = body;
+
+    // La génération reste soumise aux mêmes règles d'accès que la lecture du
+    // dataset : seuls le national (admin/DPE), sa DREN ou son CISCO.
+    const session = await verifyTdbSession(
+      typeof sessionToken === "string" ? sessionToken : "",
+      Deno.env.get("TDB_SESSION_SECRET") || "",
+    );
+    const decision = resolveDiagnosticScope(
+      session
+        ? { is_active: true, is_staff: session.admin, is_superuser: session.admin, dren: session.dren, cisco: session.cisco }
+        : null,
+      { codeDren: Number(codeDren) || 0, codeCisco: Number(codeCisco) || 0 },
+    );
+    if (!decision.allowed) {
+      const error = 'reason' in decision ? decision.reason : "Accès refusé.";
+      return new Response(JSON.stringify({ error }), {
+        status: session ? 403 : 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (!dataset || typeof dataset !== "object") {
       return new Response(JSON.stringify({ error: "Dataset manquant : impossible de générer un diagnostic sans données réelles." }), {
         status: 400,

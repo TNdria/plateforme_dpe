@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { DEFAULT_SCHOOL_YEAR, FIRST_SCHOOL_YEAR } from "@/utils/anneeScolaire";
+import { normalizeDiagnosticDataset } from "@/utils/diagnosticDataset";
 
 const DEFAULT_DJANGO_BACKEND_URL = "https://dpe-men.mg";
 
@@ -106,10 +107,50 @@ export async function fetchDBBatch<T = Record<string, any[]>>(
   }
 }
 
+// Appels aux endpoints serveur du repo (`api/*`, Vercel) : lecture directe de
+// la base PostgreSQL, jamais de données via la base Supabase.
+class ApiRequestError extends Error {
+  status: number;
+  code?: string;
+  constructor(status: number, message: string, code?: string) {
+    super(message);
+    this.name = 'ApiRequestError';
+    this.status = status;
+    this.code = code;
+  }
+}
+
+async function fetchApiPost<T>(path: string, body: Record<string, any>): Promise<T> {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    let message = `API Error: ${response.status} - ${errorText}`;
+    let code: string | undefined;
+    try {
+      const parsed = JSON.parse(errorText);
+      if (parsed && typeof parsed.error === 'string') message = parsed.error;
+      if (parsed && typeof parsed.code === 'string') code = parsed.code;
+    } catch { /* réponse non JSON : on garde le message brut */ }
+    throw new ApiRequestError(response.status, message, code);
+  }
+  return response.json();
+}
+
 // Helper for POST requests to edge function
-async function fetchDBPost<T>(action: string, body: Record<string, any>): Promise<T> {
+// `queryParams` sert de repli de compatibilité : les versions déjà déployées de
+// l'edge function lisent encore le périmètre dans la query string
+// (`code_dren`/`code_cisco`). La version courante ignore ces clés et fait foi
+// via le jeton de session, donc les envoyer ne réduit jamais les droits.
+async function fetchDBPost<T>(action: string, body: Record<string, any>, queryParams?: Record<string, string | number>): Promise<T> {
   const supabaseUrl = getSupabaseUrl();
-  const dbQueryUrl = `${supabaseUrl}/functions/v1/db-query?action=${action}`;
+  const search = new URLSearchParams({ action });
+  for (const [k, v] of Object.entries(queryParams || {})) search.set(k, String(v));
+  const dbQueryUrl = `${supabaseUrl}/functions/v1/db-query?${search.toString()}`;
 
   const response = await fetch(dbQueryUrl, {
     method: 'POST',
@@ -122,7 +163,12 @@ async function fetchDBPost<T>(action: string, body: Record<string, any>): Promis
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`API Error: ${response.status} - ${errorText}`);
+    let message = `API Error: ${response.status} - ${errorText}`;
+    try {
+      const parsed = JSON.parse(errorText);
+      if (parsed && typeof parsed.error === 'string') message = parsed.error;
+    } catch { /* réponse non JSON : on garde le message brut */ }
+    throw new Error(message);
   }
   return response.json();
 }
@@ -528,6 +574,8 @@ export interface DiagnosticDataset {
   annees: Record<string, any>;
   indicateurs: Record<string, any>;
   retention: Record<string, any>;
+  sessionsExamens?: { cepe: number | null; bepc: number | null };
+  warnings?: string[];
 }
 
 // Dashboard API - Uses direct database connection
@@ -898,10 +946,35 @@ export const besoinsApi = {
     }),
 };
 
+// Le bloc `places` a existé sous deux formes (nombre par niveau puis
+// `{ total }`) : la normalisation partagée évite que l'affichage des places
+// assises dépende de la version du service interrogé.
 // Diagnostic API - Based on src/diagnostic/urls.py
 export const diagnosticApi = {
-  getDataset: (codeDren: number, codeCisco: number) =>
-    fetchDB<DiagnosticDataset>('getDiagnosticDataset', { code_dren: codeDren, code_cisco: codeCisco }),
+  /** Le dataset est protégé par le jeton de session signé (contrôle serveur). */
+  getDataset: async (codeDren: number, codeCisco: number, sessionToken: string) => {
+    try {
+      return normalizeDiagnosticDataset(
+        await fetchApiPost<DiagnosticDataset>('/api/diagnostic', { codeDren, codeCisco, sessionToken }),
+      );
+    } catch (error) {
+      // Endpoint serveur pas encore configuré (secret de session absent de
+      // l'environnement) : repli transitoire sur l'ancienne fonction. Dès que
+      // TDB_SESSION_SECRET est défini, la lecture passe uniquement par
+      // `/api/diagnostic` et la base PostgreSQL.
+      if (error instanceof ApiRequestError && error.code === 'DIAG_ENDPOINT_UNCONFIGURED') {
+        console.warn('[diagnostic] /api/diagnostic non configuré, repli temporaire sur db-query.');
+        return normalizeDiagnosticDataset(
+          await fetchDBPost<DiagnosticDataset>(
+            'getDiagnosticDataset',
+            { codeDren, codeCisco, sessionToken },
+            { code_dren: codeDren, code_cisco: codeCisco },
+          ),
+        );
+      }
+      throw error;
+    }
+  },
   getDrens: () => fetchDB<Dren[]>('getDrens'),
   getCiscos: (codeDren: number) => fetchDB<Cisco[]>('getCiscos', { code_dren: codeDren }),
   getDiagnostic: (codeDren: number, codeCisco: number) =>
