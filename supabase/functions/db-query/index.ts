@@ -789,11 +789,24 @@ serve(async (req: Request) => {
         break;
 
       case "getCiscos":
-        if (!codeDren || codeDren === 0) {
-          result = await client.queryObject('SELECT DISTINCT "CODE_CISCO", "CISCO", "CODE_DREN" FROM v_cisco WHERE "CODE_DREN" > 0 ORDER BY "CISCO"');
-        } else {
-          result = await client.queryObject(`SELECT DISTINCT "CODE_CISCO", "CISCO", "CODE_DREN" FROM v_cisco WHERE "CODE_DREN" = ${codeDren} ORDER BY "CISCO"`);
-        }
+        // Référentiel + CISCO réellement présentes dans la collecte de l'année
+        // la plus récente : une CISCO créée après la dernière mise à jour de
+        // `v_cisco` (ex. 622 ANTANIMORA SUD) doit rester sélectionnable.
+        result = await client.queryObject(`
+          WITH referentiel AS (
+            SELECT "CODE_CISCO"::int AS code_cisco, "CODE_DREN"::int AS code_dren, btrim("CISCO") AS cisco
+            FROM v_cisco WHERE "CODE_DREN" > 0 AND "CODE_CISCO" IS NOT NULL
+            UNION ALL
+            SELECT "CODE_CISCO"::int, "CODE_DREN"::int, btrim("CISCO")
+            FROM fpe_a1
+            WHERE "ANNEE_SCOLAIRE" = (SELECT MAX("ANNEE_SCOLAIRE") FROM fpe_a1)
+              AND "CODE_DREN" > 0 AND "CODE_CISCO" IS NOT NULL
+          )
+          SELECT code_cisco AS "CODE_CISCO", MAX(NULLIF(cisco, '')) AS "CISCO", code_dren AS "CODE_DREN"
+          FROM referentiel
+          ${!codeDren || codeDren === 0 ? "WHERE code_dren > 0" : `WHERE code_dren = ${Number(codeDren)}`}
+          GROUP BY code_cisco, code_dren
+          ORDER BY 2`);
         break;
 
       case "getLayerEtabN0":

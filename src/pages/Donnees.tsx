@@ -579,6 +579,17 @@ const Donnees = () => {
       toast.error("Aucune donnée à exporter");
       return;
     }
+    // Le fichier est étiqueté avec l'année / les filtres affichés : refuser
+    // d'exporter des lignes chargées avant la dernière modification évite
+    // d'associer un millésime à des données d'un autre périmètre.
+    if (isFilterDirty) {
+      toast.error("Appliquez les filtres avant d'exporter");
+      return;
+    }
+    if (loading) {
+      toast.info("Chargement en cours, patientez avant d'exporter");
+      return;
+    }
     const category = exportCategories.find((c) => c.id === catId)!;
     const columns = category.getColumns();
     const rows = data.map((row) =>
@@ -810,7 +821,8 @@ const Donnees = () => {
               </Select>
             </FilterField>
 
-            {/* Commune */}
+            {/* Commune — niveau administratif sous la CISCO, avant le ZAP
+                (découpage pédagogique transversal, pas un sous-niveau). */}
             <FilterField label="Commune">
               <Select
                 value={filters.selectedCommune}
@@ -839,8 +851,8 @@ const Donnees = () => {
               <Select
                 value={filters.selectedZap}
                 onValueChange={(value) => {
-                  // Une commune doit toujours appartenir au ZAP sélectionné.
-                  // Le hook recharge la liste et remet la commune à "Toutes".
+                  // ZAP et commune se recoupent en base : choisir un ZAP
+                  // conserve la commune sélectionnée.
                   filters.handleZapChange(value);
                   markFilterDirty();
                 }}
@@ -1113,6 +1125,14 @@ const Donnees = () => {
                     : "Toutes"}
                 </div>
                 <div>
+                  <strong>Commune :</strong>{" "}
+                  {filters.selectedCommune !== "0"
+                    ? filters.communes.find(
+                        (c) => String(c.CODE_COMMUNE) === filters.selectedCommune,
+                      )?.COMMUNE || "Toutes"
+                    : "Toutes"}
+                </div>
+                <div>
                   <strong>ZAP :</strong>{" "}
                   {filters.selectedZap !== "0"
                     ? filters.zaps.find((z) => String(z.CODE_ZAP) === filters.selectedZap)?.ZAP ||
@@ -1219,7 +1239,15 @@ const Donnees = () => {
             </div>
           </div>
 
-          <div className="border-t p-3 flex justify-end">
+          <div className="border-t p-3 flex justify-end gap-2">
+            {/* La période choisie ici doit être chargée avant l'export : le
+                bouton évite de renvoyer l'utilisateur vers le filtre masqué
+                par le modal. */}
+            {isFilterDirty && (
+              <Button onClick={() => void handleFilter()} disabled={loading}>
+                Appliquer la période
+              </Button>
+            )}
             <Button variant="ghost" onClick={() => setShowExportModal(false)}>
               Fermer
             </Button>

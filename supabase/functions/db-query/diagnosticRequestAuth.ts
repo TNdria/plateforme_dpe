@@ -57,7 +57,21 @@ export async function authorizeDiagnosticRequest(
       [codeCisco],
     );
     const cisco: any = ciscoRows.rows[0];
-    ciscoDren = cisco ? Number(cisco.CODE_DREN) || null : null;
+    if (cisco) {
+      ciscoDren = Number(cisco.CODE_DREN) || null;
+    } else {
+      // CISCO absent du référentiel `v_cisco` mais présent dans la collecte
+      // (ex. CISCO 622 de la DREN 61) : rattachement résolu dans la dernière
+      // année collectée, uniquement s'il est univoque.
+      const rows = await client.queryObject(
+        `SELECT DISTINCT "CODE_DREN" FROM fpe_a1
+          WHERE "CODE_CISCO" = $1 AND "CODE_DREN" IS NOT NULL
+            AND "ANNEE_SCOLAIRE" = (SELECT MAX("ANNEE_SCOLAIRE") FROM fpe_a1)`,
+        [codeCisco],
+      );
+      const found = (rows.rows || []) as any[];
+      ciscoDren = found.length === 1 ? Number(found[0].CODE_DREN) || null : null;
+    }
   }
 
   const decision = resolveDiagnosticScope(account, { codeDren, codeCisco, ciscoDren });

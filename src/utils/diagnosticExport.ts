@@ -403,8 +403,16 @@ export const exportDiagnosticToPDF = (result: DiagnosticResult) => {
   };
 
   const renderChartInPDF = (chart: ChartBlock) => {
-    const chartCanvas = renderChartToCanvas(chart, 480, 260);
-    const imgData = chartCanvas.toDataURL('image/png');
+    // Un graphique non dessinable (données inattendues) ne doit pas faire
+    // échouer tout le PDF : on retombe sur le tableau de données équivalent.
+    let imgData: string;
+    try {
+      imgData = renderChartToCanvas(chart, 480, 260).toDataURL('image/png');
+    } catch (e) {
+      const tableVersion = chartToTable(chart);
+      if (tableVersion.header.length) renderTable(tableVersion);
+      return;
+    }
     const imgW = maxW - 10;
     const imgH = (260 / 480) * imgW;
     

@@ -1,6 +1,10 @@
 // Diagnostic dataset builder — follows the official MEN document
 // "DOCUMENT DE DIAGNOSTIC DU SYSTEME EDUCATIF" (formules officielles).
-// All data comes from the DPE PostgreSQL server (fpe_*, population_2025, examen_*).
+// All data comes from the DPE PostgreSQL server (fpe_*, population, examen_*).
+import {
+  diagnosticPopulations, diagnosticPopulationQuery, diagnosticPopCoverageQuery, diagnosticPopulationSource,
+  type PopulationYear,
+} from "./diagnosticPopulation.ts";
 
 // Cast tolérant : certaines colonnes du serveur DPE contiennent du texte
 // ('b', 'NA', '-', ...). On nettoie avant le cast pour ne jamais faire échouer
@@ -80,6 +84,7 @@ export async function executeDiagnosticDataset(client: any, s: Scope) {
       SUM(CASE WHEN ${n('a."EXISTE_COLLEGE"')}=1 THEN 1 ELSE 0 END) AS college,
       SUM(CASE WHEN ${n('a."EXISTE_LYCEE"')}=1 THEN 1 ELSE 0 END) AS lycee,
       SUM(CASE WHEN ${n('a."EXISTE_PRIMAIRE"')}=1 AND ${n('a."EXISTE_PRESCO"')}=1 THEN 1 ELSE 0 END) AS epp_avec_cap,
+      COUNT(DISTINCT a."CODE_ETAB") AS etabs_distincts,
       SUM(CASE WHEN upper(COALESCE(a."EST_ELECTRIFIE",''))IN('1','OUI','TRUE') THEN 1 ELSE 0 END) AS electrifie,
       SUM(CASE WHEN upper(COALESCE(a."EST_ALIMENTE_EAU",''))IN('1','OUI','TRUE') THEN 1 ELSE 0 END) AS point_eau
     FROM fpe_a1 a WHERE ${scopeSql("a", s)} GROUP BY 1,2`;
@@ -152,25 +157,17 @@ export async function executeDiagnosticDataset(client: any, s: Scope) {
       SUM(CASE WHEN ${lvl(c)} AND ${fonc} THEN 1 ELSE 0 END) AS ${k}_fonctionnaire,
       SUM(CASE WHEN ${lvl(c)} AND upper(COALESCE(p."SEXE",'')) LIKE 'F%' THEN 1 ELSE 0 END) AS ${k}_femmes`)
     .join(",");
-  const qP1 = `SELECT ${yr('p."ANNEE_SCOLAIRE"')} AS y, ${n('p."SECTEUR"')}::int AS s, ${teacherCols}
+  const qP1 = `SELECT ${yr('p."ANNEE_SCOLAIRE"')} AS y, ${n('p."SECTEUR"')}::int AS s,
+      COUNT(*) AS pers_distincts, ${teacherCols}
     FROM fpe_p1 p WHERE ${scopeSql("p", s)} GROUP BY 1,2`;
 
   // ---------- 9. Population (dénominateurs TBS / TBA) ----------
-  const popWhere = s.codeCisco > 0
-    ? `code_cisco = ${s.codeCisco}`
-    : s.codeDren > 0
-    ? `code_dren = ${s.codeDren}`
-    : "TRUE";
-  const qPop = `SELECT
-      SUM(pop_3_ans+pop_4_ans+pop_5_ans) AS p3_5,
-      SUM(pop_6_ans+pop_7_ans+pop_8_ans+pop_9_ans+pop_10_ans) AS p6_10,
-      SUM(pop_6_ans) AS p6,
-      SUM(pop_11_ans+pop_12_ans+pop_13_ans+pop_14_ans) AS p11_14,
-      SUM(pop_11_ans) AS p11,
-      SUM(pop_15_ans+pop_16_ans+pop_17_ans) AS p15_17,
-      SUM(pop_15_ans) AS p15,
-      SUM(pop_total) AS total
-    FROM population_2025 WHERE ${popWhere}`;
+  // Source par année : la projection officielle importée (`tdb_population_cisco`),
+  // déjà utilisée par le TDB DREN/Niveau, prime sur la table historique
+  // `population_2025` (repli, pour ne jamais supprimer un taux existant).
+  // Couverture : certains CISCO de la collecte (ex. 622 en 2026) n'ont de ligne
+  // dans aucune des deux sources ; on les compte pour ne jamais calculer un
+  // taux sur un dénominateur partiel.
 
   // ---------- 10. Examens ----------
   // Périmètre des examens : les candidats sont rattachés par CODE_ETAB. Ce
@@ -210,12 +207,23 @@ export async function executeDiagnosticDataset(client: any, s: Scope) {
       return { rows: [] };
     });
 
-  const [rE1, rE4, rA1, rJ1, rG1, rPl, rL1, rP1, rPop, rCepe] = await Promise.all([
+  const [rE1, rE4, rA1, rJ1, rG1, rPl, rL1, rP1, rCepe] = await Promise.all([
     safe("fpe_e1", qE1), safe("fpe_e4", qE4), safe("fpe_a1", qA1),
     safe("fpe_j1", qJ1), safe("fpe_g1", qG1), safe("v_place_assises", qPl),
-    safe("fpe_l1", qL1), safe("fpe_p1", qP1), safe("population_2025", qPop),
-    safe("examen_cepe", qCepe),
+    safe("fpe_l1", qL1), safe("fpe_p1", qP1), safe("examen_cepe", qCepe),
   ]);
+
+  // Population : une source par année (projection importée, sinon population_2025).
+  const popSources = await Promise.all(
+    [...new Set(years)].filter((y) => y > 2000).map(async (year) => ({
+      year, source: await diagnosticPopulationSource(client, year),
+    })),
+  );
+  const [popResults, covResults] = await Promise.all([
+    Promise.all(popSources.map((p) => safe(`population ${p.year}`, diagnosticPopulationQuery(p.year, p.source, s)))),
+    Promise.all(popSources.map((p) => safe(`population_couverture ${p.year}`, diagnosticPopCoverageQuery(p.year, p.source, s)))),
+  ]);
+  const populations = diagnosticPopulations(popSources, popResults);
 
   // BEPC : même périmètre que le CEPE. On garde l'isolation par bloc pour
   // qu'une erreur BEPC n'efface pas le reste du diagnostic, mais elle est
@@ -256,7 +264,10 @@ export async function executeDiagnosticDataset(client: any, s: Scope) {
           college: { ...empty(), grades: {} as Record<string, any> },
           lycee: { ...empty(), grades: {} as Record<string, any> },
         },
-        etablissements: { presco: { pub: 0, priv: 0, total: 0 }, primaire: { pub: 0, priv: 0, total: 0 }, college: { pub: 0, priv: 0, total: 0 }, lycee: { pub: 0, priv: 0, total: 0 }, eppAvecCap: 0, electrifie: 0, pointEau: 0 },
+        // `etablissements.total` = établissements DISTINCTS du périmètre ;
+        // la somme des compteurs par niveau compte plusieurs fois une école
+        // qui ouvre plusieurs niveaux (primaire + collège par exemple).
+        etablissements: { presco: { pub: 0, priv: 0, total: 0 }, primaire: { pub: 0, priv: 0, total: 0 }, college: { pub: 0, priv: 0, total: 0 }, lycee: { pub: 0, priv: 0, total: 0 }, total: 0, eppAvecCap: 0, electrifie: 0, pointEau: 0 },
         salles: { presco: { bon: 0, mauvais: 0, total: 0 }, primaire: { bon: 0, mauvais: 0, total: 0 }, college: { bon: 0, mauvais: 0, total: 0 }, lycee: { bon: 0, mauvais: 0, total: 0 } },
         sections: { presco: 0, primaire: 0, college: 0, lycee: 0, multigrade: 0 },
         // Places assises recalculées depuis `fpe_k1` (la vue `v_place_assises`
@@ -271,6 +282,9 @@ export async function executeDiagnosticDataset(client: any, s: Scope) {
           primaire: { total: 0, qualifie: 0, fonctionnaire: 0, femmes: 0, pub: 0, priv: 0 },
           college: { total: 0, qualifie: 0, fonctionnaire: 0, femmes: 0, pub: 0, priv: 0 },
           lycee: { total: 0, qualifie: 0, fonctionnaire: 0, femmes: 0, pub: 0, priv: 0 },
+          // Personnel distinct (une ligne fpe_p1 = un enseignant) : la somme
+          // des niveaux double les enseignants qui tiennent plusieurs niveaux.
+          total: 0,
         },
         examens: { cepe: null as any, bepc: null as any },
       };
@@ -325,6 +339,7 @@ export async function executeDiagnosticDataset(client: any, s: Scope) {
       y.etablissements[lv][key] += num(row[lv]);
       y.etablissements[lv].total += num(row[lv]);
     }
+    y.etablissements.total += num(row.etabs_distincts);
     y.etablissements.eppAvecCap += num(row.epp_avec_cap);
     y.etablissements.electrifie += num(row.electrifie);
     y.etablissements.pointEau += num(row.point_eau);
@@ -357,6 +372,7 @@ export async function executeDiagnosticDataset(client: any, s: Scope) {
   for (const row of rP1.rows as any[]) {
     const y = ensure(num(row.y));
     const priv = num(row.s) === 1;
+    y.enseignants.total += num(row.pers_distincts);
     for (const lv of ["presco", "primaire", "college", "lycee"]) {
       const t = y.enseignants[lv];
       t.total += num(row[`${lv}_total`]);
@@ -392,13 +408,34 @@ export async function executeDiagnosticDataset(client: any, s: Scope) {
     }
   }
 
-  const popRow: any = (rPop.rows as any[])[0] || {};
-  const population = {
-    p3_5: num(popRow.p3_5), p6_10: num(popRow.p6_10), p6: num(popRow.p6),
-    p11_14: num(popRow.p11_14), p11: num(popRow.p11),
-    p15_17: num(popRow.p15_17), p15: num(popRow.p15), total: num(popRow.total),
-    source: "population_2025 (projection RGPH-3)",
-  };
+  const emptyPopulation = (): PopulationYear => ({
+    p3_5: 0, p6_10: 0, p6: 0, p11_14: 0, p11: 0, p15_17: 0, p15: 0, total: 0, source: "",
+  });
+
+  // CISCO du périmètre sans population : le dénominateur est alors partiel.
+  const popCoverage: Record<number, { ciscos: number; missing: number; codes: number[] }> = {};
+  for (const res of covResults) {
+    for (const row of (res.rows || []) as any[]) {
+      popCoverage[num(row.y)] = {
+        ciscos: num(row.ciscos),
+        missing: num(row.ciscos_sans_population),
+        codes: Array.isArray(row.codes_manquants) ? row.codes_manquants.map((c: any) => num(c)) : [],
+      };
+    }
+  }
+  const missingPopCodes = new Set<number>();
+  for (const cov of Object.values(popCoverage)) {
+    for (const code of cov.codes) if (code > 0) missingPopCodes.add(code);
+  }
+  const scopeIsNational = s.codeDren <= 0 && s.codeCisco <= 0;
+  if (missingPopCodes.size > 0) {
+    const codes = [...missingPopCodes].sort((a, b) => a - b).join(", ");
+    warnings.push(
+      scopeIsNational
+        ? `La population de référence ne fournit aucune donnée pour la/les CISCO ${codes} : la couverture nationale est calculée sans elles (dénominateur incomplet, aucune correction automatique).`
+        : `La population de référence ne fournit aucune donnée pour la/les CISCO ${codes} : les taux de couverture (TBS, TBA, préscolarisation, salles pour 1000) ne sont pas calculés sur ce périmètre afin de ne pas utiliser un dénominateur incomplet.`,
+    );
+  }
 
   // Écarte les années sans effectifs (collecte non encore réalisée)
   for (const k of Object.keys(annees)) {
@@ -409,6 +446,8 @@ export async function executeDiagnosticDataset(client: any, s: Scope) {
   // ============ Indicateurs officiels ============
   const yearList = Object.keys(annees).map(Number).sort((a, b) => a - b);
   const indicateurs: Record<string, any> = {};
+  // Population du dernier exercice : exposée pour l'affichage et l'IA.
+  const population = populations[yearList.length ? yearList[yearList.length - 1] : 0] || emptyPopulation();
 
   for (const y of yearList) {
     const d = annees[String(y)];
@@ -439,19 +478,25 @@ export async function executeDiagnosticDataset(client: any, s: Scope) {
 
     const el = d.eleves, ens = d.enseignants, sdc = d.salles, pl = d.places;
     const cepe = d.examens.cepe, bepc = d.examens.bepc;
+    // Taux assis sur la population : jamais calculés sur un dénominateur
+    // partiel (CISCO de collecte absente de la source de population).
+    const cov = popCoverage[y];
+    const pop = populations[y] || emptyPopulation();
+    const populationComplete = scopeIsNational || !cov || cov.missing === 0;
+    const popRate = (value: number | null) => (populationComplete ? value : null);
     const prevT5 = grPrev("primaire", "T5");
     const prevT9 = grPrev("college", "T9");
 
     indicateurs[String(y)] = {
       couverture: {
-        tauxPrescolarisation: r1(pct(el.presco.total, population.p3_5)),
-        tbsPrimaire: r1(pct(el.primaire.total, population.p6_10)),
-        tbaPrimaire: r1(pct(Math.max(gr("primaire", "T1").total - gr("primaire", "T1").redoublants, 0), population.p6)),
-        tbsCollege: r1(pct(el.college.total, population.p11_14)),
-        tbaCollege: r1(pct(Math.max(gr("college", "T6").total - gr("college", "T6").redoublants, 0), population.p11)),
-        tbsLycee: r1(pct(el.lycee.total, population.p15_17)),
-        tbaLycee: r1(pct(Math.max(gr("lycee", "2NDE").total - gr("lycee", "2NDE").redoublants, 0), population.p15)),
-        sallesPour1000Scolarisables: r1(population.p6_10 > 0 ? (sdc.primaire.total / population.p6_10) * 1000 : null),
+        tauxPrescolarisation: popRate(r1(pct(el.presco.total, pop.p3_5))),
+        tbsPrimaire: popRate(r1(pct(el.primaire.total, pop.p6_10))),
+        tbaPrimaire: popRate(r1(pct(Math.max(gr("primaire", "T1").total - gr("primaire", "T1").redoublants, 0), pop.p6))),
+        tbsCollege: popRate(r1(pct(el.college.total, pop.p11_14))),
+        tbaCollege: popRate(r1(pct(Math.max(gr("college", "T6").total - gr("college", "T6").redoublants, 0), pop.p11))),
+        tbsLycee: popRate(r1(pct(el.lycee.total, pop.p15_17))),
+        tbaLycee: popRate(r1(pct(Math.max(gr("lycee", "2NDE").total - gr("lycee", "2NDE").redoublants, 0), pop.p15))),
+        sallesPour1000Scolarisables: popRate(r1(pop.p6_10 > 0 ? (sdc.primaire.total / pop.p6_10) * 1000 : null)),
         ratioClassePedagogiqueSalle: r2(div(d.sections.primaire, sdc.primaire.total)),
         tauxUtilisationSalleCollege: r1(pct(d.sections.college, sdc.college.total)),
         tauxUtilisationSalleLycee: r1(pct(d.sections.lycee, sdc.lycee.total)),
@@ -547,8 +592,25 @@ export async function executeDiagnosticDataset(client: any, s: Scope) {
     };
   }
 
-  // Profil de rétention apparent T1 -> T5 (cohorte sur 5 ans)
+  // TBS > 200 % : effectif supérieur au double de la population recensée.
+  // Anomalie de collecte ou projection de population trop basse : on la
+  // signale explicitement, sans plafonner ni corriger le chiffre source.
   const last = yearList[yearList.length - 1];
+  if (last) {
+    const covLast = popCoverage[last];
+    if ((scopeIsNational || !covLast || covLast.missing === 0) && population.p6_10 > 0) {
+      const lastEl = annees[String(last)].eleves.primaire;
+      const tbs = pct(lastEl.total, population.p6_10);
+      if (tbs !== null && tbs > 200) {
+        const tba = pct(Math.max((lastEl.grades["T1"]?.total || 0) - (lastEl.grades["T1"]?.redoublants || 0), 0), population.p6);
+        warnings.push(
+          `TBS primaire ${last} = ${r1(tbs)} % (TBA ${r1(tba)} %) : effectif supérieur au double de la population scolarisable recensée. Vérifier la collecte et la projection de population (valeurs affichées telles quelles).`,
+        );
+      }
+    }
+  }
+
+  // Profil de rétention apparent T1 -> T5 (cohorte sur 5 ans)
   const retention: Record<string, any> = {};
   if (last && annees[String(last - 4)]) {
     const start = annees[String(last - 4)].eleves.primaire.grades["T1"]?.total || 0;

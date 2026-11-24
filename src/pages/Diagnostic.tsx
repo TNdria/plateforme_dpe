@@ -117,7 +117,7 @@ const Diagnostic = () => {
   // sur leur rattachement, les administrateurs gardent la sélection libre.
   const requestDren = userScope.drenLocked ? userScope.initialDren : Number(selectedDren) || 0;
   const requestCisco = userScope.ciscoLocked ? userScope.initialCisco : Number(selectedCisco) || 0;
-  const hasAuthorizedScope = userScope.isAdmin || userScope.initialDren > 0;
+  const hasAuthorizedScope = userScope.isAdmin || userScope.initialDren > 0 || userScope.initialCisco > 0;
 
   const { dataset, loading: statsLoading, error: statsError } = useDiagnosticDataset(
     requestDren, requestCisco, sessionToken, reloadKey, hasAuthorizedScope,
@@ -240,8 +240,13 @@ const Diagnostic = () => {
       toast.error("Accès refusé : vous n'êtes pas autorisé à exporter ce diagnostic.");
       return;
     }
-    if (kind === 'pdf') exportDiagnosticToPDF(diagnosticResult);
-    else exportDiagnosticToDocx(diagnosticResult);
+    try {
+      if (kind === 'pdf') exportDiagnosticToPDF(diagnosticResult);
+      else await exportDiagnosticToDocx(diagnosticResult);
+    } catch (err) {
+      console.error(err);
+      toast.error(kind === 'pdf' ? "Échec de l'export PDF du diagnostic." : "Échec de l'export DOCX du diagnostic.");
+    }
   };
 
   const totalLevels = (path: any) => LEVELS.reduce((s, l) => s + (Number(path?.[l.key]?.total) || 0), 0);
@@ -308,13 +313,21 @@ const Diagnostic = () => {
           <KpiSkeletonRow />
         ) : cur ? (
           <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-5">
-            <Kpi label="Établissements" value={nf(totalLevels(cur?.etablissements))} hint="tous niveaux" />
+            <Kpi label="Établissements" value={nf(cur?.etablissements?.total ?? totalLevels(cur?.etablissements))} hint="établissements distincts" />
             <Kpi label="Salles de classe" value={nf(totalLevels(cur?.salles))} hint="tous niveaux" />
             <Kpi label="Élèves" value={nf(totalLevels(cur?.eleves))} hint="tous niveaux" />
-            <Kpi label="Enseignants" value={nf(totalLevels(cur?.enseignants))} hint="tous niveaux" />
+            <Kpi label="Enseignants" value={nf(cur?.enseignants?.total ?? totalLevels(cur?.enseignants))} hint="personnels distincts" />
             <Kpi label="TBS Primaire" value={pct(ind?.couverture?.tbsPrimaire)} hint="cible 100 %" />
           </div>
         ) : null}
+
+        {(dataset?.warnings?.length ?? 0) > 0 && (
+          <ul className="mt-2 space-y-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-700 dark:text-amber-300">
+            {dataset!.warnings!.map((w, i) => (
+              <li key={i}>⚠ {w}</li>
+            ))}
+          </ul>
+        )}
 
       </div>
 

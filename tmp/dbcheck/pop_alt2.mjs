@@ -1,0 +1,11 @@
+import pg from 'pg';
+const c = new pg.Client({ connectionString: process.env.DATABASE_URL || process.env.SUPABASE_DB_URL });
+await c.connect();
+const q = async (s) => (await c.query(s)).rows;
+console.log('tdb_population_cisco annees:', await q(`SELECT annee, count(*)::int n FROM tdb_population_cisco GROUP BY 1 ORDER BY 1`));
+console.log('609/622:', await q(`SELECT annee, code_cisco, cisco, (t_6+t_7+t_8+t_9+t_10)::int p610, t_6::int, t_10::int FROM tdb_population_cisco WHERE code_cisco IN (609,622) ORDER BY 1,2`));
+console.log('tdb_population_dren cols:', (await q(`SELECT column_name FROM information_schema.columns WHERE table_name='tdb_population_dren' ORDER BY ordinal_position`)).map(r=>r.column_name).join(', '));
+console.log('tdb_population_dren 61:', await q(`SELECT * FROM tdb_population_dren WHERE code_dren=61 ORDER BY 1`));
+console.log('population cols:', (await q(`SELECT column_name FROM information_schema.columns WHERE table_name='population' ORDER BY ordinal_position`)).map(r=>r.column_name).join(', '));
+console.log('population_rgph cols:', (await q(`SELECT column_name FROM information_schema.columns WHERE table_name='population_rgph' ORDER BY ordinal_position`)).map(r=>r.column_name).join(', '));
+await c.end();

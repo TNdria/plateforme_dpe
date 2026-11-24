@@ -216,7 +216,20 @@ export default async function handler(req: MinimalRequest, res: MinimalResponse)
         [codeCisco],
       );
       const cisco = ciscoRows.rows[0];
-      ciscoDren = cisco ? Number(cisco.CODE_DREN) || null : null;
+      if (cisco) {
+        ciscoDren = Number(cisco.CODE_DREN) || null;
+      } else {
+        // CISCO absent du référentiel `v_cisco` mais présent dans la collecte
+        // (ex. CISCO 622 de la DREN 61) : on résout son rattachement dans la
+        // dernière année collectée, et seulement s'il est univoque.
+        const rows = await client.query(
+          `SELECT DISTINCT "CODE_DREN" FROM fpe_a1
+            WHERE "CODE_CISCO" = $1 AND "CODE_DREN" IS NOT NULL
+              AND "ANNEE_SCOLAIRE" = (SELECT MAX("ANNEE_SCOLAIRE") FROM fpe_a1)`,
+          [codeCisco],
+        );
+        ciscoDren = rows.rows.length === 1 ? Number(rows.rows[0].CODE_DREN) || null : null;
+      }
     }
 
     const decision = resolveDiagnosticScope(account, { codeDren, codeCisco, ciscoDren });

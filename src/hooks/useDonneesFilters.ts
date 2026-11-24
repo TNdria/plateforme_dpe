@@ -152,6 +152,8 @@ export const useDonneesFilters = (scope: DonneesFilterScope = NATIONAL_FILTER_SC
     setSelectedCommune('0');
     setZaps([]);
     setCommunes([]);
+    // La liste des CISCO dépend de la DREN, pas du CISCO choisi : la vider
+    // ici laissait un menu CISCO sans options après « Réinitialiser ».
 
     if (value !== '0') {
       try {
@@ -171,48 +173,13 @@ export const useDonneesFilters = (scope: DonneesFilterScope = NATIONAL_FILTER_SC
     }
   };
 
-  // Recharge la liste des communes en la restreignant au ZAP sélectionné.
-  // Sans cela, le dropdown Commune continue d'afficher TOUTES les communes
-  // du CISCO même après le choix d'un ZAP précis.
-  const handleZapChange = async (value: string) => {
+  // ZAP et Commune sont deux critères indépendants à l'intérieur du CISCO :
+  // en base ils se recoupent (une commune peut relever de plusieurs ZAP, un
+  // ZAP regroupe plusieurs communes). Choisir un ZAP ne doit donc ni effacer
+  // la commune déjà sélectionnée ni vider la liste des communes du CISCO ;
+  // les deux filtres se combinent en ET dans la requête.
+  const handleZapChange = (value: string) => {
     setSelectedZap(value);
-    setSelectedCommune('0');
-    setCommunes([]);
-
-    if (value === '0') {
-      // Retour à "toutes les communes du CISCO"
-      if (selectedCisco !== '0') {
-        try {
-          setLoadingFilters(true);
-          const communesData = await donneesApi.getCommunes(
-            Number(selectedDren),
-            Number(selectedCisco),
-            0
-          );
-          setCommunes(dedupeByKey(communesData, (c) => String(c.CODE_COMMUNE)));
-        } catch (err) {
-          toast.error('Erreur lors du chargement des communes');
-        } finally {
-          setLoadingFilters(false);
-        }
-      }
-      return;
-    }
-
-    try {
-      setLoadingFilters(true);
-      const communesData = await donneesApi.getCommunes(
-        Number(selectedDren),
-        Number(selectedCisco),
-        Number(value)
-      );
-      setCommunes(dedupeByKey(communesData, (c) => String(c.CODE_COMMUNE)));
-    } catch (err) {
-      toast.error('Erreur lors du chargement des communes du ZAP');
-      setCommunes([]);
-    } finally {
-      setLoadingFilters(false);
-    }
   };
 
   return {
