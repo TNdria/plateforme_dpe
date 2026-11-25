@@ -958,12 +958,21 @@ export const diagnosticApi = {
         await fetchApiPost<DiagnosticDataset>('/api/diagnostic', { codeDren, codeCisco, sessionToken }),
       );
     } catch (error) {
-      // Endpoint serveur pas encore configuré (secret de session absent de
-      // l'environnement) : repli transitoire sur l'ancienne fonction. Dès que
-      // TDB_SESSION_SECRET est défini, la lecture passe uniquement par
-      // `/api/diagnostic` et la base PostgreSQL.
-      if (error instanceof ApiRequestError && error.code === 'DIAG_ENDPOINT_UNCONFIGURED') {
-        console.warn('[diagnostic] /api/diagnostic non configuré, repli temporaire sur db-query.');
+      // Le repli ne couvre que les indisponibilités du endpoint (non configuré,
+      // base injoignable, réponse 5xx, panne réseau). Un 401/403 est un refus
+      // explicite : il remonte tel quel, sans second essai sur un autre serveur.
+      const status = error instanceof ApiRequestError ? error.status : 0;
+      const unavailable =
+        status === 0 ||
+        status >= 500 ||
+        (error instanceof ApiRequestError && error.code === 'DIAG_ENDPOINT_UNCONFIGURED');
+
+      if (unavailable) {
+        console.warn(
+          `[diagnostic] /api/diagnostic indisponible (${status || 'réseau'}), repli sur db-query.`,
+        );
+        // La fonction `db-query` applique le même contrôle serveur du jeton et
+        // relit le compte : le repli ne contourne aucune autorisation.
         return normalizeDiagnosticDataset(
           await fetchDBPost<DiagnosticDataset>(
             'getDiagnosticDataset',

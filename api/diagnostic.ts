@@ -57,6 +57,10 @@ function getPool(): pg.Pool {
       ...common,
       ssl: needsSsl ? { rejectUnauthorized: false } : undefined,
     });
+    // Un client inactif qui perd la connexion émet `error` sur le pool : sans
+    // écouteur, Node lève une exception non capturée et la fonction Vercel
+    // meurt en FUNCTION_INVOCATION_FAILED au lieu de répondre.
+    pool.on("error", (error) => console.error("[api/diagnostic] pool", error.message));
     return pool;
   }
 
@@ -85,6 +89,7 @@ function getPool(): pg.Pool {
     ...common,
     ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : undefined,
   });
+  pool.on("error", (error) => console.error("[api/diagnostic] pool", error.message));
   return pool;
 }
 
@@ -182,7 +187,23 @@ export default async function handler(req: MinimalRequest, res: MinimalResponse)
     return;
   }
 
-  const client = await getPool().connect();
+  // La connexion est tentée DANS un try : une base injoignable ou une
+  // configuration absente doit produire une réponse JSON explicite, jamais
+  // un crash d'invocation (FUNCTION_INVOCATION_FAILED côté Vercel).
+  let client: pg.PoolClient;
+  try {
+    client = await getPool().connect();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Erreur inconnue";
+    console.error("[api/diagnostic] connexion PostgreSQL impossible :", message);
+    sendJson(res, 503, {
+      code: "DIAG_ENDPOINT_UNAVAILABLE",
+      error:
+        "La base de données du ministère est injoignable depuis le serveur. Réessayez plus tard.",
+    });
+    return;
+  }
+
   try {
     const body = await readBody(req);
     const session = await verifyTdbSession(
