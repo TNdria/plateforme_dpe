@@ -148,6 +148,8 @@ export default function Demandes() {
   const analyseCacheRef = useRef(new Map());
   const [versionAnalyse, setVersionAnalyse] = useState(0);
 
+  const vueRefPartagee = useRef(null);
+
   const getAnalyseValidee = (demande) => {
     if (!demande?.id) return false;
     if (analyseCacheRef.current.has(demande.id)) {
@@ -191,7 +193,6 @@ export default function Demandes() {
     if (!detailCacheRef.current.has(id)) chargerDetail(id).catch(() => {});
   };
 
-  // ✅ CORRIGÉ : la liste s'affiche immédiatement, les détails se chargent en arrière-plan
   const chargerDemandes = async () => {
     detailCacheRef.current.clear();
     analyseCacheRef.current.clear();
@@ -202,9 +203,8 @@ export default function Demandes() {
       const response = await demandeService.list();
       const data = asList(response);
       setDemandes(data.map(mapDemande));
-      setLoading(false);  // ✅ Liste affichée AVANT les détails
+      setLoading(false);
 
-      // ✅ Détails en arrière-plan (non bloquant, sans await global)
       for (const d of data) {
         chargerDetail(d.id_demande ?? d.id).catch(() => {});
       }
@@ -576,7 +576,7 @@ export default function Demandes() {
                             <BoutonFicheTechnique
                               demande={demande}
                               analyseValidee={analyseOk === true}
-                              vueRef={null}
+                              vueRef={vueRefPartagee}
                               chargerDetail={chargerDetail}
                               enLien={true}
                             />

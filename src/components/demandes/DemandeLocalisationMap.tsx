@@ -1,9 +1,11 @@
 // @ts-nocheck
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { MapContainer, TileLayer, Marker, Popup, Circle, Polygon, Polyline, Tooltip, useMap } from "react-leaflet";
+import {
+  MapContainer, TileLayer, Marker, Popup, Circle, Polygon, Polyline, Tooltip, useMap,
+} from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Eye, EyeOff, MapPin, Layers, ChevronDown } from "lucide-react";
 
 import {
   getLocalisationValue, getPosition, getNomAireItem,
@@ -13,41 +15,57 @@ import {
   extraireContour, calculerMaxBounds, getEtablissementsProchesAnalyse,
   getVillageNonEligible, getZoneProposee, getPointsNouvelleCreation,
 } from "@/utils/demandeHelpers";
+import { ORS_COLORS } from "@/components/ors/orsColors";
 
 const escapeMapText = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;",
 }[c] || c));
 
 export const COULEUR_ECOLE_NOUVELLE = "#facc15";
-export const COULEUR_ECOLE_EXISTANTE = "#1d8fd1";
-export const COULEUR_COUVERT = "#8a8a8a";
-export const COULEUR_HORS_ZONE = "#e53935";
-export const COULEUR_RAYON = "#1f2937";
+export const COULEUR_ECOLE_EXISTANTE = ORS_COLORS.default;
+export const COULEUR_COUVERT = ORS_COLORS.villageCouvert;
+export const COULEUR_HORS_ZONE = ORS_COLORS.villageHorsZone;
+export const COULEUR_RAYON = "#6b7280";
 export const COULEUR_LIGNE_INTERSECTION = "#000000";
-export const COULEUR_VILLAGE_NON_ELIGIBLE = "#dc2626";
-export const COULEUR_ZONE_PROPOSEE = "#16a34a";
+export const COULEUR_VILLAGE_NON_ELIGIBLE = ORS_COLORS.nonEligible;
+export const COULEUR_ZONE_PROPOSEE = ORS_COLORS.eligible;
+
+const STYLE_COMMUNE = {
+  fillColor: ORS_COLORS.limiteDren,
+  color: ORS_COLORS.limiteDren,
+  weight: 2,
+  opacity: 0.8,
+  fillOpacity: 0.03,
+};
+const STYLE_FOKONTANY = {
+  fillColor: "#22afbe",
+  color: "#22afbe",
+  weight: 2,
+  opacity: 0.9,
+  fillOpacity: 0.03,
+};
+
+const MAPBOX_TOKEN =
+  (typeof import.meta !== "undefined" && import.meta.env?.VITE_MAPBOX_TOKEN) ||
+  "pk.eyJ1IjoidG9reSIsImEiOiJjbTE4djVndXIxNmQwMmxzam1nY3JzcWU0In0.KtMOpNhicsXZkbmcFtVd8w";
+
+const URL_MAPBOX_IMAGERY = `https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`;
+const URL_MAPBOX_STREETS = `https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`;
 
 const KM_PAR_DEG_LAT = 110.574;
 
-/* ------------------------------------------------------------------ */
-/*  Lignes d'intersection (régularisation) - inchangé                  */
-/* ------------------------------------------------------------------ */
 const calculerLignesIntersection = (centres, rKm) => {
   if (!Array.isArray(centres) || centres.length < 2 || !(rKm > 0)) return [];
-
   const latRef = centres.reduce((s, c) => s + c.pos[0], 0) / centres.length;
   const kmParDegLng = 111.320 * Math.cos((latRef * Math.PI) / 180);
   if (!kmParDegLng) return [];
-
   const lat0 = centres[0].pos[0];
   const lng0 = centres[0].pos[1];
-
   const pts = centres.map((c) => ({
     x: (c.pos[1] - lng0) * kmParDegLng,
     y: (c.pos[0] - lat0) * KM_PAR_DEG_LAT,
   }));
   const versLatLng = (x, y) => [lat0 + y / KM_PAR_DEG_LAT, lng0 + x / kmParDegLng];
-
   const lignes = [];
 
   for (let i = 0; i < pts.length; i++) {
@@ -57,59 +75,42 @@ const calculerLignesIntersection = (centres, rKm) => {
       const dx = pj.x - pi.x;
       const dy = pj.y - pi.y;
       const d = Math.hypot(dx, dy);
-
       if (!d || d >= 2 * rKm) continue;
-
       const h = Math.sqrt(Math.max(0, rKm * rKm - (d / 2) * (d / 2)));
       const mx = (pi.x + pj.x) / 2;
       const my = (pi.y + pj.y) / 2;
       const ux = -dy / d;
       const uy = dx / d;
-
       const a = { x: mx - h * ux, y: my - h * uy };
       const b = { x: mx + h * ux, y: my + h * uy };
-
       let t0 = 0;
       let t1 = 1;
 
       for (let k = 0; k < pts.length; k++) {
         if (k === i || k === j) continue;
         const pk = pts[k];
-
         const f = (p) =>
           (pk.x * pk.x + pk.y * pk.y) - (pi.x * pi.x + pi.y * pi.y)
           - 2 * (p.x * (pk.x - pi.x) + p.y * (pk.y - pi.y));
-
         const fa = f(a);
         const fb = f(b);
-
         if (fa < 0 && fb < 0) { t0 = 1; t1 = 0; break; }
-
-        if (fa < 0) {
-          t0 = Math.max(t0, fa / (fa - fb));
-        } else if (fb < 0) {
-          t1 = Math.min(t1, fa / (fa - fb));
-        }
+        if (fa < 0) t0 = Math.max(t0, fa / (fa - fb));
+        else if (fb < 0) t1 = Math.min(t1, fa / (fa - fb));
       }
 
       if (t1 - t0 <= 1e-6) continue;
-
       const p0 = { x: a.x + t0 * (b.x - a.x), y: a.y + t0 * (b.y - a.y) };
       const p1 = { x: a.x + t1 * (b.x - a.x), y: a.y + t1 * (b.y - a.y) };
-
       lignes.push({
         positions: [versLatLng(p0.x, p0.y), versLatLng(p1.x, p1.y)],
         noms: [centres[i].nom, centres[j].nom],
       });
     }
   }
-
   return lignes;
 };
 
-/* ------------------------------------------------------------------ */
-/*  VORONOI (nouvelle création, tous niveaux) - lignes seulement       */
-/* ------------------------------------------------------------------ */
 const clipDemiPlan = (poly, a, b, c) => {
   const out = [];
   const n = poly.length;
@@ -129,18 +130,15 @@ const clipDemiPlan = (poly, a, b, c) => {
 
 const analyserVoronoi = (centres, pointsBruts, rKm) => {
   if (!Array.isArray(centres) || centres.length < 2 || !(rKm > 0)) return null;
-
   const latRef = centres.reduce((s, c) => s + c.pos[0], 0) / centres.length;
   const kmParDegLng = 111.320 * Math.cos((latRef * Math.PI) / 180);
   if (!kmParDegLng) return null;
   const lat0 = centres[0].pos[0];
   const lng0 = centres[0].pos[1];
-
   const versXY = (p) => ({ x: (p[1] - lng0) * kmParDegLng, y: (p[0] - lat0) * KM_PAR_DEG_LAT });
   const versLatLng = (x, y) => [lat0 + y / KM_PAR_DEG_LAT, lng0 + x / kmParDegLng];
   const xy = centres.map((c) => versXY(c.pos));
 
-  // Frontières de Voronoi (médiatrices) limitées aux rayons réglementaires
   const lignes = [];
   centres.forEach((c, i) => {
     let poly = Array.from({ length: 72 }, (_, k) => {
@@ -156,7 +154,6 @@ const analyserVoronoi = (centres, pointsBruts, rKm) => {
       poly = clipDemiPlan(poly, dx, dy, cst);
       if (!poly.length) break;
     }
-    // On ne garde que les côtés qui ne sont pas des arcs du cercle
     for (let a = 0; a < poly.length; a++) {
       const P = poly[a];
       const Q = poly[(a + 1) % poly.length];
@@ -172,7 +169,6 @@ const analyserVoronoi = (centres, pointsBruts, rKm) => {
     }
   });
 
-  // Chaque point de l'aire est alimenté par l'établissement le plus proche
   const comptes = centres.map(() => 0);
   const alimente = new Map();
   (pointsBruts || []).forEach((pb) => {
@@ -207,16 +203,13 @@ const createLabeledMapIcon = (
 ) => {
   const safeLabel = escapeMapText(label || "Lieu non renseigné");
   const safeSecondary = escapeMapText(secondary);
-
   const k = avecCapture ? echelleTexte : 1;
   const sz = Math.max(2, Math.round(size * k));
   const lw = Math.round(labelWidth * k);
-
   const baseFont = emphase ? TAILLE_NOM_NOUVEAU : TAILLE_NOM_NORMAL;
   const fontSizeMain = Math.max(5, Math.round(baseFont * k));
   const fontWeightMain = emphase ? 900 : 700;
   const colorMain = emphase ? "#000000" : "#111827";
-
   const fontSizeSecondary = Math.max(5, fontSizeMain - 2);
   const boxHeight = avecCapture
     ? Math.max(Math.round(20 * k), sz + Math.round(4 * k), Math.ceil(fontSizeMain * 1.4))
@@ -224,15 +217,16 @@ const createLabeledMapIcon = (
   const iconTop = Math.round((boxHeight - sz) / 2);
   const topMain = Math.max(0, Math.round((boxHeight - fontSizeMain * 1.2) / 2));
   const topSecondary = topMain + fontSizeMain + 1;
-
   const e = Math.max(1, Math.round(k));
   const ombre = `-${e}px -${e}px 0 rgba(255,255,255,.95),${e}px -${e}px 0 rgba(255,255,255,.95),-${e}px ${e}px 0 rgba(255,255,255,.95),${e}px ${e}px 0 rgba(255,255,255,.95),0 0 ${3 * e}px rgba(255,255,255,.9)`;
   const ombreSec = `-${e}px -${e}px 0 rgba(255,255,255,.95),${e}px -${e}px 0 rgba(255,255,255,.95),-${e}px ${e}px 0 rgba(255,255,255,.95),${e}px ${e}px 0 rgba(255,255,255,.95)`;
 
+  const pointHtml = "";
+
   const glyph =
     shape === "school"
       ? `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${sz}" height="${sz}"
-           style="position:absolute;left:0;top:${iconTop}px;z-index:2;filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.45));">
+           style="position:absolute;left:0;top:${iconTop}px;z-index:2;filter:drop-shadow(0 1px 2px rgba(15,23,42,.35));">
            <path d="M12 2 1.5 10h21z" fill="${background}"/>
            <rect x="3.5" y="10" width="17" height="11" fill="${background}"/>
            <rect x="10" y="14" width="4" height="7" fill="#ffffff"/>
@@ -241,15 +235,17 @@ const createLabeledMapIcon = (
          </svg>`
       : shape === "flag"
       ? `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${sz}" height="${sz}"
-           style="position:absolute;left:0;top:${iconTop}px;z-index:2;filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.45));">
+           style="position:absolute;left:0;top:${iconTop}px;z-index:2;filter:drop-shadow(0 1px 2px rgba(15,23,42,.35));">
            <path d="M5 2 L5 22" stroke="${background}" stroke-width="2.5" stroke-linecap="round"/>
            <path d="M5 3 L19 3 L15 8 L19 13 L5 13 Z" fill="${background}"/>
          </svg>`
       : shape === "none"
       ? ""
+      : pointHtml
+      ? `<div style="position:absolute;left:0;top:${iconTop}px;width:${sz}px;height:${sz}px;z-index:2;display:flex;align-items:center;justify-content:center;">${pointHtml}</div>`
       : `<div style="position:absolute;left:0;top:${iconTop}px;width:${sz}px;height:${sz}px;
-           border-radius:50%;background:${background};
-           box-shadow:0 1px 2px rgba(0,0,0,.45);z-index:2;"></div>`;
+           border-radius:50%;background:${background};border:1px solid #fff;
+           box-shadow:0 1px 2px rgba(15,23,42,.35);z-index:2;"></div>`;
 
   const decalageTexte = shape === "none" ? 0 : sz + Math.round(5 * k);
   const largeurBoite = lw + Math.round(20 * k);
@@ -295,6 +291,165 @@ function FlagGlyph({ color, size = 14 }) {
       <path d="M5 3 L19 3 L15 8 L19 13 L5 13 Z" fill={color} />
     </svg>
   );
+}
+
+function PopupTable({ titre, couleur = "#4e73df", lignes = [], pied = null }) {
+  return (
+    <div style={{ minWidth: 240 }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+        <thead>
+          <tr style={{ background: couleur, color: "white" }}>
+            <th colSpan={2} style={{ padding: 6, textAlign: "center" }}>{titre}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lignes.filter(Boolean).map(([label, valeur], i) => (
+            <tr key={i}>
+              <th style={{ padding: 4, textAlign: "left" }}>{label}</th>
+              <td style={{ textAlign: "right", padding: 4 }}>{valeur}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {pied}
+    </div>
+  );
+}
+
+function PiedRayon({ hors, rayonLabel }) {
+  return (
+    <div
+      style={{
+        marginTop: 4, padding: 3, textAlign: "center", fontWeight: "bold", fontSize: 11, borderRadius: 4,
+        background: hors ? "#fee2e2" : "#dcfce7",
+        color: hors ? "#b91c1c" : "#15803d",
+      }}
+    >
+      {hors ? `Hors du rayon (> ${rayonLabel})` : `Dans le rayon (≤ ${rayonLabel})`}
+    </div>
+  );
+}
+
+const TOPLEFT_STACK_GAP = 6;
+
+function MapTopLeftControls({ resetCenter, resetZoom }) {
+  const map = useMap();
+
+  useEffect(() => {
+    const Ctrl = L.Control.extend({
+      options: { position: "topleft" },
+      onAdd() {
+        const container = L.DomUtil.create("div", "ors-topleft-stack");
+        container.style.cssText = `display:flex;flex-direction:column;align-items:center;gap:${TOPLEFT_STACK_GAP}px;`;
+        L.DomEvent.disableClickPropagation(container);
+        L.DomEvent.disableScrollPropagation(container);
+
+        const compass = L.DomUtil.create("div", "leaflet-control", container);
+        compass.style.cssText =
+          "margin:0;background:rgba(255,255,255,0.95);border:2px solid #d1d5db;border-radius:50%;padding:5px;box-shadow:0 2px 8px rgba(0,0,0,0.18);width:42px;height:42px;display:flex;align-items:center;justify-content:center;pointer-events:none;";
+        compass.innerHTML = `<img src="/img/Nord.png" alt="Nord" style="width:32px;height:32px;object-fit:contain;" title="Nord" />`;
+
+        const zoomBar = L.DomUtil.create("div", "leaflet-bar leaflet-control leaflet-control-zoom", container);
+        zoomBar.style.margin = "0";
+        const zoomIn = L.DomUtil.create("a", "leaflet-control-zoom-in", zoomBar);
+        zoomIn.href = "#";
+        zoomIn.title = "Zoom avant";
+        zoomIn.innerHTML = "+";
+        const zoomOut = L.DomUtil.create("a", "leaflet-control-zoom-out", zoomBar);
+        zoomOut.href = "#";
+        zoomOut.title = "Zoom arrière";
+        zoomOut.innerHTML = "−";
+        const updateZoomButtons = () => {
+          zoomIn.classList.toggle("leaflet-disabled", map.getZoom() >= map.getMaxZoom());
+          zoomOut.classList.toggle("leaflet-disabled", map.getZoom() <= map.getMinZoom());
+        };
+        L.DomEvent.on(zoomIn, "click", (e) => {
+          L.DomEvent.preventDefault(e);
+          if (!zoomIn.classList.contains("leaflet-disabled")) map.zoomIn();
+        });
+        L.DomEvent.on(zoomOut, "click", (e) => {
+          L.DomEvent.preventDefault(e);
+          if (!zoomOut.classList.contains("leaflet-disabled")) map.zoomOut();
+        });
+
+        const reset = L.DomUtil.create("a", "leaflet-bar leaflet-control leaflet-control-custom", container);
+        reset.href = "#";
+        reset.title = "Réinitialiser la vue";
+        reset.style.cssText =
+          "margin:0;background:#fff;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:14px;text-decoration:none;color:#1f2937;border:1px solid #d1d5db;border-radius:4px;box-shadow:0 1px 6px rgba(0,0,0,0.15);";
+        reset.innerHTML = "⟲";
+        L.DomEvent.on(reset, "click", (e) => {
+          L.DomEvent.preventDefault(e);
+          if (resetCenter) map.flyTo(resetCenter, resetZoom ?? map.getZoom());
+        });
+
+        const badge = L.DomUtil.create("div", "", container);
+        badge.id = "ors-zoom-indicator";
+        badge.style.cssText =
+          "margin:0;background:rgba(39,39,42,0.78);color:#fff;border-radius:4px;padding:4px 10px;font-size:12px;line-height:1.2;box-shadow:0 1px 6px rgba(0,0,0,0.18);pointer-events:none;";
+        const updateBadge = () => {
+          badge.innerHTML = `Niveau de Zoom: ${Number(map.getZoom().toFixed(1))}`;
+        };
+        updateBadge();
+
+        const onZoomEnd = () => {
+          updateZoomButtons();
+          updateBadge();
+        };
+        updateZoomButtons();
+        map.on("zoomend", onZoomEnd);
+        container._orsCleanup = () => map.off("zoomend", onZoomEnd);
+
+        return container;
+      },
+      onRemove() {
+        this._container?._orsCleanup?.();
+      },
+    });
+
+    const ctrl = new Ctrl();
+    ctrl.addTo(map);
+    return () => { ctrl.remove(); };
+  }, [map, resetCenter ? resetCenter.join(",") : "", resetZoom]);
+
+  return null;
+}
+
+function MapScaleControl() {
+  const map = useMap();
+  useEffect(() => {
+    const scale = L.control.scale({ imperial: false, position: "bottomright" }).addTo(map);
+    return () => { scale.remove(); };
+  }, [map]);
+  return null;
+}
+
+function MapSizeUpdater() {
+  const map = useMap();
+  useEffect(() => {
+    const container = map.getContainer();
+    const updateSize = () => map.invalidateSize({ animate: false, pan: false, debounceMoveend: true });
+    const resizeObserver = new ResizeObserver(updateSize);
+    resizeObserver.observe(container);
+    updateSize();
+    return () => resizeObserver.disconnect();
+  }, [map]);
+  return null;
+}
+
+function MapGlobalStyles() {
+  useEffect(() => {
+    const STYLE_ID = "ors-map-global-styles";
+    if (document.getElementById(STYLE_ID)) return;
+    const style = document.createElement("style");
+    style.id = STYLE_ID;
+    style.textContent = `
+      .leaflet-popup-pane { z-index: 1200 !important; }
+      .ors-context-popup .leaflet-popup-content-wrapper { padding: 2px; }
+    `;
+    document.head.appendChild(style);
+  }, []);
+  return null;
 }
 
 function RecenterMap({ points }) {
@@ -348,13 +503,19 @@ function ExposerCarte({ instanceRef }) {
   return null;
 }
 
-function SuivreVue({ vueRef }) {
+function SuivreVue({ vueRef, fondKey, afficherAnalyseSpatiale }) {
   const map = useMap();
   useEffect(() => {
     const enregistrer = () => {
       const c = map.getCenter();
       const s = map.getSize();
-      vueRef.current = { center: [c.lat, c.lng], zoom: map.getZoom(), size: { x: s.x, y: s.y } };
+      vueRef.current = {
+        center: [c.lat, c.lng],
+        zoom: map.getZoom(),
+        size: { x: s.x, y: s.y },
+        fondKey,
+        afficherAnalyseSpatiale,
+      };
     };
     map.on("moveend", enregistrer);
     map.on("zoomend", enregistrer);
@@ -365,19 +526,29 @@ function SuivreVue({ vueRef }) {
       map.off("zoomend", enregistrer);
       map.off("resize", enregistrer);
     };
-  }, [map, vueRef]);
+  }, [map, vueRef, fondKey, afficherAnalyseSpatiale]);
   return null;
 }
 
-function SuivreZoom({ onZoomChange }) {
-  const map = useMap();
-  useEffect(() => {
-    const maj = () => onZoomChange(map.getZoom());
-    maj();
-    map.on("zoomend", maj);
-    return () => { map.off("zoomend", maj); };
-  }, [map, onZoomChange]);
-  return null;
+const FONDS_CARTE = [
+  { key: "default", label: "DEFAULT", url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", attribution: "&copy; OpenStreetMap contributors", maxZoom: 19, mapbox: false },
+  { key: "imagery", label: "IMAGERY", url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", attribution: "&copy; Esri", maxZoom: 22, mapbox: false },
+  { key: "mapbox", label: "MAPBOX", url: URL_MAPBOX_STREETS, attribution: "&copy; Mapbox", maxZoom: 22, mapbox: true },
+  { key: "mapbox_imagery", label: "MAPBOX IMAGERY", url: URL_MAPBOX_IMAGERY, attribution: "&copy; Mapbox", maxZoom: 22, mapbox: true },
+];
+
+function FondTuiles({ fondKey, avecCapture }) {
+  const fond = FONDS_CARTE.find((f) => f.key === fondKey) || FONDS_CARTE[0];
+  return (
+    <TileLayer
+      key={fond.key}
+      attribution={fond.attribution}
+      url={fond.url}
+      maxZoom={fond.maxZoom}
+      {...(fond.mapbox ? { tileSize: 512, zoomOffset: -1 } : {})}
+      crossOrigin="anonymous"
+    />
+  );
 }
 
 const getMapPointLabel = (item, niveauKey, type, demandeContext = {}) => {
@@ -428,23 +599,32 @@ export default function DemandeLocalisationMap({
   masquerAireVoisins = false,
   vueInitiale = null,
   modeVoronoi: modeVoronoiProp = null,
+  fondKeyInitial = "default",
+  afficherAnalyseSpatialeInitiale = false,
 }) {
-  const [zoomCourant, setZoomCourant] = useState(null);
+  const [afficherAnalyseSpatiale, setAfficherAnalyseSpatiale] = useState(
+    Boolean(afficherAnalyseSpatialeInitiale)
+  );
+  const [fondKey, setFondKey] = useState(fondKeyInitial || "default");
+  const [panneauOuvert, setPanneauOuvert] = useState(true);
+
+  useEffect(() => {
+    if (avecCapture) {
+      setFondKey(fondKeyInitial || "default");
+      setAfficherAnalyseSpatiale(Boolean(afficherAnalyseSpatialeInitiale));
+    }
+  }, [avecCapture, fondKeyInitial, afficherAnalyseSpatialeInitiale]);
 
   const niveauKey = niveauToKey(demande?.niveau_etab || demande?.niveau);
   const niveauLabel = mapNiveau(demande?.niveau_etab || demande?.niveau);
   const rayonCarte = getRayonCarteKm(niveauKey);
 
-  const pointsNouvelleCreation = useMemo(
-    () => getPointsNouvelleCreation(demande),
-    [demande]
-  );
+  const pointsNouvelleCreation = useMemo(() => getPointsNouvelleCreation(demande), [demande]);
   const villageNonEligible = pointsNouvelleCreation.villageNonEligible;
   const zoneProposee = pointsNouvelleCreation.zoneProposee;
   const remplaceVillage = pointsNouvelleCreation.remplaceVillage;
 
   const positionDemande = getPosition(demande);
-
   const positionZone = (() => {
     const la = Number(zoneProposee?.latitude);
     const lo = Number(zoneProposee?.longitude);
@@ -455,27 +635,20 @@ export default function DemandeLocalisationMap({
   const estNouvelleCreation = estNouvelleCreationDemande(demande);
   const modeVoronoi = modeVoronoiProp === null ? estNouvelleCreation : Boolean(modeVoronoiProp);
 
-  // ✅ En mode LOCALISATION (masquerAireVoisins=true) : afficher les marqueurs
-  //    des voisins et de leur aire, mais PAS le rayon réglementaire des voisins
-  //    ni les lignes d'intersection/Voronoi.
-  const voisinsVisibles = modeVoronoi || !masquerAireVoisins;
-  const afficherAnneauxVoisins = !masquerAireVoisins;
-  const afficherLignes = !masquerAireVoisins;
+  const voisinsVisibles = afficherAnalyseSpatiale;
+  const afficherAnneauxVoisins = afficherAnalyseSpatiale;
+  const afficherLignes = afficherAnalyseSpatiale;
 
   const prochesEffectifs = (Array.isArray(etablissementsProches) && etablissementsProches.length > 0)
     ? etablissementsProches
     : getEtablissementsProchesAnalyse(demande);
 
-  const echelleTexte = avecCapture
-    ? Math.max(0.5, (captureSize?.w ?? 1160) / LARGEUR_REFERENCE_PX)
-    : 1;
+  const echelleTexte = avecCapture ? Math.max(0.5, (captureSize?.w ?? 1160) / LARGEUR_REFERENCE_PX) : 1;
   const k = echelleTexte;
   const poids = (n) => (avecCapture ? n * k : n);
   const tirets = (s) => (avecCapture ? s.split(" ").map((x) => Number(x) * k).join(" ") : s);
 
-  const vueFigee =
-    avecCapture &&
-    (!vueInitiale || (vueInitiale?.center && Number.isFinite(vueInitiale?.zoom)));
+  const vueFigee = avecCapture && (!vueInitiale || (vueInitiale?.center && Number.isFinite(vueInitiale?.zoom)));
 
   const demandeContext = {
     commune: getLocalisationValue(demande, "commune"),
@@ -498,9 +671,7 @@ export default function DemandeLocalisationMap({
     ? nearbyFiltered
     : nearbyAll.filter((item) => !normaliserNiveauItem(item));
 
-  const nearbySource = candidatsProximite.filter((item) =>
-    estDansRayonAnalyse(item, futurePosition, rayonCarte)
-  );
+  const nearbySource = candidatsProximite.filter((item) => estDansRayonAnalyse(item, futurePosition, rayonCarte));
 
   const recrutementAvecCoord = recrutement.filter((item) => Boolean(getPosition(item)));
   const nearby = withPosition(nearbySource);
@@ -510,9 +681,7 @@ export default function DemandeLocalisationMap({
     ? feedersBruts.filter(({ position }) => {
         const [latF, lngF] = position;
         const [latN, lngN] = futurePosition;
-        const memeLat = Math.abs(latF - latN) < 0.0001;
-        const memeLng = Math.abs(lngF - lngN) < 0.0001;
-        return !(memeLat && memeLng);
+        return !(Math.abs(latF - latN) < 0.0001 && Math.abs(lngF - lngN) < 0.0001);
       })
     : feedersBruts;
 
@@ -535,21 +704,15 @@ export default function DemandeLocalisationMap({
     return { item, position, points: pointsAire, nbAire: liste.length };
   });
 
-  const nomNouveau = zoneProposee?.aUnNom
-    ? zoneProposee.nom
-    : (demande?.nom_etab || "Nouvel établissement");
+  const nomNouveau = zoneProposee?.aUnNom ? zoneProposee.nom : (demande?.nom_etab || "Nouvel établissement");
 
-  // ---------------- Voronoi (nouvelle création) ----------------
   const voronoi = useMemo(() => {
-    if (!modeVoronoi || !futurePosition) return null;
-
+    if (!modeVoronoi || !futurePosition || !afficherAnalyseSpatiale) return null;
     const centres = [{ pos: futurePosition, nom: nomNouveau }];
-    nearby.forEach(({ item, position }) => {
-      centres.push({ pos: position, nom: getNomAireItem(item) });
-    });
+    nearby.forEach(({ item, position }) => centres.push({ pos: position, nom: getNomAireItem(item) }));
 
     const pointsBruts = [];
-    feeders.forEach(({ item, position }) => pointsBruts.push({ pos: position }));
+    feeders.forEach(({ position }) => pointsBruts.push({ pos: position }));
     voisins.forEach(({ points }) => points.forEach((pt) => pointsBruts.push({ pos: pt.pos })));
 
     return analyserVoronoi(centres, pointsBruts, rayonNormeKm);
@@ -560,6 +723,7 @@ export default function DemandeLocalisationMap({
     feeders.map(({ position }) => position.join(",")).join("|"),
     voisins.map(({ points }) => points.length).join(","),
     rayonNormeKm, nomNouveau,
+    afficherAnalyseSpatiale,
   ]);
 
   const infoAlimente = (pos) => {
@@ -567,14 +731,11 @@ export default function DemandeLocalisationMap({
     return voronoi.alimente.get(`${pos[0].toFixed(5)}|${pos[1].toFixed(5)}`) || null;
   };
 
-  // ---------------- Lignes d'intersection (mode classique) ----------------
   const lignesIntersection = useMemo(() => {
     if (modeVoronoi || !voisinsVisibles) return [];
     const centres = [];
     if (futurePosition) centres.push({ pos: futurePosition, nom: nomNouveau });
-    nearby.forEach(({ item, position }) => {
-      centres.push({ pos: position, nom: getNomAireItem(item) });
-    });
+    nearby.forEach(({ item, position }) => centres.push({ pos: position, nom: getNomAireItem(item) }));
     return calculerLignesIntersection(centres, rayonNormeKm);
   }, [
     modeVoronoi, voisinsVisibles,
@@ -599,6 +760,7 @@ export default function DemandeLocalisationMap({
       const dLng = rayonNormeKm / (111 * Math.max(0.2, Math.cos((la * Math.PI) / 180)));
       cercle.push([la - dLat, lo - dLng], [la + dLat, lo + dLng]);
     }
+
     const cerclesVoisins = [];
     if (voisinsVisibles) {
       voisins.forEach(({ position }) => {
@@ -609,21 +771,14 @@ export default function DemandeLocalisationMap({
       });
     }
 
-    const pointsVillageNonEligible = villageNonEligible
-      ? [[villageNonEligible.latitude, villageNonEligible.longitude]]
-      : [];
-    const pointsZoneProposee = zoneProposee
-      ? [[zoneProposee.latitude, zoneProposee.longitude]]
-      : [];
-
     return [
       ...(futurePosition ? [futurePosition] : []),
       ...nearbyPoints,
       ...feederPoints,
       ...cercle,
       ...cerclesVoisins,
-      ...pointsVillageNonEligible,
-      ...pointsZoneProposee,
+      ...(villageNonEligible ? [[villageNonEligible.latitude, villageNonEligible.longitude]] : []),
+      ...(zoneProposee ? [[zoneProposee.latitude, zoneProposee.longitude]] : []),
     ];
   })();
 
@@ -649,7 +804,7 @@ export default function DemandeLocalisationMap({
       <div
         ref={mapRef}
         data-capture-carte={avecCapture ? "true" : undefined}
-        className="rounded-lg border overflow-hidden relative"
+        className="relative w-full rounded-lg overflow-hidden border border-border"
         style={{ background: "#ffffff", ...(avecCapture ? { width: `${(captureSize?.w ?? 1160) + 2}px` } : {}) }}
       >
         <MapContainer
@@ -662,28 +817,35 @@ export default function DemandeLocalisationMap({
           maxBounds={avecCapture ? undefined : (maxBounds ?? undefined)}
           maxBoundsViscosity={1.0}
           scrollWheelZoom={!avecCapture}
-          zoomControl={!avecCapture}
+          zoomControl={false}
           zoomAnimation={!avecCapture}
           fadeAnimation={!avecCapture}
           markerZoomAnimation={!avecCapture}
           style={{ height: avecCapture ? `${(captureSize?.h ?? 500)}px` : "500px", width: "100%" }}
           attributionControl={!avecCapture}
         >
-          <TileLayer
-            attribution="&copy; OpenStreetMap contributors"
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            crossOrigin="anonymous"
-          />
+          <FondTuiles fondKey={fondKey} avecCapture={avecCapture} />
+
+          {!avecCapture && <MapSizeUpdater />}
+          {!avecCapture && <MapTopLeftControls resetCenter={center} resetZoom={zoomInitial} />}
+          {!avecCapture && <MapScaleControl />}
+          <MapGlobalStyles />
+
           {!avecCapture && !vueFigee && <RecenterMap points={pointsPourCadrage} />}
           {mapInstanceRef && <ExposerCarte instanceRef={mapInstanceRef} />}
-          {!avecCapture && vueRef && <SuivreVue vueRef={vueRef} />}
+          {!avecCapture && vueRef && (
+            <SuivreVue
+              vueRef={vueRef}
+              fondKey={fondKey}
+              afficherAnalyseSpatiale={afficherAnalyseSpatiale}
+            />
+          )}
           {!avecCapture && <ForceMinZoom minZoom={minZoomCarte} />}
-          {!avecCapture && <SuivreZoom onZoomChange={setZoomCourant} />}
 
           {contourCommune && contourCommune.length >= 3 && (
             <Polygon
               positions={contourCommune}
-              pathOptions={{ color: "#1e3a8a", weight: poids(3), opacity: 0.9, fillColor: "#3b82f6", fillOpacity: 0.08 }}
+              pathOptions={{ ...STYLE_COMMUNE, weight: poids(STYLE_COMMUNE.weight + 1) }}
             >
               <Tooltip sticky><strong>Commune : {nomCommune}</strong></Tooltip>
             </Polygon>
@@ -692,7 +854,7 @@ export default function DemandeLocalisationMap({
           {contourFokontany && contourFokontany.length >= 3 && (
             <Polygon
               positions={contourFokontany}
-              pathOptions={{ color: "#7c3aed", fillColor: "#ede9fe", fillOpacity: 0.10, weight: poids(2.5), dashArray: tirets("6 4") }}
+              pathOptions={{ ...STYLE_FOKONTANY, weight: poids(STYLE_FOKONTANY.weight + 0.5), dashArray: tirets("6 4") }}
             >
               <Tooltip sticky><strong>Fokontany : {nomFokontany}</strong></Tooltip>
             </Polygon>
@@ -700,18 +862,16 @@ export default function DemandeLocalisationMap({
 
           {voisins.map(({ item, position, points }, index) => (
             <Fragment key={`voisin-zone-${index}`}>
-              {/* ✅ Rayon réglementaire des voisins : uniquement en mode RECRUTEMENT */}
               {afficherAnneauxVoisins && (
                 <Circle
                   center={position}
                   radius={rayonNorme}
-                  pathOptions={{ color: COULEUR_RAYON, weight: poids(1.6), opacity: 0.9, dashArray: tirets("8 6"), fill: false, fillOpacity: 0 }}
+                  pathOptions={{ color: COULEUR_RAYON, weight: poids(1.6), opacity: 0.9, dashArray: tirets("4 3"), fill: false, fillOpacity: 0 }}
                 >
                   <Tooltip sticky><strong>Rayon réglementaire ({rayonLabel}) : {getNomAireItem(item)}</strong></Tooltip>
                 </Circle>
               )}
 
-              {/* ✅ Marqueurs de l'aire des voisins : visibles dans les deux modes */}
               {voisinsVisibles && points.map((pt, i) => {
                 const nomLieu = nomPointAire(pt.info);
                 const al = infoAlimente(pt.pos);
@@ -744,13 +904,12 @@ export default function DemandeLocalisationMap({
             <Circle
               center={futurePosition}
               radius={rayonNorme}
-              pathOptions={{ color: COULEUR_RAYON, weight: poids(1.6), opacity: 0.9, dashArray: tirets("8 6"), fill: false, fillOpacity: 0 }}
+              pathOptions={{ color: COULEUR_RAYON, weight: poids(1.6), opacity: 0.9, dashArray: tirets("4 3"), fill: false, fillOpacity: 0 }}
             >
               <Tooltip sticky><strong>Rayon réglementaire : {rayonLabel}</strong></Tooltip>
             </Circle>
           )}
 
-          {/* ✅ Lignes de Voronoi / intersection : uniquement en mode RECRUTEMENT */}
           {afficherLignes && lignesAffichees.map((ligne, index) => (
             <Polyline
               key={`intersection-${index}`}
@@ -783,15 +942,18 @@ export default function DemandeLocalisationMap({
               )}
             >
               <Popup>
-                <div className="space-y-1 min-w-[230px]">
-                  <div className="font-bold text-amber-600">Nouvel établissement</div>
-                  <div><strong>Nom :</strong> {demande?.nom_etab || "—"}</div>
-                  <div><strong>Niveau :</strong> {niveauLabel}</div>
-                  <div><strong>Village :</strong> {getLocalisationValue(demande, "village")}</div>
-                  <div><strong>Fokontany :</strong> {getLocalisationValue(demande, "fokontany")}</div>
-                  <div><strong>Commune :</strong> {getLocalisationValue(demande, "commune")}</div>
-                  <div><strong>CISCO :</strong> {getLocalisationValue(demande, "cisco")}</div>
-                </div>
+                <PopupTable
+                  titre="Nouvel établissement"
+                  couleur="#ca8a04"
+                  lignes={[
+                    ["NOM", demande?.nom_etab || "—"],
+                    ["NIVEAU", niveauLabel],
+                    ["VILLAGE", getLocalisationValue(demande, "village")],
+                    ["FOKONTANY", getLocalisationValue(demande, "fokontany")],
+                    ["COMMUNE", getLocalisationValue(demande, "commune")],
+                    ["CISCO", getLocalisationValue(demande, "cisco")],
+                  ]}
+                />
               </Popup>
             </Marker>
           )}
@@ -809,17 +971,20 @@ export default function DemandeLocalisationMap({
               )}
             >
               <Popup>
-                <div className="space-y-1 min-w-[230px]">
-                  <div className="font-bold text-green-700">Zone éligible proposée</div>
-                  <div><strong>Nom :</strong> {zoneProposee.nom || "— (sans nom)"}</div>
-                  <div><strong>Fokontany :</strong> {zoneProposee.fokontany || "—"}</div>
-                  <div><strong>Commune :</strong> {zoneProposee.commune || "—"}</div>
-                  {remplaceVillage && (
-                    <div className="text-xs text-green-700 font-semibold pt-1 border-t">
+                <PopupTable
+                  titre="Zone éligible proposée"
+                  couleur={ORS_COLORS.eligible}
+                  lignes={[
+                    ["NOM", zoneProposee.nom || "— (sans nom)"],
+                    ["FOKONTANY", zoneProposee.fokontany || "—"],
+                    ["COMMUNE", zoneProposee.commune || "—"],
+                  ]}
+                  pied={remplaceVillage ? (
+                    <div style={{ marginTop: 4, padding: 3, textAlign: "center", fontSize: 11, fontWeight: "bold", color: "#15803d", borderTop: "1px solid #e5e7eb" }}>
                       Cette zone remplace le village non éligible.
                     </div>
-                  )}
-                </div>
+                  ) : null}
+                />
               </Popup>
             </Marker>
           )}
@@ -836,12 +1001,15 @@ export default function DemandeLocalisationMap({
               )}
             >
               <Popup>
-                <div className="space-y-1 min-w-[230px]">
-                  <div className="font-bold text-red-600">Village non éligible</div>
-                  <div><strong>Nom :</strong> {villageNonEligible.nom || "—"}</div>
-                  <div><strong>Fokontany :</strong> {villageNonEligible.fokontany || "—"}</div>
-                  <div><strong>Commune :</strong> {villageNonEligible.commune || "—"}</div>
-                </div>
+                <PopupTable
+                  titre="Village non éligible"
+                  couleur={ORS_COLORS.nonEligible}
+                  lignes={[
+                    ["NOM", villageNonEligible.nom || "—"],
+                    ["FOKONTANY", villageNonEligible.fokontany || "—"],
+                    ["COMMUNE", villageNonEligible.commune || "—"],
+                  ]}
+                />
               </Popup>
             </Marker>
           )}
@@ -860,18 +1028,18 @@ export default function DemandeLocalisationMap({
                 }
               >
                 <Popup>
-                  <div className="space-y-1 min-w-[230px]">
-                    <div className="font-bold text-blue-700">Établissement existant</div>
-                    <div><strong>Nom :</strong> {getNomAireItem(item)}</div>
-                    <div><strong>Fokontany :</strong> {item?.fokontany ?? "—"}</div>
-                    <div><strong>Commune :</strong> {item?.commune ?? demandeContext.commune}</div>
-                    <div><strong>Distance :</strong> {item?.distance_km ?? item?.distance ?? "—"} km</div>
-                    <div><strong>Effectif :</strong> {item?.effectif ?? item?.effectif_total ?? "—"}</div>
-                    <div><strong>Aire de recrutement :</strong> {Array.isArray(item?.aire_recrutement) ? item.aire_recrutement.length : 0}</div>
-                    <div className={hors ? "font-bold text-red-600" : "font-bold text-green-700"}>
-                      {hors ? `Hors du rayon (> ${rayonLabel})` : `Dans le rayon (≤ ${rayonLabel})`}
-                    </div>
-                  </div>
+                  <PopupTable
+                    titre="Établissement existant"
+                    lignes={[
+                      ["NOM", getNomAireItem(item)],
+                      ["FOKONTANY", item?.fokontany ?? "—"],
+                      ["COMMUNE", item?.commune ?? demandeContext.commune],
+                      ["DISTANCE", `${item?.distance_km ?? item?.distance ?? "—"} km`],
+                      ["EFFECTIF", item?.effectif ?? item?.effectif_total ?? "—"],
+                      ["AIRE DE RECRUTEMENT", Array.isArray(item?.aire_recrutement) ? item.aire_recrutement.length : 0],
+                    ]}
+                    pied={<PiedRayon hors={hors} rayonLabel={rayonLabel} />}
+                  />
                 </Popup>
               </Marker>
             );
@@ -892,31 +1060,22 @@ export default function DemandeLocalisationMap({
                 )}
               >
                 <Popup>
-                  <div className="space-y-1 min-w-[240px]">
-                    <div className="font-bold text-gray-700">
-                      {isSchool ? "École alimentante" : "Village alimentant"}
-                    </div>
-                    <div><strong>Nom :</strong> {getNomAireItem(item)}</div>
-                    <div><strong>Fokontany :</strong> {item?.fokontany ?? "—"}</div>
-                    <div><strong>Commune :</strong> {item?.commune ?? demandeContext.commune}</div>
-                    {niveauKey === "college" && (
-                      <div><strong>Effectif T5 :</strong> {item?.effectif_t5 ?? item?.effectif ?? "—"}</div>
-                    )}
-                    {niveauKey === "lycee" && (
-                      <div><strong>Effectif T9 :</strong> {item?.effectif_t9 ?? item?.effectif ?? "—"}</div>
-                    )}
-                    {(niveauKey === "primaire" || niveauKey === "prescolaire") && (
-                      <>
-                        <div><strong>Population :</strong> {item?.population ?? "—"}</div>
-                        <div><strong>Population scolarisable :</strong> {item?.population_scolarisable ?? "—"}</div>
-                      </>
-                    )}
-                    {al && <div><strong>Alimente :</strong> {al.nomOwner}</div>}
-                    <div><strong>Distance :</strong> {item?.distance_future ?? item?.distance_km ?? item?.distance ?? "—"} km</div>
-                    <div className={hors ? "font-bold text-red-600" : "font-bold text-green-700"}>
-                      {hors ? `Hors du rayon (> ${rayonLabel})` : `Dans le rayon (≤ ${rayonLabel})`}
-                    </div>
-                  </div>
+                  <PopupTable
+                    titre={isSchool ? "École alimentante" : "Village alimentant"}
+                    couleur="#6b7280"
+                    lignes={[
+                      ["NOM", getNomAireItem(item)],
+                      ["FOKONTANY", item?.fokontany ?? "—"],
+                      ["COMMUNE", item?.commune ?? demandeContext.commune],
+                      niveauKey === "college" && ["EFFECTIF T5", item?.effectif_t5 ?? item?.effectif ?? "—"],
+                      niveauKey === "lycee" && ["EFFECTIF T9", item?.effectif_t9 ?? item?.effectif ?? "—"],
+                      (niveauKey === "primaire" || niveauKey === "prescolaire") && ["POPULATION", item?.population ?? "—"],
+                      (niveauKey === "primaire" || niveauKey === "prescolaire") && ["POPULATION SCOLARISABLE", item?.population_scolarisable ?? "—"],
+                      al && ["ALIMENTE", al.nomOwner],
+                      ["DISTANCE", `${item?.distance_future ?? item?.distance_km ?? item?.distance ?? "—"} km`],
+                    ]}
+                    pied={<PiedRayon hors={hors} rayonLabel={rayonLabel} />}
+                  />
                 </Popup>
               </Marker>
             );
@@ -924,20 +1083,11 @@ export default function DemandeLocalisationMap({
         </MapContainer>
 
         <div
-          className="absolute left-3 top-3 z-[1000] bg-white/95 border border-slate-700 px-3 py-1.5 shadow-sm text-center"
-          style={{
-            pointerEvents: "none",
-            ...(avecCapture ? { transform: `scale(${echelleTexte})`, transformOrigin: "top left" } : {}),
-          }}
+          className={`absolute top-3 z-[1000] bg-card/95 backdrop-blur-sm rounded-xl border border-border shadow-lg px-3 py-1.5 text-center pointer-events-none ${avecCapture ? "left-3" : "left-16"}`}
+          style={{ ...(avecCapture ? { transform: `scale(${echelleTexte})`, transformOrigin: "top left" } : {}) }}
         >
-          <div className="text-xs md:text-sm font-black uppercase leading-tight">
-            Analyse spatiale de l'implantation du nouveau {niveauLabel}
-          </div>
-          <div className="text-[11px] md:text-xs font-bold uppercase">
-            {zoneProposee && zoneProposee.aUnNom
-              ? zoneProposee.nom
-              : (demande?.nom_etab || "Établissement")}
-          </div>
+          <div className="text-xs md:text-sm font-black uppercase leading-tight text-foreground">Analyse spatiale de l'implantation du nouveau {niveauLabel}</div>
+          <div className="text-[11px] md:text-xs font-bold uppercase text-muted-foreground">{zoneProposee && zoneProposee.aUnNom ? zoneProposee.nom : (demande?.nom_etab || "Établissement")}</div>
         </div>
 
         <style>{`
@@ -945,107 +1095,104 @@ export default function DemandeLocalisationMap({
           .fiche-labeled-marker > div { overflow: visible !important; }
         `}</style>
 
-        <div
-          className="absolute right-3 top-3 z-[1000] bg-white/90 border rounded px-2 py-1 text-base font-bold"
-          style={{
-            pointerEvents: "none",
-            ...(avecCapture ? { transform: `scale(${echelleTexte})`, transformOrigin: "top right" } : {}),
-          }}
-        >
-          N ↑
-        </div>
-
-        {!avecCapture && zoomCourant != null && (
-          <div
-            className="absolute right-3 top-12 z-[1000] bg-white/95 border border-slate-700 rounded px-2 py-1 text-xs font-bold text-slate-900 shadow-sm"
-            style={{ pointerEvents: "none" }}
-          >
-            Zoom {zoomCourant}×
+        {avecCapture && (
+          <div className="absolute right-3 top-3 z-[1000] bg-white/90 border rounded px-2 py-1 text-base font-bold pointer-events-none" style={{ transform: `scale(${echelleTexte})`, transformOrigin: "top right" }}>
+            N ↑
           </div>
         )}
 
-        {/* ✅ LÉGENDE : rayons voisins + lignes uniquement en mode RECRUTEMENT */}
+        {!avecCapture && (
+          <div className="absolute right-3 top-3 z-[1000] w-[230px] rounded-xl border border-border bg-card/95 backdrop-blur-sm shadow-lg">
+            <button
+              type="button"
+              onClick={() => setPanneauOuvert(!panneauOuvert)}
+              aria-expanded={panneauOuvert}
+              className="flex w-full items-center justify-between gap-2 px-3 py-3 text-left"
+            >
+              <span className="flex items-center gap-2 text-sm font-semibold leading-tight text-foreground">
+                <Layers className="h-4 w-4 shrink-0 text-primary" />
+                Choix de carte et délimitations
+              </span>
+              <ChevronDown className={`h-4 w-4 shrink-0 transition-transform duration-200 ${panneauOuvert ? "rotate-180" : ""}`} />
+            </button>
+
+            {panneauOuvert && (
+              <div className="border-t border-border px-3 py-2.5 space-y-2.5">
+                <div className="space-y-1.5" role="radiogroup" aria-label="Fond de carte">
+                  {FONDS_CARTE.map((f) => (
+                    <label key={f.key} className="flex cursor-pointer items-center gap-2 text-xs text-foreground">
+                      <input
+                        type="radio"
+                        name="fond-carte-demande"
+                        checked={fondKey === f.key}
+                        onChange={() => setFondKey(f.key)}
+                        className="h-3.5 w-3.5 accent-[#2f4a8a]"
+                      />
+                      {f.label}
+                    </label>
+                  ))}
+                </div>
+
+                <div className="border-t border-border pt-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setAfficherAnalyseSpatiale(!afficherAnalyseSpatiale)}
+                    className={`flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
+                      afficherAnalyseSpatiale
+                        ? "bg-[#2f4a8a] text-white hover:bg-[#1e3a8a]"
+                        : "bg-card text-foreground hover:bg-muted/50 border border-border"
+                    }`}
+                  >
+                    {afficherAnalyseSpatiale ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    {afficherAnalyseSpatiale ? "Masquer l'analyse spatiale" : "Afficher l'analyse spatiale"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         <div
-          className="absolute left-3 bottom-3 z-[1000] bg-white/96 border border-slate-500 rounded p-2 text-[10px] leading-4 shadow-md min-w-[220px]"
-          style={{
-            pointerEvents: "none",
-            ...(avecCapture
-              ? { transform: `scale(${echelleTexte})`, transformOrigin: "bottom left" }
-              : {}),
-          }}
+          className="absolute left-3 bottom-3 z-[1000] bg-card/95 backdrop-blur-sm rounded-xl shadow-lg border border-border min-w-[220px] max-w-[280px] pointer-events-none"
+          style={{ ...(avecCapture ? { transform: `scale(${echelleTexte})`, transformOrigin: "bottom left" } : {}) }}
         >
-          <div className="font-bold mb-1 text-slate-900 text-[11px]">Légende</div>
-          <div className="flex items-center gap-1.5">
-            <SchoolGlyph color={COULEUR_ECOLE_NOUVELLE} size={14} />
-            Nouveau {niveauLabel}
-          </div>
-          <div className="flex items-center gap-1.5">
-            <SchoolGlyph color={COULEUR_ECOLE_EXISTANTE} size={14} />
-            {niveauLabel} existant
+          <div className="px-3 py-2 border-b border-border bg-primary/5 rounded-t-xl">
+            <h4 className="font-semibold text-xs text-foreground flex items-center gap-2">
+              <MapPin className="w-4 h-4 text-primary" />
+              Légende
+            </h4>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <span className="inline-block w-3 h-3 rounded-full" style={{ background: COULEUR_COUVERT }} />
-            {niveauKey === "lycee"
-              ? "CEG / village couvert (dans le rayon)"
-              : niveauKey === "college"
-              ? "EPP / village couvert (dans le rayon)"
-              : "Village couvert (dans le rayon)"}
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="inline-block w-3 h-3 rounded-full" style={{ background: COULEUR_HORS_ZONE }} />
-            Hors zone (hors du rayon)
-          </div>
+          <div className="p-2.5 space-y-1.5 text-[11px] leading-4 text-foreground">
+            <div className="flex items-center gap-2"><SchoolGlyph color={COULEUR_ECOLE_NOUVELLE} size={14} /> Nouveau {niveauLabel}</div>
+            <div className="flex items-center gap-2"><SchoolGlyph color={COULEUR_ECOLE_EXISTANTE} size={14} /> {niveauLabel} existant</div>
+            <div className="flex items-center gap-2">
+              <span className="inline-block w-3 h-3 rounded-full shrink-0" style={{ background: COULEUR_COUVERT }} />
+              {niveauKey === "lycee" ? "CEG / village couvert (dans le rayon)" : niveauKey === "college" ? "EPP / village couvert (dans le rayon)" : "Village couvert (dans le rayon)"}
+            </div>
+            <div className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-full shrink-0" style={{ background: COULEUR_HORS_ZONE }} /> Hors zone (hors du rayon)</div>
 
-          {afficherAnneauxVoisins && (
-            <div className="flex items-center gap-1.5">
-              <span className="inline-block w-3 h-3 rounded-full border border-dashed" style={{ borderColor: COULEUR_RAYON }} />
-              Rayon réglementaire ({rayonLabel})
-            </div>
-          )}
-          {afficherLignes && lignesAffichees.length > 0 && (
-            <div className="flex items-center gap-1.5">
-              <span className="inline-block w-3 h-1" style={{ background: COULEUR_LIGNE_INTERSECTION }} />
-              {voronoi
-                ? `Frontières de Voronoi (${lignesAffichees.length})`
-                : `Ligne d'intersection (${lignesAffichees.length})`}
-            </div>
-          )}
-          {contourCommune && (
-            <div className="flex items-center gap-1.5">
-              <span className="inline-block w-4 h-3 border-2 border-blue-900 bg-blue-100/40" />
-              Limite de la commune
-            </div>
-          )}
-          {contourFokontany && (
-            <div className="flex items-center gap-1.5">
-              <span className="inline-block w-4 h-3 border-2 border-violet-600 border-dashed bg-violet-100/40" />
-              Limite du fokontany
-            </div>
-          )}
+            {afficherAnalyseSpatiale && afficherAnneauxVoisins && (
+              <div className="flex items-center gap-2 border-t border-border pt-1.5"><span className="inline-block w-3 h-3 rounded-full border border-dashed shrink-0" style={{ borderColor: COULEUR_RAYON }} /> Rayon réglementaire ({rayonLabel})</div>
+            )}
+            {afficherAnalyseSpatiale && afficherLignes && lignesAffichees.length > 0 && (
+              <div className="flex items-center gap-2"><span className="inline-block w-3 h-1 shrink-0" style={{ background: COULEUR_LIGNE_INTERSECTION }} /> {voronoi ? `Frontières de Voronoi (${lignesAffichees.length})` : `Ligne d'intersection (${lignesAffichees.length})`}</div>
+            )}
 
-          {zoneProposee && (
-            <div className="flex items-center gap-1.5">
-              <span className="inline-block w-3 h-3 rounded-full" style={{ background: COULEUR_ZONE_PROPOSEE }} />
-              Zone éligible proposée
-            </div>
-          )}
-          {villageNonEligible && !remplaceVillage && (
-            <div className="flex items-center gap-1.5">
-              <FlagGlyph color={COULEUR_VILLAGE_NON_ELIGIBLE} size={14} />
-              Village non éligible
-            </div>
-          )}
+            {contourCommune && <div className="flex items-center gap-2 border-t border-border pt-1.5"><span className="inline-block h-3 w-4 shrink-0 border-2 bg-transparent" style={{ borderColor: STYLE_COMMUNE.color }} /> Limite de la commune</div>}
+            {contourFokontany && <div className="flex items-center gap-2"><span className="inline-block h-3 w-4 shrink-0 border-2 border-dashed bg-transparent" style={{ borderColor: STYLE_FOKONTANY.color }} /> Limite du fokontany</div>}
+
+            {zoneProposee && <div className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-full shrink-0" style={{ background: COULEUR_ZONE_PROPOSEE }} /> Zone éligible proposée</div>}
+            {villageNonEligible && !remplaceVillage && <div className="flex items-center gap-2"><FlagGlyph color={COULEUR_VILLAGE_NON_ELIGIBLE} size={14} /> Village non éligible</div>}
+          </div>
         </div>
       </div>
 
       {!futurePosition && (
-        <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-xs text-red-800">
+        <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
           <div className="flex items-start gap-2">
             <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-            <div>
-              <strong> Les coordonnées GPS du nouvel établissement sont introuvables.</strong>
-            </div>
+            <div><strong> Les coordonnées GPS du nouvel établissement sont introuvables.</strong></div>
           </div>
         </div>
       )}

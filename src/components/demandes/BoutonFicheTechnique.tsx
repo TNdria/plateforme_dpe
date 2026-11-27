@@ -113,6 +113,8 @@ export default function BoutonFicheTechnique({
 
   const [tailleCapture, setTailleCapture] = useState({ w: 1600, h: 900 });
   const [vueInitialeFiche, setVueInitialeFiche] = useState(null);
+  const [fondKeyCapture, setFondKeyCapture] = useState("default");
+  const [analyseSpatialeCapture, setAnalyseSpatialeCapture] = useState(false);
 
   const carteRef = useRef(null);
   const captureMapRef = useRef(null);
@@ -128,8 +130,6 @@ export default function BoutonFicheTechnique({
   const ouvrirModale = async () => {
     let cible = demandeComplete;
 
-    // ✅ CORRECTION : TOUJOURS recharger le détail complet si chargerDetail est fourni
-    // (sans le `!aRelationsCompletes(cible)` qui renvoyait true à tort à cause des tableaux vides [])
     if (chargerDetail && cible?.id) {
       setChargementDetail(true);
       try {
@@ -163,7 +163,12 @@ export default function BoutonFicheTechnique({
     const rayonKm = getRayonRecrutementKm(niveauKey);
     const zoomFiche = calculerZoomPourRayon(rayonKm * 1000, w, h, centre[0]);
 
+    const fond = vue?.fondKey || "default";
+    const analyseSpatiale = Boolean(vue?.afficherAnalyseSpatiale);
+
     setVueInitialeFiche({ center: centre, zoom: zoomFiche });
+    setFondKeyCapture(fond);
+    setAnalyseSpatialeCapture(analyseSpatiale);
     setModalOuverte(true);
     setContenuFiche(genererFicheTechnique(cible, null, analyseValidee));
     setGenerationCarte(true);
@@ -225,6 +230,8 @@ export default function BoutonFicheTechnique({
             avecCapture
             masquerAireVoisins={true}
             vueInitiale={vueInitialeFiche}
+            fondKeyInitial={fondKeyCapture}
+            afficherAnalyseSpatialeInitiale={analyseSpatialeCapture}
           />
         </div>
       )}
@@ -284,11 +291,9 @@ export default function BoutonFicheTechnique({
         </Button>
       )}
 
-      {/* ================= MODAL FICHE TECHNIQUE (fond blanc) ================= */}
       <Dialog open={modalOuverte} onOpenChange={setModalOuverte}>
         <DialogContent className="w-[95vw] sm:w-[90vw] md:w-[85vw] lg:w-[1100px] max-w-[1100px] max-h-[94dvh] overflow-hidden flex flex-col p-0 gap-0 rounded-2xl border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-foreground shadow-2xl">
 
-          {/* En-tête */}
           <DialogHeader className="border-b px-6 py-5 shrink-0 bg-white dark:bg-slate-950 space-y-0">
             <div className="flex items-start gap-3 pr-8">
               <div className={cn("mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg", NAVY)}>
@@ -311,7 +316,6 @@ export default function BoutonFicheTechnique({
             </div>
           </DialogHeader>
 
-          {/* Barre d'actions */}
           <div className="flex flex-wrap items-center justify-between gap-2 px-6 py-3 border-b shrink-0 bg-slate-50 dark:bg-slate-900">
             <Badge className={cn("text-xs", badgeClasses)} variant="outline">
               {analyseValidee ? "✓ Analyse validée" : "⚠ Analyse non validée"}
@@ -342,7 +346,6 @@ export default function BoutonFicheTechnique({
             </div>
           </div>
 
-          {/* Corps : aperçu */}
           <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 bg-white dark:bg-slate-950">
             {generationCarte ? (
               <div className="flex flex-col items-center justify-center py-20 gap-3">
@@ -359,7 +362,6 @@ export default function BoutonFicheTechnique({
             )}
           </div>
 
-          {/* Pied */}
           <div className="flex justify-end gap-2 border-t px-6 py-3 shrink-0 bg-white dark:bg-slate-950">
             <DialogClose asChild>
               <Button variant="outline" size="sm" className="rounded-lg">Fermer</Button>
